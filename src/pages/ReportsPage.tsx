@@ -30,11 +30,13 @@ export function ReportsPage() {
   const lowStock = useAsync(() => fetchLowStockReport())
   const supplier = useAsync(() => fetchSupplierReport())
 
-  const handleExportExcel = (name: string, data: Record<string, unknown>[]) => {
+  const handleExportExcel = <T extends object>(name: string, data: T[]) => {
     exportToCsv(name, data)
-    toast({ title: 'Export Complete', description: `${name}.csv downloaded.` })
+    toast({
+      title: 'Export Complete',
+      description: `${name}.csv downloaded.`,
+    })
   }
-
   const handleExportPdf = (name: string) => {
     exportToPdfPlaceholder(name)
     toast({ title: 'PDF Export', description: 'Print dialog opened for PDF save.' })
@@ -57,7 +59,7 @@ export function ReportsPage() {
           onExportExcel={() =>
             handleExportExcel(
               'inventory-report',
-              (inventory.data ?? []) as Record<string, unknown>[]
+              inventory.data ?? []
             )
           }
           onExportPdf={() => handleExportPdf('Inventory Report')}
