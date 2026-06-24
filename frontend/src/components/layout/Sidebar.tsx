@@ -1,24 +1,28 @@
 import { NavLink } from 'react-router-dom'
 import {
   LayoutDashboard,
-  PackagePlus,
-  Boxes,
+  FileUp,
+  ClipboardCheck,
+  QrCode,
   ScanLine,
-  Factory,
-  Warehouse,
-  FileBarChart,
+  BookMarked,
+  Settings as SettingsIcon,
+  ScrollText,
   Paintbrush,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
+// Phase 1 navigation. Routes are wired up incrementally as each module's UI is
+// built (see docs/PROGRESS.md). No Phase 2 (production/warehouse) entries.
 const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/material-inward', label: 'Material Inward', icon: PackagePlus },
-  { to: '/inventory', label: 'Inventory', icon: Boxes },
-  { to: '/qr-scanner', label: 'QR Scanner', icon: ScanLine },
-  { to: '/production', label: 'Production', icon: Factory },
-  { to: '/warehouse', label: 'Warehouse', icon: Warehouse },
-  { to: '/reports', label: 'Reports', icon: FileBarChart },
+  { to: '/purchase-orders', label: 'PO Upload', icon: FileUp },
+  { to: '/review', label: 'Review & Confirm', icon: ClipboardCheck },
+  { to: '/labels', label: 'QR Labels', icon: QrCode },
+  { to: '/receiving', label: 'Scan & Weigh', icon: ScanLine },
+  { to: '/catalogue', label: 'Master Catalogue', icon: BookMarked },
+  { to: '/audit', label: 'Audit Log', icon: ScrollText },
+  { to: '/settings', label: 'Settings', icon: SettingsIcon },
 ]
 
 export function Sidebar() {
@@ -30,7 +34,7 @@ export function Sidebar() {
         </div>
         <div>
           <div className="text-sm font-semibold leading-none">Modern Colours</div>
-          <div className="text-[10px] text-sidebar-foreground/60">Inventory ERP</div>
+          <div className="text-[10px] text-sidebar-foreground/60">Material Inward</div>
         </div>
       </div>
 
@@ -57,9 +61,9 @@ export function Sidebar() {
 
       <div className="border-t border-sidebar-border p-4">
         <div className="text-[10px] uppercase tracking-wide text-sidebar-foreground/50">
-          Plant: Chennai Unit
+          Phase 1
         </div>
-        <div className="mt-0.5 text-xs text-sidebar-foreground/70">Shift A · Day</div>
+        <div className="mt-0.5 text-xs text-sidebar-foreground/70">Material Inward Digitization</div>
       </div>
     </aside>
   )

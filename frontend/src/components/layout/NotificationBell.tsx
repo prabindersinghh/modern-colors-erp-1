@@ -1,38 +1,14 @@
 import { Bell } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { formatDateTime } from '@/lib/utils'
-import type { Notification } from '@/types'
+import type { AppNotification } from '@/types'
 
-const mockNotifications: Notification[] = [
-  {
-    id: '1',
-    title: 'Low Stock Alert',
-    message: 'Iron Oxide Red is below minimum stock level',
-    type: 'warning',
-    read: false,
-    timestamp: new Date().toISOString(),
-  },
-  {
-    id: '2',
-    title: 'Material Received',
-    message: '12 bags of Titanium Dioxide received at RMS',
-    type: 'success',
-    read: false,
-    timestamp: new Date(Date.now() - 3600000).toISOString(),
-  },
-  {
-    id: '3',
-    title: 'Production Started',
-    message: 'Batch PB-2026-042 is now in progress',
-    type: 'info',
-    read: true,
-    timestamp: new Date(Date.now() - 7200000).toISOString(),
-  },
-]
+// Notifications will be sourced from the backend in a later slice. Empty for now —
+// no mock Phase 2 data wired into the active app.
+const notifications: AppNotification[] = []
 
 export function NotificationBell() {
-  const unreadCount = mockNotifications.filter((n) => !n.read).length
+  const unreadCount = notifications.filter((n) => !n.read).length
 
   return (
     <div className="relative group">
@@ -49,19 +25,19 @@ export function NotificationBell() {
           Notifications
         </div>
         <div className="max-h-64 space-y-1 overflow-y-auto">
-          {mockNotifications.map((n) => (
-            <div
-              key={n.id}
-              className="rounded-md px-2 py-2 hover:bg-muted/50"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <span className="text-sm font-medium">{n.title}</span>
-                {!n.read && <Badge variant="default" className="h-5 px-1.5 text-[10px]">New</Badge>}
-              </div>
-              <p className="mt-0.5 text-xs text-muted-foreground">{n.message}</p>
-              <p className="mt-1 text-[10px] text-muted-foreground">{formatDateTime(n.timestamp)}</p>
+          {notifications.length === 0 ? (
+            <div className="px-2 py-6 text-center text-xs text-muted-foreground">
+              No notifications
             </div>
-          ))}
+          ) : (
+            notifications.map((n) => (
+              <div key={n.id} className="rounded-md px-2 py-2 hover:bg-muted/50">
+                <span className="text-sm font-medium">{n.title}</span>
+                <p className="mt-0.5 text-xs text-muted-foreground">{n.message}</p>
+                <p className="mt-1 text-[10px] text-muted-foreground">{formatDateTime(n.timestamp)}</p>
+              </div>
+            ))
+          )}
         </div>
       </div>
     </div>

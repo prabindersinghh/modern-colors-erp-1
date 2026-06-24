@@ -44,5 +44,20 @@
   Migration (`prisma migrate dev`) is **deferred** until a DB is reachable. Building/compiling does not need it.
 - **Next:** Step 3 — Auth + RBAC (JWT, guards, `@Roles`, seed admin), then Catalogue, Settings, etc.
 
+### 2026-06-24 — Session 1 (cont.) — client corrections applied
+- **Phase 2 excision (client correction).** Confirmed the prototype domain was Phase-2-modeled across
+  27/40 files. Preserved the full prototype on the **`phase2-draft` git branch** (forked at commit cca9bfa),
+  then on `phase-1` removed ALL Phase 2 code from the active app: pages (Dashboard/MaterialInward/Inventory/
+  QRScanner/Production/Warehouse/Reports), domain hooks, mock services, and domain components (charts/inventory/
+  material/qr). Stripped `types/index.ts` to generic types. App reduced to the reusable shell (ui/, common/,
+  layout/) + Phase 1 nav + placeholder pages. **No Phase 2 route/type/component is reachable.**
+  `npm run build` (tsc + vite) ✅ exit 0.
+- **Database = Neon (client correction).** Docker dropped entirely: removed `docker-compose.yml`,
+  updated `.env.example` + `.env` to Neon connection string format (`sslmode=require`), and documented in
+  ARCHITECTURE.md §4 that Docker-Postgres must NOT be reintroduced. Awaiting the client's Neon `DATABASE_URL`.
+- **Git:** working on `phase-1` branch (not main). `phase2-draft` preserves the prototype.
+- **GATE:** Step 3 (Auth + RBAC) begins once the Neon `DATABASE_URL` is pasted into `backend/.env`
+  (migrations + seed need a reachable DB). Auth code can be written meanwhile; verification needs the DB.
+
 ---
 _Update this log after every step. Newest entries at the bottom of the session log._

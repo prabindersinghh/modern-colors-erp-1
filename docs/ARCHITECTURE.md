@@ -36,8 +36,11 @@ Operator uploads PO bill (PDF/img/scan)
 - Worker lot/task views, printable work instructions.
 
 > The pre-existing frontend prototype was modeled on this Phase 2 product
-> (Production/Warehouse/consumption). Those pages are **parked** under
-> `frontend/src/_phase2_parked/` and are NOT part of Phase 1 routing. Do not build on them.
+> (Production/Warehouse/consumption). It has been **fully removed from the active app**
+> and preserved intact on the **`phase2-draft` git branch** (commit where the prototype
+> last existed). Nothing Phase 2 — pages, types, routes, services, components — is reachable,
+> imported, or wired into the Phase 1 codebase. When Phase 2 starts, branch from `phase2-draft`.
+> Do NOT re-add Phase 2 code to `phase-1`.
 
 ## 3. Non-negotiable invariants (enforced + tested)
 
@@ -61,12 +64,17 @@ Operator uploads PO bill (PDF/img/scan)
 modern-colors-erp/
 ├── frontend/          Vite 6 + React 19 + TS + Tailwind 3 + shadcn/ui + react-router 7 + recharts
 ├── backend/           NestJS + TypeScript + Prisma + PostgreSQL  (built fresh)
-├── docs/              ARCHITECTURE.md (this) + PROGRESS.md + PRD
-├── docker-compose.yml Postgres (+ optional services) for local dev
+├── docs/              ARCHITECTURE.md (this) + PROGRESS.md + PRD + phase2 notes
 └── README.md
 ```
 
-- **Backend:** NestJS + TS, PostgreSQL + Prisma ORM, JWT auth + RBAC, REST (no GraphQL).
+> **DATABASE = Neon (hosted Postgres, free tier). NOT Docker.** The client does not have
+> Docker installed and will not install it for this project. There is intentionally **no
+> `docker-compose.yml`** and no local-Postgres setup. `DATABASE_URL` points at the Neon
+> connection string (keep `sslmode=require`). **Do not reintroduce a Docker-based Postgres
+> in any future session.**
+
+- **Backend:** NestJS + TS, **Neon** PostgreSQL + Prisma ORM, JWT auth + RBAC, REST (no GraphQL).
 - **AI:** Anthropic official SDK `@anthropic-ai/sdk` (no hand-rolled HTTP).
 - **QR:** `qrcode` for generation, `pdf-lib` for printable label sheets.
 - **File storage:** **Cloudflare R2** (S3 API) in prod, abstracted behind `StorageService`.

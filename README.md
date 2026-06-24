@@ -14,26 +14,25 @@ physical item, and each unit is scanned and weighed on arrival until it's
 
 ```
 frontend/   Vite + React 19 + TS + Tailwind + shadcn/ui   (UI)
-backend/    NestJS + Prisma + PostgreSQL                   (API)
+backend/    NestJS + Prisma + PostgreSQL (Neon)            (API)
 docs/       Architecture map, progress log, PRD
-docker-compose.yml   Local Postgres (+ services)
 ```
 
 ## Quick start (local dev)
 
-```bash
-# 1. Start Postgres
-docker compose up -d
+> **Database = Neon** (hosted Postgres, free tier). No Docker is used — put your Neon
+> connection string in `backend/.env` as `DATABASE_URL` (keep `sslmode=require`).
 
-# 2. Backend
+```bash
+# 1. Backend
 cd backend
-cp .env.example .env          # fill in secrets
+cp .env.example .env          # paste your Neon DATABASE_URL + set secrets
 npm install
-npx prisma migrate dev
+npx prisma migrate dev        # runs migrations against Neon
 npm run seed                  # seeds an initial Admin user
 npm run start:dev             # http://localhost:3000
 
-# 3. Frontend
+# 2. Frontend
 cd ../frontend
 npm install
 npm run dev                   # http://localhost:5173

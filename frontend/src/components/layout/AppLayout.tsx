@@ -4,30 +4,27 @@ import { Sidebar } from './Sidebar'
 import { Navbar } from './Navbar'
 import { cn } from '@/lib/utils'
 
+// Phase 1 page titles. Keep in sync with Sidebar nav + App routes.
 const pageTitles: Record<string, { title: string; subtitle?: string }> = {
-  '/': { title: 'Dashboard', subtitle: 'Overview of inventory and operations' },
-  '/material-inward': { title: 'Material Inward', subtitle: 'Receive and label incoming materials' },
-  '/inventory': { title: 'Inventory', subtitle: 'Bag-level stock management' },
-  '/qr-scanner': { title: 'QR Scanner', subtitle: 'Scan and process material bags' },
-  '/production': { title: 'Production', subtitle: 'Production order management' },
-  '/warehouse': { title: 'Warehouse', subtitle: 'Visual rack layout and bag movement' },
-  '/reports': { title: 'Reports', subtitle: 'Inventory and production analytics' },
+  '/': { title: 'Dashboard', subtitle: "Today's POs, materials received, pending scans/weighing" },
+  '/purchase-orders': { title: 'PO Upload', subtitle: 'Upload a purchase order for AI extraction' },
+  '/review': { title: 'Review & Confirm', subtitle: 'Verify and correct extracted materials before saving' },
+  '/labels': { title: 'QR Labels', subtitle: 'Generate and print QR labels per physical unit' },
+  '/receiving': { title: 'Scan & Weigh', subtitle: 'Scan units on arrival and confirm receiving weight' },
+  '/catalogue': { title: 'Master Catalogue', subtitle: 'Factory raw-material SKU reference' },
+  '/audit': { title: 'Audit Log', subtitle: 'Immutable record of every change' },
+  '/settings': { title: 'Settings', subtitle: 'Claude API key and system configuration' },
 }
 
 export function AppLayout() {
   const location = useLocation()
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const pageInfo = pageTitles[location.pathname] ?? { title: 'Modern Colours ERP' }
+  const pageInfo = pageTitles[location.pathname] ?? { title: 'Modern Colours' }
 
   return (
     <div className="min-h-screen bg-background">
       <Sidebar />
-      <div
-        className={cn(
-          'lg:pl-60',
-          sidebarOpen && 'lg:pl-60'
-        )}
-      >
+      <div className={cn('lg:pl-60', sidebarOpen && 'lg:pl-60')}>
         <Navbar
           title={pageInfo.title}
           subtitle={pageInfo.subtitle}

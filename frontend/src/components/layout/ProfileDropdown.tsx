@@ -9,8 +9,8 @@ interface ProfileDropdownProps {
 }
 
 export function ProfileDropdown({
-  name = 'Rajesh Kumar',
-  role = 'Warehouse Operator',
+  name = 'Modern Colours',
+  role = 'Signed in',
   className,
 }: ProfileDropdownProps) {
   return (
