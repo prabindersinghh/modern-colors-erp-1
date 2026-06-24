@@ -52,9 +52,14 @@ export class PurchaseOrderController {
   @Get(':id/file')
   async file(@Param('id') id: string, @Res({ passthrough: true }) res: Response) {
     const { buffer, fileName, mimeType } = await this.po.getFile(id);
+    // Sanitize the (user-supplied) filename before it reaches the header to
+    // prevent header/Content-Disposition injection. ASCII-safe quoted form +
+    // RFC 5987 encoded form for the real name.
+    const ascii = (fileName || 'po').replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 200);
+    const encoded = encodeURIComponent(fileName || 'po');
     res.set({
       'Content-Type': mimeType,
-      'Content-Disposition': `inline; filename="${fileName}"`,
+      'Content-Disposition': `inline; filename="${ascii}"; filename*=UTF-8''${encoded}`,
     });
     return buffer;
   }

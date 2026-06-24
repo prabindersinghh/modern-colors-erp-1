@@ -40,14 +40,23 @@ export class PurchaseOrderService {
 
   async upload(file: Express.Multer.File, actorId: string) {
     if (!file) throw new BadRequestException('No file uploaded (field name "file")');
-    const ext = (file.originalname.split('.').pop() ?? '').toLowerCase();
+    // Strip CR/LF and path separators from the user-supplied name before storing
+    // it (defense-in-depth against header injection / path traversal). The stored
+    // object key is always a server-generated UUID, never the original name.
+    const safeName =
+      (file.originalname || 'po')
+        .replace(/[\r\n]+/g, '')
+        .replace(/[/\\]/g, '_')
+        .trim()
+        .slice(0, 255) || 'po';
+    const ext = (safeName.split('.').pop() ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
     const key = `po/${randomUUID()}.${ext || 'bin'}`;
     await this.storage.put(key, file.buffer, file.mimetype);
 
     const po = await this.prisma.purchaseOrder.create({
       data: {
         fileKey: key,
-        fileName: file.originalname,
+        fileName: safeName,
         status: POStatus.PO_UPLOADED,
         source: POSource.AI,
         uploadedById: actorId,
