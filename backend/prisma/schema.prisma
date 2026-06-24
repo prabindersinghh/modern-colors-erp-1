@@ -1,0 +1,228 @@
+// Modern Colours — Phase 1 data model.
+// Source of truth: docs/ARCHITECTURE.md §6. Update BOTH together on any change.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────────────────── Enums ─────────────────────────
+
+enum Role {
+  ADMIN
+  SUPERVISOR
+  OPERATOR
+}
+
+// PO-level lifecycle (the document). See ARCHITECTURE.md §6 status note.
+enum POStatus {
+  PO_UPLOADED // uploaded, extraction not yet run
+  AI_EXTRACTED // Claude returned fields; pending review
+  OPERATOR_VERIFIED // operator confirmed (hard gate passed)
+  REGISTERED // materials + QR created
+}
+
+// How the PO data was produced.
+enum POSource {
+  AI // Claude extraction
+  MANUAL // manual-entry fallback (I7)
+}
+
+// Per-physical-unit lifecycle (the tracked entity after registration).
+enum MaterialStatus {
+  REGISTERED
+  ARRIVED
+  SCANNED
+  WEIGHED
+  READY_FOR_PRODUCTION
+}
+
+// Catalogue match outcome for an extracted line (I6 — informational, never gates).
+enum MatchType {
+  EXACT
+  SIMILAR
+  NONE
+}
+
+// ───────────────────────── Users / Auth ─────────────────────────
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         Role     @default(OPERATOR)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  uploadedPOs     PurchaseOrder[] @relation("UploadedBy")
+  confirmedPOs    PurchaseOrder[] @relation("ConfirmedBy")
+  weighedUnits    Material[]      @relation("WeighedBy")
+  auditEntries    AuditLog[]      @relation("ActorAudit")
+  settingsUpdates Setting[]       @relation("SettingUpdatedBy")
+
+  @@index([role])
+}
+
+// ───────────────────────── Master Catalogue ─────────────────────────
+
+model MasterCatalogueItem {
+  id                String   @id @default(uuid())
+  materialName      String
+  sku               String   @unique
+  category          String?
+  unit              String?
+  standardPackaging String?
+  metadata          Json?
+  active            Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  matchedLineItems POLineItem[] @relation("MatchedCatalogue")
+
+  @@index([materialName])
+  @@index([sku])
+}
+
+// ───────────────────────── Purchase Orders ─────────────────────────
+
+model PurchaseOrder {
+  id            String    @id @default(uuid())
+  poNumber      String?
+  supplier      String?
+  fileKey       String? // storage key (R2 / disk). Null only for pure manual entry.
+  fileName      String?
+  status        POStatus  @default(PO_UPLOADED)
+  source        POSource  @default(AI)
+  extractedJson Json? // raw Claude output for audit/debug
+  deliveryDate  DateTime?
+
+  uploadedById String
+  uploadedBy   User   @relation("UploadedBy", fields: [uploadedById], references: [id])
+
+  confirmedById String?
+  confirmedBy   User?     @relation("ConfirmedBy", fields: [confirmedById], references: [id])
+  confirmedAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lineItems POLineItem[]
+  materials Material[]
+
+  @@index([poNumber])
+  @@index([supplier])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// Editable working set BEFORE confirmation. Never auto-promoted to Material (I1).
+model POLineItem {
+  id           String        @id @default(uuid())
+  poId         String
+  po           PurchaseOrder @relation(fields: [poId], references: [id], onDelete: Cascade)
+  materialName String
+  sku          String?
+  quantity     Int
+  unit         String?
+  batchNumber  String?
+  matchType    MatchType     @default(NONE)
+
+  matchedCatalogueId String?
+  matchedCatalogue   MasterCatalogueItem? @relation("MatchedCatalogue", fields: [matchedCatalogueId], references: [id])
+
+  edited    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([poId])
+}
+
+// ───────────────────────── Materials (one per physical unit) ─────────────────────────
+
+model Material {
+  id           String         @id @default(uuid())
+  uniqueId     String         @unique // "MC-000001" — sequential, zero-padded (I3, I8)
+  poId         String
+  po           PurchaseOrder  @relation(fields: [poId], references: [id])
+  materialName String
+  sku          String?
+  supplier     String?
+  batchNumber  String?
+  unit         String?
+  status       MaterialStatus @default(REGISTERED)
+
+  receivedWeight Float? // single manual receiving weight (Phase 1 — not gross/net/tare)
+  weighedById    String?
+  weighedBy      User?     @relation("WeighedBy", fields: [weighedById], references: [id])
+  weighedAt      DateTime?
+  arrivedAt      DateTime?
+  scannedAt      DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  qrCode QrCode?
+
+  @@index([poId])
+  @@index([status])
+  @@index([sku])
+  @@index([supplier])
+}
+
+// ───────────────────────── QR Codes ─────────────────────────
+
+model QrCode {
+  id         String   @id @default(uuid())
+  materialId String   @unique
+  material   Material @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  payload    Json // { uniqueId, materialName, sku, supplier, poNumber, batch, date }
+  imageRef   String? // data URL or storage key of the rendered QR PNG
+  createdAt  DateTime @default(now())
+}
+
+// ───────────────────────── Settings (Claude API key) ─────────────────────────
+
+// Encrypted-at-rest key/value store. Claude key lives here (I2).
+model Setting {
+  id             String   @id @default(uuid())
+  key            String   @unique // e.g. "CLAUDE_API_KEY"
+  valueEncrypted String // AES-256-GCM ciphertext (never returned to FE)
+  valueMasked    String // e.g. "sk-ant-...x9f2" (safe to return)
+  iv             String // base64 IV
+  authTag        String // base64 GCM auth tag
+  updatedById    String?
+  updatedBy      User?    @relation("SettingUpdatedBy", fields: [updatedById], references: [id])
+  updatedAt      DateTime @updatedAt
+  createdAt      DateTime @default(now())
+}
+
+// ───────────────────────── Audit Log (APPEND-ONLY) ─────────────────────────
+
+// I4: never updated or deleted. Corrections create a NEW row referencing the original.
+model AuditLog {
+  id         String  @id @default(uuid())
+  entityType String // "PurchaseOrder" | "Material" | "Setting" | "User" | ...
+  entityId   String
+  action     String // "PO_UPLOADED" | "STATUS_CHANGE" | "WEIGHT_ENTERED" | "CORRECTION" ...
+  actorId    String?
+  actor      User?   @relation("ActorAudit", fields: [actorId], references: [id])
+  beforeJson Json?
+  afterJson  Json?
+  device     String?
+
+  correctionOfId String? // points to the AuditLog row this corrects
+  correctionOf   AuditLog?  @relation("Corrections", fields: [correctionOfId], references: [id])
+  corrections    AuditLog[] @relation("Corrections")
+
+  createdAt DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([actorId])
+  @@index([createdAt])
+}

@@ -1,2 +1,44 @@
-node_modules
-node_modules
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Build output
+dist/
+build/
+**/dist/
+**/build/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+# Prisma
+backend/prisma/*.db
+backend/prisma/migrations/dev.db*
+
+# Local storage fallback (dev R2 substitute)
+backend/.storage/
+storage-local/
+
+# Logs
+*.log
+npm-debug.log*
+logs/
+
+# OS / editor
+.DS_Store
+**/.DS_Store
+Thumbs.db
+.idea/
+*.swp
+
+# Test / coverage
+coverage/
+**/coverage/
+
+# Docker volumes
+.docker-data/

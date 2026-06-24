@@ -1,0 +1,42 @@
+# Local dev infrastructure for Modern Colours Phase 1.
+# Requires Docker Desktop running. Brings up PostgreSQL (+ optional MinIO if you
+# prefer local S3 instead of the disk fallback). Production storage = Cloudflare R2.
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: modern-colours-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: modern
+      POSTGRES_PASSWORD: modern
+      POSTGRES_DB: modern_colours
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U modern -d modern_colours"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Optional: local S3-compatible storage. Off by default (we use disk fallback
+  # for dev and Cloudflare R2 for prod). Enable with: docker compose --profile s3 up -d
+  minio:
+    image: minio/minio:latest
+    container_name: modern-colours-minio
+    profiles: ["s3"]
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: minio12345
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - miniodata:/data
+
+volumes:
+  pgdata:
+  miniodata:

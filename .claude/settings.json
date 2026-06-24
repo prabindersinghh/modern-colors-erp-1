@@ -1,0 +1,11 @@
+{
+  "enabledPlugins": {
+    "greptile@claude-plugins-official": true,
+    "linear@claude-plugins-official": true,
+    "sentry@claude-plugins-official": true,
+    "coderabbit@claude-plugins-official": true,
+    "firebase@claude-plugins-official": true,
+    "postman@claude-plugins-official": true,
+    "asana@claude-plugins-official": true
+  }
+}
