@@ -16,6 +16,7 @@
 | 2 | Prisma schema (all entities) | ✅ | Users/Roles, Catalogue, PO, POLineItem, Material(+status), QrCode, Setting, AuditLog. `prisma validate` ✅, `prisma generate` ✅. Migration NOT yet run (needs live Postgres). |
 | 3 | Auth + RBAC (JWT, guards, seed admin) | ✅ | `auth`/`users`/`audit` modules. JWT login, JwtAuthGuard + RolesGuard + `@Roles` + `@CurrentUser`. Seed admin (idempotent). Migration applied to **Neon**. Verified e2e (login/me/403/401) + jest test for I5 (5/5 pass). + Security: fail-fast env validation, no secret fallbacks. |
 | 5 | Settings (Claude API key) | ✅ | `settings` module + `CryptoService` (AES-256-GCM). Admin-only encrypt/mask/validate (live Claude check). `getDecryptedKey()` internal only (I2). 16/16 jest. e2e: status false, operator 403, bogus key → 400 CLAUDE_KEY_INVALID via real API. |
+| 6 | PO upload + AI extraction + manual fallback | ✅ | `StorageService` (R2 + disk fallback), `purchase-order` + `ai-extraction` modules. Upload→PO_UPLOADED; extract via Claude forced-tool → POLineItems w/ catalogue match → AI_EXTRACTED; **manual fallback (I7)**; nothing persisted as Material pre-confirm (I1). 18/18 jest. e2e: upload 201, no-key→fallback, manual→EXACT/SIMILAR/NONE, materials=0, audit chain. |
 | 4 | Master Catalogue (import + CRUD + match) | ✅ | `catalogue` module. Column-tolerant CSV/Excel import (xlsx), CRUD (soft-delete), match (exact/similar/none, Levenshtein). RBAC: import/edit/delete=Admin, new-SKU create=Admin+Operator (daily new SKUs, provisional TMP- code). 11/11 jest pass; e2e verified (import 20, match 3 types, operator 201/403/200). |
 | 4 | Master Catalogue (import + CRUD + match) | ⬜ | |
 | 5 | Settings (API key encrypt/mask/validate) | ⬜ | Invariant I2 |
@@ -99,6 +100,23 @@
 - **GitHub:** pushed to `AmbreenSuri/modern-colors-erp`. Stripped all Claude co-author trailers from history per
   client request; future commits omit them. Wrote full technical README with banner.
 - **Next:** Step 6 — PO upload + Claude extraction (uses `SettingsService.getDecryptedKey`) + manual fallback.
+
+### 2026-06-24 — Session 1 (cont.) — Step 6: PO Upload + AI Extraction + manual fallback
+- **`StorageService`** (global) — Cloudflare R2 (S3 API) with a local-disk fallback (`backend/.storage/`,
+  gitignored) when R2 creds are absent; path-traversal guarded.
+- **`ai-extraction` module** — pulls the decrypted key from Settings, sends the PO (PDF/image, base64) to
+  Claude via a **forced tool call** (`record_purchase_order`) for reliable structured output; typed
+  `ExtractionError` (no_key/invalid_key/quota/network/parse) so callers can fall back.
+- **`purchase-order` module** — upload (→ storage + `PO_UPLOADED`), list/detail/file, `extract`
+  (→ POLineItems with catalogue match → `AI_EXTRACTED`; on failure returns `{fallback:true}`, **I7**),
+  and `manualEntry` (operator types the PO; same review-ready state). Editing the working set produces
+  **no Material rows** — those wait for the confirm gate in Step 7 (**I1**).
+- **Verified:** build 0; jest 18/18 (+ storage round-trip & traversal). e2e — upload 201; no-key extract →
+  `fallback:true reason:no_key`; manual entry → EXACT/SIMILAR/NONE matches; `materials=0` pre-confirm;
+  audit `PO_UPLOADED → AI_EXTRACTION_FAILED → PO_MANUAL_ENTRY`.
+- **Git:** consolidated all Phase 1 work onto **`main`** (fast-forward) and pushed directly per client request.
+- **Next:** Step 7 — Operator review/confirm (edit/add/delete line items) + the hard confirm gate that
+  creates Materials.
 
 ---
 _Update this log after every step. Newest entries at the bottom of the session log._
