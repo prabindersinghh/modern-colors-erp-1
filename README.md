@@ -218,6 +218,24 @@ openssl rand -hex 32          # JWT_SECRET (≥32 chars) and ENCRYPTION_KEY (exa
 > The backend **refuses to boot** if `JWT_SECRET`, `ENCRYPTION_KEY`, or `DATABASE_URL` are missing or weak
 > (fail-fast env validation).
 
+The Vite dev server proxies `/api` to the backend (same-origin — no CORS), so the frontend's
+`VITE_API_URL` stays `/api`.
+
+### Testing the camera on a phone
+
+Scan & Weigh (QR) and PO Upload (document photo) use the device camera, which browsers only allow on a
+**secure context (HTTPS)**. To test from a phone on the same Wi‑Fi:
+
+```bash
+cd frontend
+VITE_HTTPS=true npm run dev     # serves HTTPS and binds to the LAN
+```
+
+Then on the phone open `https://<your-computer-LAN-IP>:5173` (the dev server prints the Network URLs on
+start). Accept the self‑signed-certificate warning once, and allow camera access when prompted. The `/api`
+proxy means the backend is reached through the same HTTPS origin — no extra network config. Use the rear
+camera; for PO photos, fill the frame with the document and hold steady for a sharp, high‑resolution capture.
+
 ---
 
 ## Scripts

@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { FileUp, FileText } from 'lucide-react'
+import { FileText, Camera, Upload } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
 import type { Paginated, PurchaseOrder, POStatus } from '@/types/api'
 import { useAuth } from '@/lib/auth'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Card, CardContent } from '@/components/ui/card'
 import {
   Table,
   TableBody,
@@ -15,6 +16,8 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { EmptyState } from '@/components/common/EmptyState'
+import { ErrorBoundary } from '@/components/common/ErrorBoundary'
+import { DocumentCamera } from '@/components/scan/DocumentCamera'
 import { toast } from '@/hooks/useToast'
 
 const STATUS_STYLE: Record<POStatus, { label: string; variant?: 'default' | 'secondary' | 'outline' }> = {
@@ -30,6 +33,7 @@ export function PurchaseOrdersPage() {
   const canUpload = hasRole('ADMIN', 'OPERATOR')
   const [pos, setPos] = useState<PurchaseOrder[]>([])
   const [uploading, setUploading] = useState(false)
+  const [cameraOpen, setCameraOpen] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
 
   const load = () =>
@@ -58,37 +62,82 @@ export function PurchaseOrdersPage() {
   return (
     <div className="space-y-5">
       {canUpload && (
-        <div
-          className="flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed p-8 text-center"
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={(e) => {
-            e.preventDefault()
-            const f = e.dataTransfer.files?.[0]
-            if (f) upload(f)
-          }}
-        >
-          <div className="rounded-full bg-muted p-3">
-            <FileUp className="h-6 w-6 text-muted-foreground" />
-          </div>
-          <div>
-            <p className="text-sm font-medium">Upload a Purchase Order</p>
-            <p className="text-xs text-muted-foreground">PDF, image, or scan — drag &amp; drop or browse</p>
-          </div>
-          <input
-            ref={fileInput}
-            type="file"
-            accept=".pdf,image/*"
-            className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0]
-              if (f) upload(f)
-              e.target.value = ''
-            }}
-          />
-          <Button onClick={() => fileInput.current?.click()} disabled={uploading}>
-            {uploading ? 'Uploading…' : 'Choose file'}
-          </Button>
-        </div>
+        <Card>
+          <CardContent className="space-y-4 pt-6">
+            {cameraOpen ? (
+              <ErrorBoundary
+                fallback={
+                  <div className="space-y-3 text-center">
+                    <p className="text-sm text-muted-foreground">
+                      Camera unavailable on this device — use “Choose file” instead.
+                    </p>
+                    <Button variant="outline" onClick={() => setCameraOpen(false)}>
+                      Back
+                    </Button>
+                  </div>
+                }
+              >
+                <DocumentCamera
+                  onClose={() => setCameraOpen(false)}
+                  onCapture={(file) => {
+                    setCameraOpen(false)
+                    upload(file)
+                  }}
+                />
+              </ErrorBoundary>
+            ) : (
+              <>
+                {/* PRIMARY: photograph the document */}
+                <div className="flex flex-col items-center gap-3 text-center">
+                  <div className="rounded-full bg-primary/10 p-3">
+                    <Camera className="h-6 w-6 text-primary" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">Scan the purchase order</p>
+                    <p className="text-xs text-muted-foreground">
+                      Point your camera at the paper PO / invoice and capture it
+                    </p>
+                  </div>
+                  <Button size="lg" className="gap-2" onClick={() => setCameraOpen(true)} disabled={uploading}>
+                    <Camera className="h-4 w-4" /> Open camera
+                  </Button>
+                </div>
+
+                {/* SECONDARY: file upload (PDF / existing scan / saved image) */}
+                <div className="flex items-center gap-3 text-[11px] uppercase tracking-wide text-muted-foreground">
+                  <span className="h-px flex-1 bg-border" /> or <span className="h-px flex-1 bg-border" />
+                </div>
+                <div
+                  className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed p-4 text-center"
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault()
+                    const f = e.dataTransfer.files?.[0]
+                    if (f) upload(f)
+                  }}
+                >
+                  <p className="text-xs text-muted-foreground">
+                    Upload a PDF, existing scan, or saved image
+                  </p>
+                  <input
+                    ref={fileInput}
+                    type="file"
+                    accept=".pdf,image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0]
+                      if (f) upload(f)
+                      e.target.value = ''
+                    }}
+                  />
+                  <Button variant="outline" size="sm" className="gap-1.5" onClick={() => fileInput.current?.click()} disabled={uploading}>
+                    <Upload className="h-4 w-4" /> {uploading ? 'Uploading…' : 'Choose file'}
+                  </Button>
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
       )}
 
       <div>

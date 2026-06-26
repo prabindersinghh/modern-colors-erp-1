@@ -2,7 +2,10 @@
 // JWT is stored in localStorage; a 401 clears it and notifies listeners so the
 // auth layer can redirect to the login screen.
 
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api'
+// Same-origin by default — the Vite dev server proxies /api to the backend
+// (so the phone camera works over HTTPS with no CORS / mixed-content issues).
+// Override with VITE_API_URL for a separately-hosted API.
+const API_BASE_URL = import.meta.env.VITE_API_URL ?? '/api'
 const TOKEN_KEY = 'mc_token'
 
 export class ApiError extends Error {

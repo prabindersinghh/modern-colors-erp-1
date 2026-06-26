@@ -1,8 +1,14 @@
-import { useEffect, useState, useCallback } from 'react'
-import { ScanLine, Scale, CheckCircle2, WifiOff, CloudUpload } from 'lucide-react'
+import { useEffect, useState, useCallback, lazy, Suspense } from 'react'
+import { ScanLine, Scale, CheckCircle2, WifiOff, CloudUpload, Keyboard, RotateCcw, Loader2 } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
 import type { Material } from '@/types/api'
 import { enqueue, pending, flush } from '@/lib/offlineQueue'
+import { ErrorBoundary } from '@/components/common/ErrorBoundary'
+
+// Lazy-loaded so the QR library is only fetched on this screen.
+const CameraQrScanner = lazy(() =>
+  import('@/components/scan/CameraQrScanner').then((m) => ({ default: m.CameraQrScanner })),
+)
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -12,12 +18,24 @@ import { toast } from '@/hooks/useToast'
 
 const DEVICE = 'web-client'
 
+// QR payload is JSON ({ uniqueId, ... }); fall back to raw text for a plain ID.
+function extractUniqueId(text: string): string {
+  try {
+    const o = JSON.parse(text)
+    if (o && typeof o.uniqueId === 'string') return o.uniqueId
+  } catch {
+    /* not JSON */
+  }
+  return text.trim()
+}
+
 export function ReceivingPage() {
   const [scanId, setScanId] = useState('')
   const [unit, setUnit] = useState<Material | null>(null)
   const [weight, setWeight] = useState('')
   const [busy, setBusy] = useState(false)
   const [queued, setQueued] = useState(0)
+  const [manualOpen, setManualOpen] = useState(false)
 
   const refreshQueue = useCallback(async () => setQueued((await pending()).length), [])
 
@@ -33,8 +51,8 @@ export function ReceivingPage() {
     return () => window.removeEventListener('online', sync)
   }, [refreshQueue])
 
-  const scan = async () => {
-    const id = scanId.trim()
+  const scan = async (rawId: string) => {
+    const id = rawId.trim()
     if (!id) return
     setBusy(true)
     try {
@@ -54,6 +72,8 @@ export function ReceivingPage() {
         await enqueue({ kind: 'scan', uniqueId: id, device: DEVICE, clientTime: new Date().toISOString() })
         await refreshQueue()
         toast({ title: 'Offline — scan queued', description: `${id} will sync when online.` })
+      } else if (err instanceof ApiError && err.status === 404) {
+        toast({ variant: 'destructive', title: 'Unknown unit', description: `No unit with ID ${id}.` })
       } else {
         toast({ variant: 'destructive', title: 'Scan failed', description: err instanceof ApiError ? err.message : '' })
       }
@@ -116,30 +136,59 @@ export function ReceivingPage() {
         </div>
       )}
 
+      {/* PRIMARY: live camera QR scanning */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
-            <ScanLine className="h-4 w-4" /> Scan a unit
+            <ScanLine className="h-4 w-4" /> Scan unit QR code
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          <form
-            className="flex gap-2"
-            onSubmit={(e) => {
-              e.preventDefault()
-              scan()
-            }}
+        <CardContent className="space-y-3">
+          <ErrorBoundary
+            fallback={
+              <div className="rounded-lg border bg-muted/30 p-6 text-center text-sm text-muted-foreground">
+                Camera scanner unavailable on this device — use manual entry below.
+              </div>
+            }
           >
-            <Input
-              autoFocus
-              placeholder="Scan or type unique ID (MC-000001)"
-              value={scanId}
-              onChange={(e) => setScanId(e.target.value)}
-            />
-            <Button type="submit" disabled={busy || !scanId.trim()}>
-              Scan
-            </Button>
-          </form>
+            <Suspense
+              fallback={
+                <div className="flex items-center justify-center gap-2 rounded-lg border bg-muted/30 py-10 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading scanner…
+                </div>
+              }
+            >
+              <CameraQrScanner paused={!!unit || busy} onResult={(text) => scan(extractUniqueId(text))} />
+            </Suspense>
+          </ErrorBoundary>
+
+          {/* SECONDARY: manual / USB-scanner entry */}
+          {manualOpen ? (
+            <form
+              className="flex gap-2 border-t pt-3"
+              onSubmit={(e) => {
+                e.preventDefault()
+                scan(scanId)
+              }}
+            >
+              <Input
+                placeholder="Type or USB-scan ID (MC-000001)"
+                value={scanId}
+                onChange={(e) => setScanId(e.target.value)}
+              />
+              <Button type="submit" variant="outline" disabled={busy || !scanId.trim()}>
+                Submit
+              </Button>
+            </form>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setManualOpen(true)}
+              className="flex w-full items-center justify-center gap-1.5 border-t pt-3 text-xs text-muted-foreground hover:text-foreground"
+            >
+              <Keyboard className="h-3.5 w-3.5" /> Enter ID manually (USB scanner / typing)
+            </button>
+          )}
         </CardContent>
       </Card>
 
@@ -162,9 +211,14 @@ export function ReceivingPage() {
             </div>
 
             {unit.status === 'READY_FOR_PRODUCTION' ? (
-              <div className="flex items-center gap-2 rounded-md bg-success/10 px-3 py-2 text-sm text-success">
-                <CheckCircle2 className="h-4 w-4" />
-                Weighed {unit.receivedWeight} — Ready for Production.
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 rounded-md bg-success/10 px-3 py-2 text-sm text-success">
+                  <CheckCircle2 className="h-4 w-4" />
+                  Weighed {unit.receivedWeight} — Ready for Production.
+                </div>
+                <Button variant="outline" className="w-full gap-1.5" onClick={() => setUnit(null)}>
+                  <RotateCcw className="h-4 w-4" /> Scan next unit
+                </Button>
               </div>
             ) : (
               <div className="space-y-1.5">

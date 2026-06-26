@@ -166,5 +166,24 @@
   not the page; drawer open/close; dialog gutters; profile opens on tap; desktop (1280) identical (sidebar
   fixed, hamburger hidden). `vite build` ✅. Only 7 files touched; no design/branding/desktop changes.
 
+### 2026-06-27 — Camera-first scanning (Scan & Weigh + PO Upload)
+- **Scan & Weigh:** primary path is now a **live rear-camera QR scanner** (`html5-qrcode`,
+  `components/scan/CameraQrScanner`, lazy-loaded + code-split). Decodes the QR JSON → `uniqueId` → same
+  `/receiving/scan` flow. Manual / USB-scanner text entry demoted to a secondary, collapsible fallback.
+- **PO Upload:** primary action is **photograph the document** (`components/scan/DocumentCamera`,
+  getUserMedia live preview + `ImageCapture.takePhoto()` for full-res stills, canvas fallback for iOS).
+  Produces a JPEG fed into the identical upload→extraction flow. File picker kept as the secondary “or” option.
+- **Robustness:** html5-qrcode's `stop()` throws during React StrictMode's double-mount and (with no error
+  boundary) blanked the page — fixed with a state-guarded, try/caught cleanup **and** an `ErrorBoundary`
+  around both camera components so an unsupported device shows a fallback, never a crash.
+- **Phone testing enabled:** Vite now proxies `/api` to the backend (same-origin → no CORS/mixed-content),
+  binds to the LAN (`host: true`), and serves HTTPS when `VITE_HTTPS=true` (camera needs a secure context).
+  Frontend API base switched to relative `/api`.
+- **Verified (Playwright, 390px, via the proxy):** PO Upload shows camera-primary + file fallback; Scan & Weigh
+  loads the scanner with reserved height + manual fallback; manual entry resolved `MC-000003 → SCANNED`
+  (Titanium Dioxide) through the proxy; no crash; `vite build` ✅ (scanner code-split to its own chunk).
+- **Pending (user, on a real phone):** verify live rear-camera QR decode and document-photo quality/focus is
+  good enough for AI extraction — see README “Testing the camera on a phone”.
+
 ---
 _Update this log after every step. Newest entries at the bottom of the session log._
