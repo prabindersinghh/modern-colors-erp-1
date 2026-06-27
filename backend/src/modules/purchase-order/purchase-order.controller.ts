@@ -70,7 +70,13 @@ export class PurchaseOrderController {
   // Writes: Operator (and Admin). Supervisor is read-only.
   @Post()
   @Roles(Role.ADMIN, Role.OPERATOR)
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(
+    // Cap size + restrict fields to mitigate multipart DoS and memory exhaustion.
+    // 25 MB allows full-resolution phone photos of a PO; one file only.
+    FileInterceptor('file', {
+      limits: { files: 1, fileSize: 25 * 1024 * 1024, fields: 5, fieldNameSize: 100 },
+    }),
+  )
   upload(@UploadedFile() file: Express.Multer.File, @CurrentUser() actor: AuthUser) {
     if (!file) throw new BadRequestException('No file uploaded (field name "file")');
     return this.po.upload(file, actor.id);

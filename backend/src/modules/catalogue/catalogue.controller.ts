@@ -67,7 +67,12 @@ export class CatalogueController {
   // Bulk import: Admin only (one-time / periodic master list setup).
   @Post('import')
   @Roles(Role.ADMIN)
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(
+    // 10 MB covers a 500–600 SKU CSV/XLSX; restrict fields to mitigate multipart DoS.
+    FileInterceptor('file', {
+      limits: { files: 1, fileSize: 10 * 1024 * 1024, fields: 5, fieldNameSize: 100 },
+    }),
+  )
   import(
     @UploadedFile() file: Express.Multer.File,
     @CurrentUser() actor: AuthUser,
