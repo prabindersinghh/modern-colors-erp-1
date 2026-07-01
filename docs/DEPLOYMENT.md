@@ -1,4 +1,8 @@
-# Deployment Guide — Modern Colours Phase 1
+# Deployment Guide — Modern Colours Phase 1 (cloud option)
+
+> **For the factory handoff, use [`SELF-HOSTING.md`](./SELF-HOSTING.md)** — run everything on one
+> on‑premise server the client owns (local PostgreSQL + local disk storage, no cloud accounts).
+> This file below is the optional **managed‑cloud** alternative (Vercel + Render + Neon + R2).
 
 Production topology:
 
