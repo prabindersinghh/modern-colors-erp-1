@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { HealthController } from './health.controller';
 import { PrismaModule } from './prisma/prisma.module';
 import { StorageModule } from './common/storage/storage.module';
 import { validateEnv } from './config/env.validation';
@@ -32,5 +33,6 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
     ReceivingModule,
     DashboardModule,
   ],
+  controllers: [HealthController],
 })
 export class AppModule {}

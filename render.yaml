@@ -1,0 +1,50 @@
+# Render Blueprint for the Modern Colours NestJS API.
+# In Render: New → Blueprint → connect this repo. Set the `sync: false` secrets
+# in the dashboard. Frontend deploys separately on Vercel (see docs/DEPLOYMENT.md).
+services:
+  - type: web
+    name: modern-colours-api
+    runtime: node
+    rootDir: backend
+    plan: free
+    # --include=dev so the build has the Nest CLI / Prisma CLI / TypeScript.
+    # migrate deploy applies the schema; seed is idempotent (creates the admin only
+    # if the users table is empty). Both run with DATABASE_URL available at build.
+    buildCommand: npm ci --include=dev && npx prisma generate && npx prisma migrate deploy && npm run seed && npm run build
+    startCommand: npm run start:prod
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_EXPIRES_IN
+        value: 12h
+      - key: STORAGE_DRIVER
+        value: r2
+      - key: CLAUDE_MODEL
+        value: claude-opus-4-8
+      - key: SEED_ADMIN_NAME
+        value: Factory Admin
+      # ── Secrets — set these in the Render dashboard (never commit) ──
+      - key: DATABASE_URL          # Neon connection string (sslmode=require)
+        sync: false
+      - key: JWT_SECRET            # openssl rand -hex 32  (≥32 chars)
+        sync: false
+      - key: ENCRYPTION_KEY        # openssl rand -hex 32  (exactly 64 hex chars)
+        sync: false
+      - key: CORS_ORIGIN           # the Vercel app URL, e.g. https://modern-colours.vercel.app
+        sync: false
+      - key: SEED_ADMIN_EMAIL      # initial admin login
+        sync: false
+      - key: SEED_ADMIN_PASSWORD   # strong password; change after first login
+        sync: false
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET
+        sync: false
+      - key: R2_ENDPOINT           # https://<account-id>.r2.cloudflarestorage.com
+        sync: false
