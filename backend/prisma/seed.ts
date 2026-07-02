@@ -11,14 +11,9 @@ const prisma = new PrismaClient();
 async function main() {
   const email = process.env.SEED_ADMIN_EMAIL ?? 'admin@moderncolours.local';
   const name = process.env.SEED_ADMIN_NAME ?? 'Factory Admin';
-  // No default password — refuse to seed a known/guessable bootstrap credential.
-  const password = process.env.SEED_ADMIN_PASSWORD;
-  if (!password || password.length < 8) {
-    throw new Error(
-      'SEED_ADMIN_PASSWORD is required (min 8 chars). Set it in backend/.env before seeding.',
-    );
-  }
 
+  // Idempotent short-circuit FIRST: once any user exists, re-running is a no-op and
+  // must not require SEED_ADMIN_PASSWORD — so this stays safe to run on every deploy.
   const userCount = await prisma.user.count();
   if (userCount > 0) {
     const existing = await prisma.user.findUnique({ where: { email } });
@@ -27,6 +22,14 @@ async function main() {
         (existing ? ` Admin "${email}" present.` : ''),
     );
     return;
+  }
+
+  // Only the first-ever create needs a password — refuse a known/guessable default.
+  const password = process.env.SEED_ADMIN_PASSWORD;
+  if (!password || password.length < 8) {
+    throw new Error(
+      'SEED_ADMIN_PASSWORD is required (min 8 chars) to create the initial admin.',
+    );
   }
 
   const passwordHash = await bcrypt.hash(password, 10);
