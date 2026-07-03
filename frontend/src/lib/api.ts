@@ -5,7 +5,17 @@
 // Same-origin by default — the Vite dev server proxies /api to the backend
 // (so the phone camera works over HTTPS with no CORS / mixed-content issues).
 // Override with VITE_API_URL for a separately-hosted API.
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? '/api'
+// Normalize common misconfigurations: a bare hostname (no scheme) would otherwise
+// be fetched as a RELATIVE path against the frontend origin (→ 404/405), and a
+// missing /api suffix would miss the backend's global prefix.
+function normalizeApiBase(raw: string | undefined): string {
+  let base = (raw ?? '/api').trim().replace(/\/+$/, '')
+  if (!base) return '/api'
+  if (!base.startsWith('/') && !/^https?:\/\//i.test(base)) base = `https://${base}`
+  if (!/\/api$/i.test(base)) base = `${base}/api`
+  return base
+}
+const API_BASE_URL = normalizeApiBase(import.meta.env.VITE_API_URL)
 const TOKEN_KEY = 'mc_token'
 
 export class ApiError extends Error {
