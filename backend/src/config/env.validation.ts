@@ -7,7 +7,24 @@
 export function validateEnv(config: Record<string, unknown>): Record<string, unknown> {
   const errors: string[] = [];
 
-  const str = (k: string) => (typeof config[k] === 'string' ? (config[k] as string) : undefined);
+  // Self-heal dashboard paste accidents: adopt values whose variable NAME carries
+  // stray whitespace (e.g. "ENCRYPTION_KEY " set in a PaaS UI is a different env var).
+  for (const key of Object.keys(config)) {
+    const clean = key.trim();
+    if (clean !== key && config[clean] === undefined) {
+      config[clean] = config[key];
+    }
+  }
+
+  // Trim string values (trailing newlines/spaces from copy-paste) and write the
+  // cleaned value back so ConfigService serves the sanitized version everywhere.
+  const str = (k: string) => {
+    const v = config[k];
+    if (typeof v !== 'string') return undefined;
+    const t = v.trim();
+    if (t !== v) config[k] = t;
+    return t || undefined;
+  };
 
   const dbUrl = str('DATABASE_URL');
   if (!dbUrl) errors.push('DATABASE_URL is required');
@@ -22,7 +39,14 @@ export function validateEnv(config: Record<string, unknown>): Record<string, unk
 
   const enc = str('ENCRYPTION_KEY');
   if (!enc || !/^[0-9a-fA-F]{64}$/.test(enc)) {
-    errors.push('ENCRYPTION_KEY is required and must be 64 hex chars / 32 bytes (use: openssl rand -hex 32)');
+    // Diagnostics print lengths and variable NAMES only — never secret values.
+    // JSON.stringify exposes invisible characters in names (e.g. "ENCRYPTION_KEY ").
+    const related = Object.keys(config).filter((k) => k.toUpperCase().includes('ENCRYPT'));
+    errors.push(
+      'ENCRYPTION_KEY is required and must be 64 hex chars / 32 bytes (use: openssl rand -hex 32). ' +
+        `[diagnostics] received: ${enc === undefined ? 'nothing' : `${enc.length}-char value`}; ` +
+        `env names containing "ENCRYPT": ${JSON.stringify(related)}`,
+    );
   }
   if (enc && /^0+$/.test(enc)) {
     errors.push('ENCRYPTION_KEY must not be the all-zero placeholder value');

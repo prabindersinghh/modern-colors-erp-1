@@ -19,7 +19,7 @@ export class CryptoService implements OnModuleInit {
   constructor(private readonly config: ConfigService) {}
 
   onModuleInit() {
-    const hex = this.config.getOrThrow<string>('ENCRYPTION_KEY');
+    const hex = this.config.getOrThrow<string>('ENCRYPTION_KEY').trim();
     this.key = Buffer.from(hex, 'hex');
     if (this.key.length !== 32) {
       throw new Error('ENCRYPTION_KEY must decode to 32 bytes (64 hex chars)');
