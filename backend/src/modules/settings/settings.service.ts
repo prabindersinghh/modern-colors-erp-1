@@ -130,14 +130,26 @@ export class SettingsService {
   /**
    * INTERNAL ONLY — decrypts the stored key for server-side Claude calls
    * (AI extraction). Never exposed via any controller (I2).
+   * Returns null when no key is stored OR the ciphertext cannot be decrypted
+   * (e.g. ENCRYPTION_KEY changed since the key was saved) — callers then surface
+   * "No Claude API key configured" so the admin simply re-enters it in Settings.
    */
   async getDecryptedKey(): Promise<string | null> {
     const row = await this.prisma.setting.findUnique({ where: { key: CLAUDE_API_KEY } });
     if (!row) return null;
-    return this.crypto.decrypt({
-      ciphertext: row.valueEncrypted,
-      iv: row.iv,
-      authTag: row.authTag,
-    });
+    try {
+      return this.crypto.decrypt({
+        ciphertext: row.valueEncrypted,
+        iv: row.iv,
+        authTag: row.authTag,
+      });
+    } catch {
+      // eslint-disable-next-line no-console
+      console.warn(
+        'Stored Claude API key could not be decrypted (ENCRYPTION_KEY changed?). ' +
+          'Treating as not configured — re-enter the key in Settings.',
+      );
+      return null;
+    }
   }
 }
