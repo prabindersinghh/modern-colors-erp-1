@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams, Link } from 'react-router-dom'
-import { Printer, QrCode } from 'lucide-react'
+import { Printer, QrCode, ImageDown } from 'lucide-react'
 import { api } from '@/lib/api'
-import type { Material, Paginated, PurchaseOrder } from '@/types/api'
+import type { Paginated, PurchaseOrder } from '@/types/api'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -42,30 +42,65 @@ function RegisteredPoPicker() {
   )
 }
 
+interface LabelUnit {
+  id: string
+  uniqueId: string
+  materialName: string
+  sku: string | null
+  hsnCode: string | null
+  status: string
+  qrImage: string | null
+}
+
 function LabelsForPo({ poId }: { poId: string }) {
-  const [units, setUnits] = useState<Material[]>([])
+  const [units, setUnits] = useState<LabelUnit[]>([])
+  const [busy, setBusy] = useState<null | 'pdf' | 'zip'>(null)
   useEffect(() => {
     api
-      .get<Paginated<Material>>(`/materials?poId=${poId}&pageSize=500`)
-      .then((r) => setUnits(r.data))
+      .get<LabelUnit[]>(`/purchase-orders/${poId}/units`)
+      .then(setUnits)
       .catch(() => {})
   }, [poId])
 
-  const download = () =>
-    api
-      .openBlob(`/purchase-orders/${poId}/labels.pdf`)
-      .catch(() => toast({ variant: 'destructive', title: 'Could not open labels PDF' }))
+  const downloadPdf = async () => {
+    setBusy('pdf')
+    try {
+      await api.openBlob(`/purchase-orders/${poId}/labels.pdf`)
+    } catch {
+      toast({ variant: 'destructive', title: 'Could not open labels PDF' })
+    } finally {
+      setBusy(null)
+    }
+  }
+  const downloadZip = async () => {
+    setBusy('zip')
+    try {
+      await api.downloadBlob(`/purchase-orders/${poId}/labels.zip`, `qr-codes-${poId}.zip`)
+    } catch {
+      toast({ variant: 'destructive', title: 'Could not download ZIP' })
+    } finally {
+      setBusy(null)
+    }
+  }
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm">
           <span className="font-medium">{units.length}</span> QR-coded units
         </p>
-        <Button onClick={download} className="gap-1.5" disabled={units.length === 0}>
-          <Printer className="h-4 w-4" /> Print label sheet (PDF)
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={downloadPdf} className="gap-1.5" disabled={!units.length || busy !== null}>
+            <Printer className="h-4 w-4" /> {busy === 'pdf' ? 'Preparing…' : 'Label sheet (PDF)'}
+          </Button>
+          <Button variant="outline" onClick={downloadZip} className="gap-1.5" disabled={!units.length || busy !== null}>
+            <ImageDown className="h-4 w-4" /> {busy === 'zip' ? 'Zipping…' : 'Individual PNGs (ZIP)'}
+          </Button>
+        </div>
       </div>
+      <p className="text-xs text-muted-foreground">
+        Labels are 3×1.5" stickers. The ZIP has one PNG per unit, named by unique ID (e.g. MC-000001.png).
+      </p>
 
       {units.length === 0 ? (
         <EmptyState icon={QrCode} title="No units for this PO" />
@@ -75,6 +110,7 @@ function LabelsForPo({ poId }: { poId: string }) {
             <TableHeader>
               <TableRow>
                 <TableHead className="w-10">S.No</TableHead>
+                <TableHead className="w-16">QR</TableHead>
                 <TableHead>Unique ID</TableHead>
                 <TableHead className="min-w-[180px]">Material</TableHead>
                 <TableHead>HSN Code</TableHead>
@@ -86,6 +122,13 @@ function LabelsForPo({ poId }: { poId: string }) {
               {units.map((m, i) => (
                 <TableRow key={m.id}>
                   <TableCell className="text-xs text-muted-foreground">{i + 1}</TableCell>
+                  <TableCell>
+                    {m.qrImage ? (
+                      <img src={m.qrImage} alt={m.uniqueId} className="h-10 w-10 rounded border" />
+                    ) : (
+                      <QrCode className="h-5 w-5 text-muted-foreground" />
+                    )}
+                  </TableCell>
                   <TableCell className="font-mono text-xs">{m.uniqueId}</TableCell>
                   <TableCell className="whitespace-normal break-words font-medium">{m.materialName}</TableCell>
                   <TableCell className="font-mono text-xs">{m.hsnCode ?? '—'}</TableCell>

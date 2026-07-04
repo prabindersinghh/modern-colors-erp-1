@@ -115,6 +115,22 @@ export const api = {
     setTimeout(() => URL.revokeObjectURL(url), 60_000)
   },
 
+  // Download a binary endpoint to a file (bearer token; blob URLs drop the server
+  // filename, so we set it explicitly on the anchor).
+  downloadBlob: async (path: string, filename: string) => {
+    const res = await fetch(`${API_BASE_URL}${path}`, { headers: authHeaders() })
+    if (!res.ok) throw new ApiError(`Download failed (${res.status})`, res.status)
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 60_000)
+  },
+
   // Fetch a binary endpoint (with the bearer token) as an object URL + content type,
   // for embedding (e.g. the PO document preview). Caller must revoke the URL.
   fetchBlobUrl: async (path: string): Promise<{ url: string; contentType: string }> => {
