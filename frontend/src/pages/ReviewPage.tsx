@@ -32,10 +32,10 @@ function ReviewPicker() {
     )
   }, [])
   if (pos.length === 0)
-    return <EmptyState icon={ClipboardCheck} title="Nothing to review" description="Upload a PO to begin." />
+    return <EmptyState icon={ClipboardCheck} title="Nothing to review" description="Upload an invoice to begin." />
   return (
     <div className="space-y-2">
-      <p className="text-sm text-muted-foreground">Purchase orders awaiting review:</p>
+      <p className="text-sm text-muted-foreground">Invoices awaiting review:</p>
       {pos.map((p) => (
         <Link
           key={p.id}
@@ -53,7 +53,7 @@ function ReviewPicker() {
   )
 }
 
-/** The uploaded PO document (image or PDF) rendered for visual verification (item 3). */
+/** The uploaded invoice document (image or PDF) rendered for visual verification (item 3). */
 function PoDocumentPreview({ poId }: { poId: string }) {
   const [state, setState] = useState<{ url: string; isPdf: boolean } | null>(null)
   const [failed, setFailed] = useState(false)
@@ -75,7 +75,7 @@ function PoDocumentPreview({ poId }: { poId: string }) {
     }
   }, [poId])
 
-  if (failed) return null // manual PO / no file — nothing to preview
+  if (failed) return null // manual invoice / no file — nothing to preview
   return (
     <Card className="xl:sticky xl:top-4">
       <CardHeader className="pb-2">
@@ -89,11 +89,11 @@ function PoDocumentPreview({ poId }: { poId: string }) {
             Loading document…
           </div>
         ) : state.isPdf ? (
-          <iframe title="PO document" src={state.url} className="h-[60vh] w-full rounded border" />
+          <iframe title="Invoice document" src={state.url} className="h-[60vh] w-full rounded border" />
         ) : (
           <img
             src={state.url}
-            alt="Purchase order"
+            alt="Invoice"
             className="max-h-[70vh] w-full rounded border object-contain"
           />
         )}
@@ -126,8 +126,8 @@ function ReviewOne({ poId }: { poId: string }) {
       if (res.fallback) {
         toast({
           variant: 'destructive',
-          title: 'AI extraction unavailable',
-          description: `${res.message ?? 'Enter the PO manually below.'}`,
+          title: 'Invoice extraction unavailable',
+          description: `${res.message ?? 'Enter the invoice manually below.'}`,
         })
       } else {
         toast({ title: 'Extracted', description: 'Review the materials below before confirming.' })
@@ -166,7 +166,7 @@ function ReviewOne({ poId }: { poId: string }) {
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center justify-between text-base">
-            <span>{po.poNumber ?? po.fileName ?? 'Purchase order'}</span>
+            <span>{po.poNumber ?? po.fileName ?? 'Invoice'}</span>
             <Badge variant="outline">{po.status.replace(/_/g, ' ')}</Badge>
           </CardTitle>
         </CardHeader>
@@ -223,7 +223,7 @@ function ReviewOne({ poId }: { poId: string }) {
               <AddLine poId={poId} onAdded={load} />
               {largeCount && (
                 <p className="rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-700">
-                  This PO will create <span className="font-semibold">{totalUnits}</span> QR codes.
+                  This invoice will create <span className="font-semibold">{totalUnits}</span> QR codes.
                   Double-check the <span className="font-semibold">Qty</span> column reflects the
                   number of physical bags/drums (not the total weight in Kg).
                 </p>

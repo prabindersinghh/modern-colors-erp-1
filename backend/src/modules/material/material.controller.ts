@@ -100,7 +100,7 @@ export class MaterialController {
   // ── helpers ──
   private async labelItems(poId: string): Promise<LabelInput[]> {
     const materials = await this.materials.forPurchaseOrder(poId);
-    if (materials.length === 0) throw new NotFoundException('No units for this purchase order');
+    if (materials.length === 0) throw new NotFoundException('No units for this invoice');
     return materials.map((m) => ({ payload: this.payloadFor(m) }));
   }
 

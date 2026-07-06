@@ -24,10 +24,10 @@ function RegisteredPoPicker() {
       .catch(() => {})
   }, [])
   if (pos.length === 0)
-    return <EmptyState icon={QrCode} title="No registered POs" description="Confirm a PO to generate QR labels." />
+    return <EmptyState icon={QrCode} title="No registered invoices" description="Confirm an invoice to generate QR labels." />
   return (
     <div className="space-y-2">
-      <p className="text-sm text-muted-foreground">Registered purchase orders:</p>
+      <p className="text-sm text-muted-foreground">Registered invoices:</p>
       {pos.map((p) => (
         <Link
           key={p.id}
@@ -103,7 +103,7 @@ function LabelsForPo({ poId }: { poId: string }) {
       </p>
 
       {units.length === 0 ? (
-        <EmptyState icon={QrCode} title="No units for this PO" />
+        <EmptyState icon={QrCode} title="No units for this invoice" />
       ) : (
         <div className="overflow-x-auto rounded-md border">
           <Table>

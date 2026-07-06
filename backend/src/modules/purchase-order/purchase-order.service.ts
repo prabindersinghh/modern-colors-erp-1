@@ -110,13 +110,13 @@ export class PurchaseOrderService {
         _count: { select: { materials: true } },
       },
     });
-    if (!po) throw new NotFoundException('Purchase order not found');
+    if (!po) throw new NotFoundException('Invoice not found');
     return po;
   }
 
   async getFile(id: string): Promise<{ buffer: Buffer; fileName: string; mimeType: string }> {
     const po = await this.prisma.purchaseOrder.findUnique({ where: { id } });
-    if (!po || !po.fileKey) throw new NotFoundException('PO file not found');
+    if (!po || !po.fileKey) throw new NotFoundException('Invoice file not found');
     const buffer = await this.storage.get(po.fileKey);
     return { buffer, fileName: po.fileName ?? 'po', mimeType: this.mimeFor(po.fileName) };
   }
@@ -128,16 +128,16 @@ export class PurchaseOrderService {
    */
   async extract(id: string, actorId: string) {
     const po = await this.prisma.purchaseOrder.findUnique({ where: { id } });
-    if (!po) throw new NotFoundException('Purchase order not found');
+    if (!po) throw new NotFoundException('Invoice not found');
     if (!po.fileKey) {
-      throw new BadRequestException('This PO has no uploaded file to extract.');
+      throw new BadRequestException('This invoice has no uploaded file to extract.');
     }
 
     let buffer: Buffer;
     try {
       buffer = await this.storage.get(po.fileKey);
     } catch {
-      throw new BadRequestException('PO file could not be read from storage.');
+      throw new BadRequestException('Invoice file could not be read from storage.');
     }
 
     try {
@@ -181,7 +181,7 @@ export class PurchaseOrderService {
   /** Manual fallback entry (I7): operator types the PO; we still run catalogue match. */
   async manualEntry(id: string, dto: ManualEntryDto, actorId: string) {
     const po = await this.prisma.purchaseOrder.findUnique({ where: { id } });
-    if (!po) throw new NotFoundException('Purchase order not found');
+    if (!po) throw new NotFoundException('Invoice not found');
 
     const items: ExtractedLineItem[] = dto.lineItems.map((li) => ({
       materialName: li.materialName,
@@ -345,14 +345,14 @@ export class PurchaseOrderService {
       where: { id },
       include: { lineItems: true },
     });
-    if (!po) throw new NotFoundException('Purchase order not found');
+    if (!po) throw new NotFoundException('Invoice not found');
     if (po.status !== POStatus.AI_EXTRACTED) {
       throw new BadRequestException(
-        `PO must be reviewed (status AI_EXTRACTED) before confirmation; current status is ${po.status}.`,
+        `Invoice must be reviewed (status AI_EXTRACTED) before confirmation; current status is ${po.status}.`,
       );
     }
     if (po.lineItems.length === 0) {
-      throw new BadRequestException('Cannot confirm a purchase order with no line items.');
+      throw new BadRequestException('Cannot confirm an invoice with no line items.');
     }
 
     const created = await this.prisma.$transaction(
@@ -396,7 +396,7 @@ export class PurchaseOrderService {
 
   private async assertEditable(poId: string) {
     const po = await this.prisma.purchaseOrder.findUnique({ where: { id: poId } });
-    if (!po) throw new NotFoundException('Purchase order not found');
+    if (!po) throw new NotFoundException('Invoice not found');
     if (po.status !== POStatus.AI_EXTRACTED) {
       throw new BadRequestException(
         `Line items can only be edited before confirmation (status AI_EXTRACTED); current status is ${po.status}.`,

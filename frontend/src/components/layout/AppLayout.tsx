@@ -5,8 +5,8 @@ import { Navbar } from './Navbar'
 
 // Phase 1 page titles. Keep in sync with Sidebar nav + App routes.
 const pageTitles: Record<string, { title: string; subtitle?: string }> = {
-  '/': { title: 'Dashboard', subtitle: "Today's POs, materials received, pending scans/weighing" },
-  '/purchase-orders': { title: 'PO Upload', subtitle: 'Upload a purchase order for AI extraction' },
+  '/': { title: 'Dashboard', subtitle: "Today's invoices, materials received, pending scans/weighing" },
+  '/purchase-orders': { title: 'Invoice Upload', subtitle: 'Upload an invoice for AI extraction' },
   '/review': { title: 'Review & Confirm', subtitle: 'Verify and correct extracted materials before saving' },
   '/labels': { title: 'QR Labels', subtitle: 'Generate and print QR labels per physical unit' },
   '/receiving': { title: 'Scan & Weigh', subtitle: 'Scan units on arrival and confirm receiving weight' },

@@ -51,7 +51,7 @@ export function PurchaseOrdersPage() {
       const form = new FormData()
       form.append('file', file)
       const po = await api.postForm<PurchaseOrder>('/purchase-orders', form)
-      toast({ title: 'PO uploaded', description: 'Run extraction or enter details on the review screen.' })
+      toast({ title: 'Invoice uploaded', description: 'Run extraction or enter details on the review screen.' })
       nav(`/review/${po.id}`)
     } catch (err) {
       toast({
@@ -120,9 +120,9 @@ export function PurchaseOrdersPage() {
                     <Camera className="h-6 w-6 text-primary" />
                   </div>
                   <div>
-                    <p className="text-sm font-medium">Scan the purchase order</p>
+                    <p className="text-sm font-medium">Scan the invoice</p>
                     <p className="text-xs text-muted-foreground">
-                      Point your camera at the paper PO / invoice and capture it
+                      Point your camera at the paper invoice and capture it
                     </p>
                   </div>
                   <Button size="lg" className="gap-2" onClick={() => setCameraOpen(true)} disabled={uploading}>
@@ -168,15 +168,15 @@ export function PurchaseOrdersPage() {
       )}
 
       <div>
-        <h2 className="mb-2 text-sm font-semibold">Recent purchase orders</h2>
+        <h2 className="mb-2 text-sm font-semibold">Recent invoices</h2>
         {pos.length === 0 ? (
-          <EmptyState icon={FileText} title="No purchase orders yet" />
+          <EmptyState icon={FileText} title="No invoices yet" />
         ) : (
           <div className="overflow-x-auto rounded-md border">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>PO #</TableHead>
+                  <TableHead>Invoice #</TableHead>
                   <TableHead>Supplier</TableHead>
                   <TableHead>File</TableHead>
                   <TableHead>Lines</TableHead>
@@ -234,7 +234,7 @@ interface ManualLine {
 
 const BLANK_LINE: ManualLine = { materialName: '', hsnCode: '', sku: '', quantity: '1', unit: '', weight: '' }
 
-/** Option B — type a PO by hand (no document). Goes through the same review gate. */
+/** Option B — type an invoice by hand (no document). Goes through the same review gate. */
 function ManualPoForm() {
   const nav = useNavigate()
   const [poNumber, setPoNumber] = useState('')
@@ -268,12 +268,12 @@ function ManualPoForm() {
         supplier: supplier.trim() || undefined,
         lineItems,
       })
-      toast({ title: 'PO created', description: 'Review the details, then confirm to register.' })
+      toast({ title: 'Invoice created', description: 'Review the details, then confirm to register.' })
       nav(`/review/${po.id}`)
     } catch (err) {
       toast({
         variant: 'destructive',
-        title: 'Could not create PO',
+        title: 'Could not create invoice',
         description: err instanceof ApiError ? err.message : 'Unexpected error',
       })
     } finally {
@@ -285,7 +285,7 @@ function ManualPoForm() {
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1.5">
-          <Label htmlFor="poNumber">PO number</Label>
+          <Label htmlFor="poNumber">Invoice number</Label>
           <Input id="poNumber" value={poNumber} onChange={(e) => setPoNumber(e.target.value)} placeholder="e.g. PKD/26-27/120" />
         </div>
         <div className="space-y-1.5">
@@ -340,7 +340,7 @@ function ManualPoForm() {
 
       <div className="flex justify-end">
         <Button onClick={submit} disabled={busy || !valid} className="gap-1.5">
-          {busy ? 'Creating…' : 'Create PO & review'}
+          {busy ? 'Creating…' : 'Create invoice & review'}
         </Button>
       </div>
     </div>

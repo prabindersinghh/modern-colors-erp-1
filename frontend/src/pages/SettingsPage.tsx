@@ -54,7 +54,7 @@ export function SettingsPage() {
             <KeyRound className="h-4 w-4" /> Claude API key
           </CardTitle>
           <CardDescription>
-            Used server-side only to extract purchase orders. Encrypted at rest; never displayed in
+            Used server-side only to extract invoices. Encrypted at rest; never displayed in
             full after saving.
           </CardDescription>
         </CardHeader>

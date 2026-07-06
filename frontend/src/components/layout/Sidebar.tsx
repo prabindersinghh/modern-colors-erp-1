@@ -17,7 +17,7 @@ import type { Role } from '@/types/api'
 // Phase 1 navigation. `roles` omitted = visible to every authenticated user.
 const navItems: { to: string; label: string; icon: typeof LayoutDashboard; roles?: Role[] }[] = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/purchase-orders', label: 'PO Upload', icon: FileUp },
+  { to: '/purchase-orders', label: 'Invoice Upload', icon: FileUp },
   { to: '/review', label: 'Review & Confirm', icon: ClipboardCheck },
   { to: '/labels', label: 'QR Labels', icon: QrCode },
   { to: '/receiving', label: 'Scan & Weigh', icon: ScanLine },

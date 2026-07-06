@@ -128,7 +128,7 @@ export class QrService {
       page.drawText(this.fit(`${label}${value}`, font, 8, maxW), { x: tx, y: ty, size: 8, font, color: ink });
       ty -= 10;
     };
-    small('PO: ', payload.poNumber);
+    small('Inv: ', payload.poNumber);
     if (payload.hsnCode) small('HSN: ', payload.hsnCode);
     small('', new Date(payload.date).toISOString().slice(0, 10));
 

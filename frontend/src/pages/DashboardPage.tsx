@@ -26,7 +26,7 @@ export function DashboardPage() {
   return (
     <div className="space-y-6">
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        <DashboardCard label="Today's POs" value={data.todaysPurchaseOrders} icon={FileText} />
+        <DashboardCard label="Today's Invoices" value={data.todaysPurchaseOrders} icon={FileText} />
         <DashboardCard label="Materials Received" value={data.materialsReceived.total} icon={PackageCheck} changeLabel={`${data.materialsReceived.today} today`} />
         <DashboardCard label="Pending Scanning" value={data.pendingScanning} icon={ScanLine} />
         <DashboardCard label="Pending Weighing" value={data.pendingWeighing} icon={Scale} />

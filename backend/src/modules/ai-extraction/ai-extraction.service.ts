@@ -152,7 +152,7 @@ export class AiExtractionService {
 
       const toolUse = response.content.find((b) => b.type === 'tool_use');
       if (!toolUse || toolUse.type !== 'tool_use') {
-        throw new ExtractionError('parse', 'Claude did not return structured PO data.');
+        throw new ExtractionError('parse', 'Claude did not return structured invoice data.');
       }
       return this.normalize(toolUse.input as Record<string, unknown>);
     } catch (err) {
