@@ -12,6 +12,7 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
     "seed": "ts-node prisma/seed.ts",
+    "seed:phase2": "ts-node prisma/seed-phase2-roles.ts",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:e2e": "jest --config ./test/jest-e2e.json",
