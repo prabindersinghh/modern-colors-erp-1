@@ -120,11 +120,10 @@ export interface ApiKeyStatus {
 }
 
 // ── Phase 2 ──
-export type RequestStatus = 'PENDING' | 'APPROVED' | 'PARTIAL' | 'REJECTED'
+export type RequestStatus = 'PENDING' | 'IN_PROGRESS' | 'APPROVED' | 'PARTIAL' | 'REJECTED'
 
-export interface ProductionRequest {
+export interface ProductionRequestItem {
   id: string
-  department: Department
   materialName: string
   sku: string | null
   catalogueItemId: string | null
@@ -133,15 +132,28 @@ export interface ProductionRequest {
   approvedKg: number | null
   rejectionReason: string | null
   issuedKg: number
+  reviewedAt: string | null
   fulfilledAt: string | null
+}
+
+export interface ProductionRequest {
+  id: string
+  department: Department
+  note: string | null
+  status: RequestStatus // overall (derived from items)
+  reviewedAt: string | null
   createdAt: string
   requestedBy?: { id: string; name: string; department: Department | null }
   reviewedBy?: { id: string; name: string } | null
+  items: ProductionRequestItem[]
 }
 
 export interface RequestSummary {
-  total: number
-  byStatus: Record<RequestStatus, number>
-  totalRequestedKg: number
-  totalIssuedKg: number
+  requests: { total: number; byStatus: Record<RequestStatus, number> }
+  items: {
+    total: number
+    byStatus: Record<RequestStatus, number>
+    totalRequestedKg: number
+    totalIssuedKg: number
+  }
 }

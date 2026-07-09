@@ -1,8 +1,17 @@
-import { IsNumber, IsOptional, IsPositive, IsString, MinLength } from 'class-validator';
+import { Type } from 'class-transformer';
+import {
+  ArrayMinSize,
+  IsArray,
+  IsNumber,
+  IsOptional,
+  IsPositive,
+  IsString,
+  MinLength,
+  ValidateNested,
+} from 'class-validator';
 
-// A production head raises a per-material request (Override 2). The department is NEVER
-// accepted from the client — it is forced to the head's own department server-side.
-export class CreateProductionRequestDto {
+// One material line within a request.
+export class RequestLineItemDto {
   @IsString()
   @MinLength(1)
   materialName!: string;
@@ -11,7 +20,6 @@ export class CreateProductionRequestDto {
   @IsString()
   sku?: string;
 
-  // Optional link to the Master Catalogue item the head picked.
   @IsOptional()
   @IsString()
   catalogueItemId?: string;
@@ -19,4 +27,18 @@ export class CreateProductionRequestDto {
   @IsNumber()
   @IsPositive()
   requestedKg!: number;
+}
+
+// A production head raises ONE request holding many material lines (a batch's worth).
+// The department is NEVER accepted from the client — it is forced to the head's own.
+export class CreateProductionRequestDto {
+  @IsOptional()
+  @IsString()
+  note?: string;
+
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => RequestLineItemDto)
+  items!: RequestLineItemDto[];
 }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { PackagePlus, Send, Search, X, ClipboardList } from 'lucide-react'
+import { PackagePlus, Send, Search, X, ClipboardList, Plus, Trash2 } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import type {
@@ -20,14 +20,15 @@ import { toast } from '@/hooks/useToast'
 
 export const STATUS_STYLE: Record<RequestStatus, { label: string; cls: string }> = {
   PENDING: { label: 'Pending', cls: 'bg-amber-500/15 text-amber-600 border-amber-500/30' },
+  IN_PROGRESS: { label: 'In progress', cls: 'bg-indigo-500/15 text-indigo-600 border-indigo-500/30' },
   APPROVED: { label: 'Approved', cls: 'bg-success/15 text-success border-success/30' },
-  PARTIAL: { label: 'Partially fulfilled', cls: 'bg-blue-500/15 text-blue-600 border-blue-500/30' },
+  PARTIAL: { label: 'Partial', cls: 'bg-blue-500/15 text-blue-600 border-blue-500/30' },
   REJECTED: { label: 'Rejected', cls: 'bg-destructive/15 text-destructive border-destructive/30' },
 }
 
 export function StatusBadge({ status }: { status: RequestStatus }) {
   const s = STATUS_STYLE[status]
-  return <span className={`inline-block rounded border px-2 py-0.5 text-xs ${s.cls}`}>{s.label}</span>
+  return <span className={`inline-block whitespace-nowrap rounded border px-2 py-0.5 text-xs ${s.cls}`}>{s.label}</span>
 }
 
 export function RequestsPage() {
@@ -47,11 +48,12 @@ export function RequestsPage() {
       {isHead && <NewRequestForm onCreated={load} />}
 
       {summary && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <Stat label="Pending" value={summary.byStatus.PENDING} />
-          <Stat label="Approved" value={summary.byStatus.APPROVED} />
-          <Stat label="Partial" value={summary.byStatus.PARTIAL} />
-          <Stat label="Rejected" value={summary.byStatus.REJECTED} />
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+          <Stat label="Pending" value={summary.requests.byStatus.PENDING} />
+          <Stat label="In progress" value={summary.requests.byStatus.IN_PROGRESS} />
+          <Stat label="Approved" value={summary.requests.byStatus.APPROVED} />
+          <Stat label="Partial" value={summary.requests.byStatus.PARTIAL} />
+          <Stat label="Rejected" value={summary.requests.byStatus.REJECTED} />
         </div>
       )}
 
@@ -64,42 +66,10 @@ export function RequestsPage() {
             description={isHead ? 'Raise a material request above.' : 'No production requests have been raised.'}
           />
         ) : (
-          <div className="overflow-x-auto rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-10">S.No</TableHead>
-                  {!isHead && <TableHead>Dept</TableHead>}
-                  <TableHead className="min-w-[180px]">Material</TableHead>
-                  <TableHead>SKU</TableHead>
-                  <TableHead className="text-right">Requested (kg)</TableHead>
-                  <TableHead className="text-right">Approved (kg)</TableHead>
-                  <TableHead className="text-right">Issued (kg)</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Date</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {requests.map((r, i) => (
-                  <TableRow key={r.id}>
-                    <TableCell className="text-xs text-muted-foreground">{i + 1}</TableCell>
-                    {!isHead && <TableCell><Badge variant="outline">{r.department}</Badge></TableCell>}
-                    <TableCell className="whitespace-normal break-words font-medium">
-                      {r.materialName}
-                      {r.status === 'REJECTED' && r.rejectionReason && (
-                        <div className="text-xs font-normal text-destructive">Reason: {r.rejectionReason}</div>
-                      )}
-                    </TableCell>
-                    <TableCell className="font-mono text-xs">{r.sku ?? '—'}</TableCell>
-                    <TableCell className="text-right">{r.requestedKg}</TableCell>
-                    <TableCell className="text-right">{r.approvedKg ?? '—'}</TableCell>
-                    <TableCell className="text-right">{r.issuedKg}</TableCell>
-                    <TableCell><StatusBadge status={r.status} /></TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{r.createdAt.slice(0, 10)}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+          <div className="space-y-3">
+            {requests.map((r) => (
+              <RequestCard key={r.id} request={r} showDepartment={!isHead} />
+            ))}
           </div>
         )}
       </div>
@@ -118,31 +88,105 @@ function Stat({ label, value }: { label: string; value: number }) {
   )
 }
 
+function RequestCard({ request, showDepartment }: { request: ProductionRequest; showDepartment: boolean }) {
+  const totalReq = request.items.reduce((s, i) => s + i.requestedKg, 0)
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0 pb-2">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
+            {showDepartment && <Badge variant="outline">{request.department}</Badge>}
+            <span>{request.items.length} material{request.items.length === 1 ? '' : 's'}</span>
+            <span className="text-muted-foreground">· {totalReq} kg requested</span>
+          </div>
+          <div className="text-xs text-muted-foreground">
+            {request.requestedBy?.name ?? '—'} · {request.createdAt.slice(0, 10)}
+            {request.note ? ` · ${request.note}` : ''}
+          </div>
+        </div>
+        <StatusBadge status={request.status} />
+      </CardHeader>
+      <CardContent>
+        <div className="overflow-x-auto rounded-md border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-8">#</TableHead>
+                <TableHead className="min-w-[160px]">Material</TableHead>
+                <TableHead>SKU</TableHead>
+                <TableHead className="text-right">Requested</TableHead>
+                <TableHead className="text-right">Approved</TableHead>
+                <TableHead className="text-right">Issued</TableHead>
+                <TableHead>Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {request.items.map((it, i) => (
+                <TableRow key={it.id}>
+                  <TableCell className="text-xs text-muted-foreground">{i + 1}</TableCell>
+                  <TableCell className="whitespace-normal break-words font-medium">
+                    {it.materialName}
+                    {it.status === 'REJECTED' && it.rejectionReason && (
+                      <div className="text-xs font-normal text-destructive">Reason: {it.rejectionReason}</div>
+                    )}
+                  </TableCell>
+                  <TableCell className="font-mono text-xs">{it.sku ?? '—'}</TableCell>
+                  <TableCell className="text-right">{it.requestedKg} kg</TableCell>
+                  <TableCell className="text-right">{it.approvedKg != null ? `${it.approvedKg} kg` : '—'}</TableCell>
+                  <TableCell className="text-right">{it.issuedKg} kg</TableCell>
+                  <TableCell><StatusBadge status={it.status} /></TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
 interface Selected {
   materialName: string
   sku: string | null
   catalogueItemId: string | null
 }
+interface DraftLine {
+  key: number
+  selected: Selected | null
+  kg: string
+}
+let lineKeySeq = 1
 
-/** Head-only: pick a material from the Master Catalogue + KG, then submit. */
+/** Head-only: build a multi-material request, then submit all lines at once. */
 function NewRequestForm({ onCreated }: { onCreated: () => void }) {
-  const [selected, setSelected] = useState<Selected | null>(null)
-  const [kg, setKg] = useState('')
+  const [lines, setLines] = useState<DraftLine[]>([{ key: 0, selected: null, kg: '' }])
+  const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
 
+  const setLine = (key: number, patch: Partial<DraftLine>) =>
+    setLines((prev) => prev.map((l) => (l.key === key ? { ...l, ...patch } : l)))
+  const addLine = () => setLines((prev) => [...prev, { key: lineKeySeq++, selected: null, kg: '' }])
+  const removeLine = (key: number) =>
+    setLines((prev) => (prev.length === 1 ? prev : prev.filter((l) => l.key !== key)))
+
+  const validLines = lines.filter((l) => l.selected && Number(l.kg) > 0)
+
   const submit = async () => {
-    if (!selected || !(Number(kg) > 0)) return
+    if (validLines.length === 0) return
     setBusy(true)
     try {
       await api.post('/production-requests', {
-        materialName: selected.materialName,
-        sku: selected.sku ?? undefined,
-        catalogueItemId: selected.catalogueItemId ?? undefined,
-        requestedKg: Number(kg),
+        note: note.trim() || undefined,
+        items: validLines.map((l) => ({
+          materialName: l.selected!.materialName,
+          sku: l.selected!.sku ?? undefined,
+          catalogueItemId: l.selected!.catalogueItemId ?? undefined,
+          requestedKg: Number(l.kg),
+        })),
       })
-      toast({ title: 'Request raised', description: `${kg} kg ${selected.materialName} — sent to Store.` })
-      setSelected(null)
-      setKg('')
+      toast({ title: 'Request raised', description: `${validLines.length} material${validLines.length === 1 ? '' : 's'} sent to Store.` })
+      setLines([{ key: lineKeySeq++, selected: null, kg: '' }])
+      setNote('')
       onCreated()
     } catch (err) {
       toast({ variant: 'destructive', title: 'Could not raise request', description: err instanceof ApiError ? err.message : '' })
@@ -159,29 +203,61 @@ function NewRequestForm({ onCreated }: { onCreated: () => void }) {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_140px_auto] sm:items-end">
+        <p className="text-xs text-muted-foreground">
+          Add every material this batch needs. Store reviews each line and can accept, partially fulfill, or reject it.
+        </p>
+
+        <div className="space-y-2">
+          {lines.map((l, i) => (
+            <div key={l.key} className="grid gap-2 sm:grid-cols-[24px_minmax(0,1fr)_130px_36px] sm:items-center">
+              <div className="text-xs text-muted-foreground">{i + 1}</div>
+              {l.selected ? (
+                <div className="flex h-9 items-center justify-between rounded-md border bg-muted/40 px-3 text-sm">
+                  <span className="truncate">
+                    {l.selected.materialName}
+                    {l.selected.sku && <span className="ml-2 font-mono text-xs text-muted-foreground">{l.selected.sku}</span>}
+                  </span>
+                  <button type="button" onClick={() => setLine(l.key, { selected: null })} className="text-muted-foreground hover:text-foreground">
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              ) : (
+                <MaterialPicker onSelect={(s) => setLine(l.key, { selected: s })} />
+              )}
+              <Input
+                type="number"
+                min={0}
+                step="any"
+                value={l.kg}
+                onChange={(e) => setLine(l.key, { kg: e.target.value })}
+                placeholder="kg"
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-9 text-destructive"
+                onClick={() => removeLine(l.key)}
+                disabled={lines.length === 1}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+          ))}
+        </div>
+
+        <Button type="button" variant="outline" size="sm" className="gap-1" onClick={addLine}>
+          <Plus className="h-4 w-4" /> Add material
+        </Button>
+
+        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
           <div className="space-y-1.5">
-            <Label>Material</Label>
-            {selected ? (
-              <div className="flex h-9 items-center justify-between rounded-md border bg-muted/40 px-3 text-sm">
-                <span className="truncate">
-                  {selected.materialName}
-                  {selected.sku && <span className="ml-2 font-mono text-xs text-muted-foreground">{selected.sku}</span>}
-                </span>
-                <button type="button" onClick={() => setSelected(null)} className="text-muted-foreground hover:text-foreground">
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-            ) : (
-              <MaterialPicker onSelect={setSelected} />
-            )}
+            <Label htmlFor="note">Note (optional)</Label>
+            <Input id="note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Batch #123" />
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="kg">Quantity (kg)</Label>
-            <Input id="kg" type="number" min={0} step="any" value={kg} onChange={(e) => setKg(e.target.value)} placeholder="e.g. 5" />
-          </div>
-          <Button onClick={submit} disabled={busy || !selected || !(Number(kg) > 0)} className="gap-1.5">
-            <Send className="h-4 w-4" /> {busy ? 'Sending…' : 'Send to Store'}
+          <Button onClick={submit} disabled={busy || validLines.length === 0} className="gap-1.5">
+            <Send className="h-4 w-4" />
+            {busy ? 'Sending…' : `Send ${validLines.length || ''} to Store`.trim()}
           </Button>
         </div>
       </CardContent>

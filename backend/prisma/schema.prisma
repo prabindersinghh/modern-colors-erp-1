@@ -31,12 +31,14 @@ enum Department {
   POWDER
 }
 
-// Phase 2 — production request lifecycle (per-material request → Store review).
+// Phase 2 — request lifecycle. Used per-LINE (PENDING/APPROVED/PARTIAL/REJECTED) and for
+// the parent request overall status (adds IN_PROGRESS when some lines are still pending).
 enum RequestStatus {
-  PENDING // raised by a head, awaiting Store
-  APPROVED // Store accepted the full requested amount
-  PARTIAL // Store accepted a lower amount than requested
-  REJECTED // Store rejected (with a reason)
+  PENDING // awaiting Store
+  IN_PROGRESS // PARENT ONLY — some lines actioned, some still pending
+  APPROVED // line: full accept · parent: every line approved
+  PARTIAL // line: lower approvedKg · parent: reviewed with a mixed outcome
+  REJECTED // line: rejected with a reason · parent: every line rejected
 }
 
 // Phase 2 — stock movement type. Every unit scan offers all three (Override 3).
@@ -269,33 +271,52 @@ model AuditLog {
 
 // ───────────────────────── Phase 2: Production Requests ─────────────────────────
 
-// A per-material request raised by a production head (Override 2 — one material +
-// quantity, NOT a multi-material slip). Store reviews → approve / partial / reject.
+// A request raised by a production head — a HEADER holding many material lines (a full
+// batch's worth of materials). Store reviews each line independently; the parent status
+// is derived from the mix of line statuses.
 model ProductionRequest {
-  id              String        @id @default(uuid())
-  department      Department // forced to the requester's own department (server-side)
-  requestedById   String
-  requestedBy     User          @relation("RequestedBy", fields: [requestedById], references: [id])
-  materialName    String // the requested material (picked from Master Catalogue)
-  sku             String?
-  catalogueItemId String? // optional link to the Master Catalogue item
-  requestedKg     Float
-  status          RequestStatus @default(PENDING)
-  approvedKg      Float? // = requestedKg (full accept) or a lower amount (partial)
-  rejectionReason String?
-  reviewedById    String? // Store user who actioned the request
-  reviewedBy      User?         @relation("ReviewedBy", fields: [reviewedById], references: [id])
-  reviewedAt      DateTime?
-  issuedKg        Float         @default(0) // running total actually issued via verified scans
-  fulfilledAt     DateTime?
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  id            String        @id @default(uuid())
+  department    Department // forced to the requester's own department (server-side)
+  requestedById String
+  requestedBy   User          @relation("RequestedBy", fields: [requestedById], references: [id])
+  note          String? // optional batch label / note
+  status        RequestStatus @default(PENDING) // DERIVED from the line items
+  reviewedById  String? // Store user who last actioned a line
+  reviewedBy    User?         @relation("ReviewedBy", fields: [reviewedById], references: [id])
+  reviewedAt    DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
 
-  transactions StockTransaction[]
+  items ProductionRequestItem[]
 
   @@index([department])
   @@index([status])
   @@index([requestedById])
+}
+
+// One material line within a request. Store accepts / partial-fulfills / rejects each
+// line independently; issues (Step 6) link to a line, not the parent.
+model ProductionRequestItem {
+  id              String            @id @default(uuid())
+  requestId       String
+  request         ProductionRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  materialName    String // picked from the Master Catalogue
+  sku             String?
+  catalogueItemId String?
+  requestedKg     Float
+  status          RequestStatus     @default(PENDING) // PENDING/APPROVED/PARTIAL/REJECTED
+  approvedKg      Float? // = requestedKg (accept) or a lower amount (partial)
+  rejectionReason String?
+  issuedKg        Float             @default(0) // running total issued via verified scans (Step 6)
+  reviewedAt      DateTime?
+  fulfilledAt     DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  transactions StockTransaction[]
+
+  @@index([requestId])
+  @@index([status])
 }
 
 // ───────────────────────── Phase 2: Stock Transactions (APPEND-ONLY) ─────────────────────────
@@ -304,23 +325,23 @@ model ProductionRequest {
 // updated/deleted (extends the I4 audit pattern). Material.balanceKg is updated in
 // the SAME DB transaction so the running balance and log never drift.
 model StockTransaction {
-  id           String             @id @default(uuid())
-  materialId   String // the physical unit that was scanned
-  material     Material           @relation(fields: [materialId], references: [id])
-  type         StockTxnType
-  quantityKg   Float // always > 0
-  department   Department? // required for ADD (from) & DEDUCT (for); null for DISCARD
-  requestId    String? // linked ProductionRequest when request-driven
-  request      ProductionRequest? @relation(fields: [requestId], references: [id])
-  actorId      String // Store user (the sole scanner/issuer)
-  actor        User               @relation("TxnActor", fields: [actorId], references: [id])
-  balanceAfter Float // unit balance snapshot AFTER this txn (reconcile/audit)
-  note         String?
-  createdAt    DateTime           @default(now())
+  id            String                 @id @default(uuid())
+  materialId    String // the physical unit that was scanned
+  material      Material               @relation(fields: [materialId], references: [id])
+  type          StockTxnType
+  quantityKg    Float // always > 0
+  department    Department? // required for ADD (from) & DEDUCT (for); null for DISCARD
+  requestItemId String? // linked request LINE when request-driven (null for standalone scans)
+  requestItem   ProductionRequestItem? @relation(fields: [requestItemId], references: [id])
+  actorId       String // Store user (the sole scanner/issuer)
+  actor         User                   @relation("TxnActor", fields: [actorId], references: [id])
+  balanceAfter  Float // unit balance snapshot AFTER this txn (reconcile/audit)
+  note          String?
+  createdAt     DateTime               @default(now())
 
   @@index([materialId])
   @@index([type])
   @@index([department])
-  @@index([requestId])
+  @@index([requestItemId])
   @@index([createdAt])
 }
