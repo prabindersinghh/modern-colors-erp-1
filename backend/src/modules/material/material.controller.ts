@@ -104,7 +104,10 @@ export class MaterialController {
   async labelsCsv(@Param('poId') poId: string): Promise<StreamableFile> {
     const items = await this.labelItems(poId);
     const cell = (v: unknown) => {
-      const s = v == null ? '' : String(v);
+      let s = v == null ? '' : String(v);
+      // Neutralize CSV formula injection: a leading =,+,-,@,tab,CR makes Excel/Sheets
+      // treat the (invoice-derived) value as a formula. Prefix with an apostrophe.
+      if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
       return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
     const header = [
