@@ -15,6 +15,7 @@ import { MaterialModule } from './modules/material/material.module';
 import { PurchaseOrderModule } from './modules/purchase-order/purchase-order.module';
 import { ReceivingModule } from './modules/receiving/receiving.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { ProductionRequestModule } from './modules/production-request/production-request.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
     PurchaseOrderModule,
     ReceivingModule,
     DashboardModule,
+    ProductionRequestModule,
   ],
   controllers: [HealthController],
 })

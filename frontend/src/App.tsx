@@ -11,12 +11,26 @@ import { ReviewPage } from '@/pages/ReviewPage'
 import { LabelsPage } from '@/pages/LabelsPage'
 import { ReceivingPage } from '@/pages/ReceivingPage'
 import { AuditPage } from '@/pages/AuditPage'
+import { RequestsPage } from '@/pages/RequestsPage'
 import type { Role } from '@/types/api'
+
+// Phase 1 screens belong to the Phase 1 roles (Store=ADMIN, Operator, Supervisor).
+const PHASE1_ROLES: Role[] = ['ADMIN', 'OPERATOR', 'SUPERVISOR']
 
 function RequireRole({ roles, children }: { roles: Role[]; children: React.ReactNode }) {
   const { user } = useAuth()
   if (user && !roles.includes(user.role)) return <Navigate to="/" replace />
   return <>{children}</>
+}
+
+// Role-aware landing: production heads and the view-only Admin start on Requests;
+// Phase 1 roles keep the Phase 1 dashboard.
+function HomeRoute() {
+  const { user } = useAuth()
+  if (user?.role === 'PRODUCTION_HEAD' || user?.role === 'OVERSIGHT') {
+    return <Navigate to="/requests" replace />
+  }
+  return <DashboardPage />
 }
 
 function AuthedRoutes() {
@@ -41,13 +55,14 @@ function AuthedRoutes() {
   return (
     <Routes>
       <Route element={<AppLayout />}>
-        <Route index element={<DashboardPage />} />
-        <Route path="purchase-orders" element={<PurchaseOrdersPage />} />
-        <Route path="review" element={<ReviewPage />} />
-        <Route path="review/:poId" element={<ReviewPage />} />
-        <Route path="labels" element={<LabelsPage />} />
-        <Route path="receiving" element={<ReceivingPage />} />
-        <Route path="catalogue" element={<CataloguePage />} />
+        <Route index element={<HomeRoute />} />
+        <Route path="requests" element={<RequireRole roles={['PRODUCTION_HEAD', 'OVERSIGHT', 'ADMIN']}><RequestsPage /></RequireRole>} />
+        <Route path="purchase-orders" element={<RequireRole roles={PHASE1_ROLES}><PurchaseOrdersPage /></RequireRole>} />
+        <Route path="review" element={<RequireRole roles={PHASE1_ROLES}><ReviewPage /></RequireRole>} />
+        <Route path="review/:poId" element={<RequireRole roles={PHASE1_ROLES}><ReviewPage /></RequireRole>} />
+        <Route path="labels" element={<RequireRole roles={PHASE1_ROLES}><LabelsPage /></RequireRole>} />
+        <Route path="receiving" element={<RequireRole roles={PHASE1_ROLES}><ReceivingPage /></RequireRole>} />
+        <Route path="catalogue" element={<RequireRole roles={PHASE1_ROLES}><CataloguePage /></RequireRole>} />
         <Route
           path="audit"
           element={
