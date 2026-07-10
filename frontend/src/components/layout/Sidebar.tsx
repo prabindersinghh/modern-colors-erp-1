@@ -10,6 +10,7 @@ import {
   ScrollText,
   ClipboardList,
   PackageSearch,
+  Boxes,
   Paintbrush,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -25,6 +26,7 @@ const navItems: { to: string; label: string; icon: typeof LayoutDashboard; roles
   // Phase 2 — production heads raise/track requests; the view-only Admin sees them all.
   { to: '/requests', label: 'Requests', icon: ClipboardList, roles: ['PRODUCTION_HEAD', 'OVERSIGHT', 'ADMIN'] },
   { to: '/stock', label: 'Scan & Issue', icon: PackageSearch, roles: ['ADMIN'] },
+  { to: '/stock-levels', label: 'Stock Levels', icon: Boxes, roles: ['ADMIN', 'OVERSIGHT'] },
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, roles: PHASE1_ROLES },
   { to: '/purchase-orders', label: 'Invoice Upload', icon: FileUp, roles: PHASE1_ROLES },
   { to: '/review', label: 'Review & Confirm', icon: ClipboardCheck, roles: PHASE1_ROLES },

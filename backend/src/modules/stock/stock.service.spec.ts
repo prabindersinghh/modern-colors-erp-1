@@ -296,3 +296,35 @@ describe('StockService.createTransaction', () => {
     });
   });
 });
+
+describe('StockService.levels (aggregation)', () => {
+  function serviceWithUnits(units: any[]) {
+    const prisma: any = { material: { findMany: async () => units } };
+    return new StockService(prisma, { log: async () => undefined } as any);
+  }
+
+  it('groups units of the same material (by sku) and sums balances', async () => {
+    const service = serviceWithUnits([
+      { uniqueId: 'MC-1', materialName: 'Titanium Dioxide', sku: 'TIO2', status: 'READY_FOR_PRODUCTION', balanceKg: 24 },
+      { uniqueId: 'MC-2', materialName: 'Titanium Dioxide', sku: 'TIO2', status: 'READY_FOR_PRODUCTION', balanceKg: 6 },
+      { uniqueId: 'MC-3', materialName: 'Calcium Carbonate', sku: 'CACO3', status: 'READY_FOR_PRODUCTION', balanceKg: 2 },
+    ]);
+    const res = await service.levels({});
+    expect(res.materials).toHaveLength(2);
+    const tio2 = res.materials.find((m) => m.sku === 'TIO2')!;
+    expect(tio2.totalBalanceKg).toBe(30);
+    expect(tio2.unitCount).toBe(2);
+    expect(res.grandTotalKg).toBe(32);
+    expect(res.unitCount).toBe(3);
+  });
+
+  it('falls back to name when a unit has no sku', async () => {
+    const service = serviceWithUnits([
+      { uniqueId: 'MC-9', materialName: 'Zinc Oxide White', sku: null, status: 'READY_FOR_PRODUCTION', balanceKg: 5 },
+      { uniqueId: 'MC-10', materialName: 'Zinc Oxide White', sku: null, status: 'READY_FOR_PRODUCTION', balanceKg: 3 },
+    ]);
+    const res = await service.levels({});
+    expect(res.materials).toHaveLength(1);
+    expect(res.materials[0].totalBalanceKg).toBe(8);
+  });
+});

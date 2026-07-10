@@ -71,6 +71,109 @@ export class StockService {
   }
 
   /**
+   * Live stock levels (Store / Admin, factory-wide). Aggregates each weighed unit's
+   * balanceKg by material (sku when present, else name) and lists the contributing
+   * units. Reads Material.balanceKg directly — it's the running total the ledger keeps
+   * consistent, so no re-summing of transactions is needed.
+   */
+  async levels(params: { q?: string }) {
+    const where: Prisma.MaterialWhereInput = {
+      balanceKg: { not: null }, // only weighed units participate in stock
+      OR: params.q
+        ? [
+            { materialName: { contains: params.q, mode: 'insensitive' } },
+            { sku: { contains: params.q, mode: 'insensitive' } },
+            { uniqueId: { contains: params.q, mode: 'insensitive' } },
+          ]
+        : undefined,
+    };
+    const units = await this.prisma.material.findMany({
+      where,
+      select: { uniqueId: true, materialName: true, sku: true, status: true, balanceKg: true },
+      orderBy: [{ materialName: 'asc' }, { uniqueId: 'asc' }],
+    });
+
+    // Group by sku (fallback to normalized name) so units of the same material roll up.
+    const groups = new Map<
+      string,
+      {
+        materialName: string;
+        sku: string | null;
+        totalBalanceKg: number;
+        unitCount: number;
+        units: { uniqueId: string; balanceKg: number; status: string }[];
+      }
+    >();
+    for (const u of units) {
+      const key = (u.sku?.trim().toLowerCase() || u.materialName.trim().toLowerCase());
+      const g =
+        groups.get(key) ??
+        { materialName: u.materialName, sku: u.sku, totalBalanceKg: 0, unitCount: 0, units: [] };
+      g.totalBalanceKg = Number((g.totalBalanceKg + (u.balanceKg ?? 0)).toFixed(6));
+      g.unitCount += 1;
+      g.units.push({ uniqueId: u.uniqueId, balanceKg: u.balanceKg ?? 0, status: u.status });
+      groups.set(key, g);
+    }
+
+    const materials = [...groups.values()].sort((a, b) =>
+      a.materialName.localeCompare(b.materialName),
+    );
+    const grandTotalKg = Number(
+      materials.reduce((s, m) => s + m.totalBalanceKg, 0).toFixed(6),
+    );
+    return { materials, grandTotalKg, unitCount: units.length };
+  }
+
+  /**
+   * The append-only movement ledger (Store / Admin). Read-only + filterable — this is
+   * the immutable audit trail of every Add/Deduct/Discard (I4 pattern). Never mutated;
+   * corrections are new entries.
+   */
+  async ledger(params: {
+    type?: StockTxnType;
+    department?: Department;
+    uniqueId?: string;
+    startDate?: string;
+    endDate?: string;
+    page?: number;
+    pageSize?: number;
+  }) {
+    const page = Math.max(1, params.page ?? 1);
+    const pageSize = Math.min(200, Math.max(1, params.pageSize ?? 50));
+
+    const createdAt =
+      params.startDate || params.endDate
+        ? {
+            gte: params.startDate ? new Date(params.startDate) : undefined,
+            lte: params.endDate ? new Date(params.endDate) : undefined,
+          }
+        : undefined;
+
+    const where: Prisma.StockTransactionWhereInput = {
+      type: params.type,
+      department: params.department,
+      material: params.uniqueId ? { uniqueId: params.uniqueId } : undefined,
+      createdAt,
+    };
+
+    const [data, total] = await this.prisma.$transaction([
+      this.prisma.stockTransaction.findMany({
+        where,
+        include: {
+          actor: { select: { id: true, name: true } },
+          material: { select: { uniqueId: true, materialName: true, sku: true } },
+          requestItem: { select: { id: true, requestId: true, materialName: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      this.prisma.stockTransaction.count({ where }),
+    ]);
+    return { data, total, page, pageSize, totalPages: Math.ceil(total / pageSize) };
+  }
+
+  /**
    * Record ONE Add / Deduct / Discard on a scanned unit. The ledger row and the
    * unit's balanceKg are written in the SAME DB transaction so they never drift.
    * DEDUCT/DISCARD can never take the unit below zero (over-deduction blocked).

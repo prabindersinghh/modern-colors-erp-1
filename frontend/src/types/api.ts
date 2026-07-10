@@ -184,7 +184,22 @@ export interface StockTransaction {
   note: string | null
   createdAt: string
   actor?: { id: string; name: string }
+  material?: { uniqueId: string; materialName: string; sku: string | null }
   requestItem?: { id: string; requestId: string; materialName: string } | null
+}
+
+// GET /stock/levels — live per-material stock (Store / Admin).
+export interface StockLevelMaterial {
+  materialName: string
+  sku: string | null
+  totalBalanceKg: number
+  unitCount: number
+  units: { uniqueId: string; balanceKg: number; status: MaterialStatus }[]
+}
+export interface StockLevels {
+  materials: StockLevelMaterial[]
+  grandTotalKg: number
+  unitCount: number
 }
 
 // Body for POST /stock/transactions.
