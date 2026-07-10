@@ -11,6 +11,7 @@ import {
   ClipboardList,
   PackageSearch,
   Boxes,
+  Gauge,
   Paintbrush,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -23,6 +24,8 @@ import type { Role } from '@/types/api'
 const PHASE1_ROLES: Role[] = ['ADMIN', 'OPERATOR', 'SUPERVISOR']
 
 const navItems: { to: string; label: string; icon: typeof LayoutDashboard; roles?: Role[] }[] = [
+  // Phase 2 — Admin (view-only Oversight) factory-wide dashboard.
+  { to: '/oversight', label: 'Oversight', icon: Gauge, roles: ['OVERSIGHT'] },
   // Phase 2 — production heads raise/track requests; the view-only Admin sees them all.
   { to: '/requests', label: 'Requests', icon: ClipboardList, roles: ['PRODUCTION_HEAD', 'OVERSIGHT', 'ADMIN'] },
   { to: '/stock', label: 'Scan & Issue', icon: PackageSearch, roles: ['ADMIN'] },

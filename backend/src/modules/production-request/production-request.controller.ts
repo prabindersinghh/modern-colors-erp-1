@@ -45,6 +45,14 @@ export class ProductionRequestController {
     return this.requests.summary(user);
   }
 
+  // Factory-wide oversight rollup for the Admin dashboard (Step 8). Admin-only.
+  // NOTE: declared before :id so "overview" isn't captured as an id.
+  @Get('overview')
+  @Roles(Role.OVERSIGHT)
+  overview() {
+    return this.requests.overview();
+  }
+
   @Get(':id')
   @Roles(...READ_ROLES)
   findOne(@CurrentUser() user: AuthUser, @Param('id') id: string) {

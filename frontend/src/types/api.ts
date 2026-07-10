@@ -212,3 +212,29 @@ export interface CreateStockTransaction {
   note?: string
   device?: string
 }
+
+// ── Phase 2: Admin oversight (Step 8) ──
+// GET /production-requests/overview — factory-wide rollup (ADMIN/OVERSIGHT).
+export interface Overview {
+  requestMatrix: Record<Department, Record<RequestStatus, number>>
+  fulfilment: Record<Department, { requestedKg: number; approvedKg: number; issuedKg: number }>
+  stock: { grandTotalKg: number; unitCount: number; materialCount: number }
+  movements: {
+    allTime: Record<StockTxnType, number>
+    recent: Record<StockTxnType, number>
+    sinceDays: number
+    byDepartment: Record<string, { ADD: number; DEDUCT: number }>
+  }
+  recentActivity: {
+    reviews: {
+      id: string
+      department: Department
+      status: RequestStatus
+      reviewedAt: string | null
+      reviewedBy: { name: string } | null
+    }[]
+    movements: (StockTransaction & {
+      material?: { uniqueId: string; materialName: string; sku: string | null }
+    })[]
+  }
+}

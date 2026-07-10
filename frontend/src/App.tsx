@@ -14,6 +14,7 @@ import { AuditPage } from '@/pages/AuditPage'
 import { RequestsPage } from '@/pages/RequestsPage'
 import { StockPage } from '@/pages/StockPage'
 import { StockLevelsPage } from '@/pages/StockLevelsPage'
+import { OversightPage } from '@/pages/OversightPage'
 import type { Role } from '@/types/api'
 
 // Phase 1 screens belong to the Phase 1 roles (Store=ADMIN, Operator, Supervisor).
@@ -29,7 +30,12 @@ function RequireRole({ roles, children }: { roles: Role[]; children: React.React
 // Phase 1 roles keep the Phase 1 dashboard.
 function HomeRoute() {
   const { user } = useAuth()
-  if (user?.role === 'PRODUCTION_HEAD' || user?.role === 'OVERSIGHT') {
+  // Admin (view-only Oversight) lands on the factory-wide oversight dashboard.
+  if (user?.role === 'OVERSIGHT') {
+    return <Navigate to="/oversight" replace />
+  }
+  // Production heads land on their scoped Requests screen.
+  if (user?.role === 'PRODUCTION_HEAD') {
     return <Navigate to="/requests" replace />
   }
   return <DashboardPage />
@@ -61,6 +67,7 @@ function AuthedRoutes() {
         <Route path="requests" element={<RequireRole roles={['PRODUCTION_HEAD', 'OVERSIGHT', 'ADMIN']}><RequestsPage /></RequireRole>} />
         <Route path="stock" element={<RequireRole roles={['ADMIN']}><StockPage /></RequireRole>} />
         <Route path="stock-levels" element={<RequireRole roles={['ADMIN', 'OVERSIGHT']}><StockLevelsPage /></RequireRole>} />
+        <Route path="oversight" element={<RequireRole roles={['OVERSIGHT']}><OversightPage /></RequireRole>} />
         <Route path="purchase-orders" element={<RequireRole roles={PHASE1_ROLES}><PurchaseOrdersPage /></RequireRole>} />
         <Route path="review" element={<RequireRole roles={PHASE1_ROLES}><ReviewPage /></RequireRole>} />
         <Route path="review/:poId" element={<RequireRole roles={PHASE1_ROLES}><ReviewPage /></RequireRole>} />

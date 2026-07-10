@@ -8,6 +8,7 @@ import {
   departmentFilter,
   ownDepartment,
 } from '../../common/auth/department-scope';
+import { StockService } from '../stock/stock.service';
 import { CreateProductionRequestDto } from './dto/create-production-request.dto';
 import { ReviewRequestItemDto } from './dto/review-request-item.dto';
 
@@ -54,6 +55,7 @@ export class ProductionRequestService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly stock: StockService,
   ) {}
 
   /**
@@ -177,6 +179,81 @@ export class ProductionRequestService {
         byStatus: itemByStatus,
         totalRequestedKg: itemSum._sum.requestedKg ?? 0,
         totalIssuedKg: itemSum._sum.issuedKg ?? 0,
+      },
+    };
+  }
+
+  /**
+   * Factory-wide oversight rollup for the Admin dashboard (Step 8). Read-only, spans
+   * every department. Composes request aggregates (this module) with stock aggregates
+   * (StockService) so the Admin sees the whole Phase 2 picture on one screen.
+   */
+  async overview() {
+    const [reqByDeptStatus, recentReviews, stockLevels, movements, recentMovements] =
+      await Promise.all([
+      // Requests by department × overall status — "where are things stuck".
+      this.prisma.productionRequest.groupBy({
+        by: ['department', 'status'],
+        _count: { _all: true },
+      }),
+      // Last few request reviews for the activity feed.
+      this.prisma.productionRequest.findMany({
+        where: { reviewedAt: { not: null } },
+        select: {
+          id: true,
+          department: true,
+          status: true,
+          reviewedAt: true,
+          reviewedBy: { select: { name: true } },
+        },
+        orderBy: { reviewedAt: 'desc' },
+        take: 8,
+      }),
+      this.stock.levels({}),
+      this.stock.movementTotals(30),
+      this.stock.recentMovements(8),
+      ]);
+
+    // Department × status matrix (requests).
+    const departments = ['PU', 'ENAMEL', 'POWDER'] as const;
+    const matrix: Record<string, Record<RequestStatus, number>> = {};
+    for (const d of departments) matrix[d] = emptyByStatus();
+    for (const g of reqByDeptStatus) {
+      matrix[g.department][g.status] = g._count._all;
+    }
+
+    // Per-department fulfilment (requested / approved / issued KG). Done with a scoped
+    // aggregate per department (small N: 3 departments).
+    const fulfilment: Record<
+      string,
+      { requestedKg: number; approvedKg: number; issuedKg: number }
+    > = {};
+    await Promise.all(
+      departments.map(async (d) => {
+        const agg = await this.prisma.productionRequestItem.aggregate({
+          where: { request: { department: d } },
+          _sum: { requestedKg: true, approvedKg: true, issuedKg: true },
+        });
+        fulfilment[d] = {
+          requestedKg: Number((agg._sum.requestedKg ?? 0).toFixed(6)),
+          approvedKg: Number((agg._sum.approvedKg ?? 0).toFixed(6)),
+          issuedKg: Number((agg._sum.issuedKg ?? 0).toFixed(6)),
+        };
+      }),
+    );
+
+    return {
+      requestMatrix: matrix,
+      fulfilment,
+      stock: {
+        grandTotalKg: stockLevels.grandTotalKg,
+        unitCount: stockLevels.unitCount,
+        materialCount: stockLevels.materials.length,
+      },
+      movements,
+      recentActivity: {
+        reviews: recentReviews,
+        movements: recentMovements,
       },
     };
   }

@@ -174,6 +174,59 @@ export class StockService {
   }
 
   /**
+   * Movement totals for the oversight dashboard (Step 8). Sums quantityKg by type
+   * both all-time and for a recent window (default 30 days), and the DEDUCT/ADD split
+   * per department. Read-only.
+   */
+  async movementTotals(sinceDays = 30) {
+    const since = new Date();
+    since.setDate(since.getDate() - sinceDays);
+
+    const [allByType, recentByType, byDeptType] = await Promise.all([
+      this.prisma.stockTransaction.groupBy({ by: ['type'], _sum: { quantityKg: true } }),
+      this.prisma.stockTransaction.groupBy({
+        by: ['type'],
+        where: { createdAt: { gte: since } },
+        _sum: { quantityKg: true },
+      }),
+      this.prisma.stockTransaction.groupBy({
+        by: ['department', 'type'],
+        where: { department: { not: null } },
+        _sum: { quantityKg: true },
+      }),
+    ]);
+
+    const emptyTotals = (): Record<StockTxnType, number> => ({ ADD: 0, DEDUCT: 0, DISCARD: 0 });
+    const allTime = emptyTotals();
+    for (const g of allByType) allTime[g.type] = Number((g._sum.quantityKg ?? 0).toFixed(6));
+    const recent = emptyTotals();
+    for (const g of recentByType) recent[g.type] = Number((g._sum.quantityKg ?? 0).toFixed(6));
+
+    // Per-department ADD/DEDUCT rollup (DISCARD is dept-less, excluded here).
+    const byDepartment: Record<string, { ADD: number; DEDUCT: number }> = {};
+    for (const g of byDeptType) {
+      if (!g.department) continue;
+      const d = (byDepartment[g.department] ??= { ADD: 0, DEDUCT: 0 });
+      if (g.type === StockTxnType.ADD) d.ADD = Number((g._sum.quantityKg ?? 0).toFixed(6));
+      if (g.type === StockTxnType.DEDUCT) d.DEDUCT = Number((g._sum.quantityKg ?? 0).toFixed(6));
+    }
+
+    return { allTime, recent, sinceDays, byDepartment };
+  }
+
+  /** The most recent movements for the oversight activity feed. */
+  async recentMovements(take = 8) {
+    return this.prisma.stockTransaction.findMany({
+      include: {
+        actor: { select: { id: true, name: true } },
+        material: { select: { uniqueId: true, materialName: true, sku: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take,
+    });
+  }
+
+  /**
    * Record ONE Add / Deduct / Discard on a scanned unit. The ledger row and the
    * unit's balanceKg are written in the SAME DB transaction so they never drift.
    * DEDUCT/DISCARD can never take the unit below zero (over-deduction blocked).
