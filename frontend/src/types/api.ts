@@ -213,6 +213,85 @@ export interface CreateStockTransaction {
   device?: string
 }
 
+// ── Phase 2: Analytics dashboards (Step 8 enhancement) ──
+export type StockAlertLevel = 'CRITICAL' | 'LOW'
+
+export interface StockAlert {
+  materialName: string
+  sku: string | null
+  totalKg: number
+  unitCount: number
+  level: StockAlertLevel
+}
+export interface LowStock {
+  thresholds: { criticalKg: number; lowKg: number }
+  alerts: StockAlert[]
+  criticalCount: number
+  lowCount: number
+}
+
+export interface MovementPoint {
+  date: string
+  ADD: number
+  DEDUCT: number
+  DISCARD: number
+}
+export interface MovementTotals {
+  today: Record<StockTxnType, number>
+  window: Record<StockTxnType, number>
+  allTime: Record<StockTxnType, number>
+  windowDays: number
+}
+export interface MaterialTotal {
+  materialName: string
+  sku: string | null
+  totalKg: number
+}
+
+export interface AdminAnalytics {
+  windowDays: number
+  lowStock: LowStock
+  snapshot: { grandTotalKg: number; unitCount: number; materialCount: number }
+  totals: MovementTotals
+  series: MovementPoint[]
+  requestsByStatus: Record<RequestStatus, number>
+  consumptionByDept: { department: Department; deductedKg: number }[]
+  topConsumed: MaterialTotal[]
+  fulfilment: Record<Department, { requestedKg: number; approvedKg: number; issuedKg: number }>
+  recentActivity: {
+    movements: (StockTransaction & { material?: { uniqueId: string; materialName: string; sku: string | null } })[]
+    reviews: { id: string; department: Department; status: RequestStatus; reviewedAt: string | null; reviewedBy: { name: string } | null }[]
+  }
+}
+
+export interface StoreAnalytics {
+  windowDays: number
+  lowStock: LowStock
+  snapshot: { grandTotalKg: number; unitCount: number; materialCount: number }
+  totals: MovementTotals
+  series: MovementPoint[]
+  queue: { pendingLines: number; openRequests: number }
+  topRequested: MaterialTotal[]
+  recentIssues: (StockTransaction & { material?: { uniqueId: string; materialName: string; sku: string | null } })[]
+}
+
+export interface MyAnalytics {
+  department: Department
+  windowDays: number
+  requestsByStatus: Record<RequestStatus, number>
+  fulfilment: { requestedKg: number; approvedKg: number; issuedKg: number }
+  consumptionSeries: MovementPoint[]
+  totals: MovementTotals
+  recentRequests: {
+    id: string
+    status: RequestStatus
+    createdAt: string
+    reviewedAt: string | null
+    note: string | null
+    items: { status: RequestStatus; requestedKg: number; approvedKg: number | null; issuedKg: number }[]
+  }[]
+}
+
 // ── Phase 2: Admin oversight (Step 8) ──
 // GET /production-requests/overview — factory-wide rollup (ADMIN/OVERSIGHT).
 export interface Overview {

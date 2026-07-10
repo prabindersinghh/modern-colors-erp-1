@@ -1,3 +1,4 @@
+import { Suspense, lazy } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from '@/lib/auth'
 import { AppLayout } from '@/components/layout/AppLayout'
@@ -14,8 +15,11 @@ import { AuditPage } from '@/pages/AuditPage'
 import { RequestsPage } from '@/pages/RequestsPage'
 import { StockPage } from '@/pages/StockPage'
 import { StockLevelsPage } from '@/pages/StockLevelsPage'
-import { OversightPage } from '@/pages/OversightPage'
 import type { Role } from '@/types/api'
+
+// Analytics dashboards pull in the charting library — lazy-load so recharts is a
+// separate chunk fetched only when a dashboard is opened (keeps first load fast).
+const OversightPage = lazy(() => import('@/pages/OversightPage').then((m) => ({ default: m.OversightPage })))
 
 // Phase 1 screens belong to the Phase 1 roles (Store=ADMIN, Operator, Supervisor).
 const PHASE1_ROLES: Role[] = ['ADMIN', 'OPERATOR', 'SUPERVISOR']
@@ -28,6 +32,10 @@ function RequireRole({ roles, children }: { roles: Role[]; children: React.React
 
 // Role-aware landing: production heads and the view-only Admin start on Requests;
 // Phase 1 roles keep the Phase 1 dashboard.
+function DashboardFallback() {
+  return <div className="h-40 animate-pulse rounded-lg bg-muted" />
+}
+
 function HomeRoute() {
   const { user } = useAuth()
   // Admin (view-only Oversight) lands on the factory-wide oversight dashboard.
@@ -67,7 +75,7 @@ function AuthedRoutes() {
         <Route path="requests" element={<RequireRole roles={['PRODUCTION_HEAD', 'OVERSIGHT', 'ADMIN']}><RequestsPage /></RequireRole>} />
         <Route path="stock" element={<RequireRole roles={['ADMIN']}><StockPage /></RequireRole>} />
         <Route path="stock-levels" element={<RequireRole roles={['ADMIN', 'OVERSIGHT']}><StockLevelsPage /></RequireRole>} />
-        <Route path="oversight" element={<RequireRole roles={['OVERSIGHT']}><OversightPage /></RequireRole>} />
+        <Route path="oversight" element={<RequireRole roles={['OVERSIGHT']}><Suspense fallback={<DashboardFallback />}><OversightPage /></Suspense></RequireRole>} />
         <Route path="purchase-orders" element={<RequireRole roles={PHASE1_ROLES}><PurchaseOrdersPage /></RequireRole>} />
         <Route path="review" element={<RequireRole roles={PHASE1_ROLES}><ReviewPage /></RequireRole>} />
         <Route path="review/:poId" element={<RequireRole roles={PHASE1_ROLES}><ReviewPage /></RequireRole>} />

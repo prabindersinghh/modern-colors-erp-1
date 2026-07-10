@@ -33,6 +33,19 @@
     --success-foreground: 0 0% 100%;
     --warning: 38 92% 50%;
     --warning-foreground: 0 0% 100%;
+
+    /* Chart palette — consistent semantic language across every dashboard.
+       add = green (into stock), deduct = blue (issued out), discard = red (wasted),
+       plus a categorical ramp for departments / materials / statuses. */
+    --chart-add: 142 71% 45%;
+    --chart-deduct: 217 91% 55%;
+    --chart-discard: 0 84% 60%;
+    --chart-1: 217 91% 55%; /* blue */
+    --chart-2: 142 71% 45%; /* green */
+    --chart-3: 38 92% 50%;  /* amber */
+    --chart-4: 280 65% 60%; /* violet */
+    --chart-5: 172 66% 45%; /* teal */
+    --chart-6: 340 75% 55%; /* pink */
   }
 
   * {
