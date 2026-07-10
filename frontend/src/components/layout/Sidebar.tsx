@@ -23,14 +23,21 @@ import type { Role } from '@/types/api'
 // The new Phase 2 roles (OVERSIGHT / PRODUCTION_HEAD) get their own nav in later steps.
 const PHASE1_ROLES: Role[] = ['ADMIN', 'OPERATOR', 'SUPERVISOR']
 
-const navItems: { to: string; label: string; icon: typeof LayoutDashboard; roles?: Role[] }[] = [
-  // Phase 2 — Admin (view-only Oversight) factory-wide dashboard.
+// Phase 1 screens that Operators / Supervisors use. Store (ADMIN) also reaches these,
+// but lands on its own analytics dashboard first.
+const PHASE1_OPS: Role[] = ['OPERATOR', 'SUPERVISOR']
+
+const navItems: { to: string; label: string; icon: typeof LayoutDashboard; roles?: Role[]; end?: boolean }[] = [
+  // Phase 2 — role-specific analytics dashboards (the landing screen per role).
   { to: '/oversight', label: 'Oversight', icon: Gauge, roles: ['OVERSIGHT'] },
+  { to: '/store', label: 'Dashboard', icon: LayoutDashboard, roles: ['ADMIN'] },
+  { to: '/my', label: 'My Department', icon: Gauge, roles: ['PRODUCTION_HEAD'] },
+  // Phase 1 material-inward overview for ops roles (Store reaches it via its own screens).
+  { to: '/', label: 'Dashboard', icon: LayoutDashboard, roles: PHASE1_OPS, end: true },
   // Phase 2 — production heads raise/track requests; the view-only Admin sees them all.
   { to: '/requests', label: 'Requests', icon: ClipboardList, roles: ['PRODUCTION_HEAD', 'OVERSIGHT', 'ADMIN'] },
   { to: '/stock', label: 'Scan & Issue', icon: PackageSearch, roles: ['ADMIN'] },
   { to: '/stock-levels', label: 'Stock Levels', icon: Boxes, roles: ['ADMIN', 'OVERSIGHT'] },
-  { to: '/', label: 'Dashboard', icon: LayoutDashboard, roles: PHASE1_ROLES },
   { to: '/purchase-orders', label: 'Invoice Upload', icon: FileUp, roles: PHASE1_ROLES },
   { to: '/review', label: 'Review & Confirm', icon: ClipboardCheck, roles: PHASE1_ROLES },
   { to: '/labels', label: 'QR Labels', icon: QrCode, roles: PHASE1_ROLES },
@@ -63,11 +70,11 @@ export function Sidebar({ open = false, onNavigate }: { open?: boolean; onNaviga
       </div>
 
       <nav className="flex-1 space-y-0.5 overflow-y-auto p-3">
-        {items.map(({ to, label, icon: Icon }) => (
+        {items.map(({ to, label, icon: Icon, end }) => (
           <NavLink
             key={to}
             to={to}
-            end={to === '/'}
+            end={end ?? to === '/'}
             onClick={onNavigate}
             className={({ isActive }) =>
               cn(

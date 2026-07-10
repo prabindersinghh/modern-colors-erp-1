@@ -20,6 +20,8 @@ import type { Role } from '@/types/api'
 // Analytics dashboards pull in the charting library — lazy-load so recharts is a
 // separate chunk fetched only when a dashboard is opened (keeps first load fast).
 const OversightPage = lazy(() => import('@/pages/OversightPage').then((m) => ({ default: m.OversightPage })))
+const StoreDashboardPage = lazy(() => import('@/pages/StoreDashboardPage').then((m) => ({ default: m.StoreDashboardPage })))
+const HeadDashboardPage = lazy(() => import('@/pages/HeadDashboardPage').then((m) => ({ default: m.HeadDashboardPage })))
 
 // Phase 1 screens belong to the Phase 1 roles (Store=ADMIN, Operator, Supervisor).
 const PHASE1_ROLES: Role[] = ['ADMIN', 'OPERATOR', 'SUPERVISOR']
@@ -42,10 +44,15 @@ function HomeRoute() {
   if (user?.role === 'OVERSIGHT') {
     return <Navigate to="/oversight" replace />
   }
-  // Production heads land on their scoped Requests screen.
+  // Production heads land on their scoped analytics dashboard.
   if (user?.role === 'PRODUCTION_HEAD') {
-    return <Navigate to="/requests" replace />
+    return <Navigate to="/my" replace />
   }
+  // Store (ADMIN) lands on the Store analytics dashboard.
+  if (user?.role === 'ADMIN') {
+    return <Navigate to="/store" replace />
+  }
+  // Phase 1 operators / supervisors keep the material-inward overview.
   return <DashboardPage />
 }
 
@@ -76,6 +83,8 @@ function AuthedRoutes() {
         <Route path="stock" element={<RequireRole roles={['ADMIN']}><StockPage /></RequireRole>} />
         <Route path="stock-levels" element={<RequireRole roles={['ADMIN', 'OVERSIGHT']}><StockLevelsPage /></RequireRole>} />
         <Route path="oversight" element={<RequireRole roles={['OVERSIGHT']}><Suspense fallback={<DashboardFallback />}><OversightPage /></Suspense></RequireRole>} />
+        <Route path="store" element={<RequireRole roles={['ADMIN']}><Suspense fallback={<DashboardFallback />}><StoreDashboardPage /></Suspense></RequireRole>} />
+        <Route path="my" element={<RequireRole roles={['PRODUCTION_HEAD']}><Suspense fallback={<DashboardFallback />}><HeadDashboardPage /></Suspense></RequireRole>} />
         <Route path="purchase-orders" element={<RequireRole roles={PHASE1_ROLES}><PurchaseOrdersPage /></RequireRole>} />
         <Route path="review" element={<RequireRole roles={PHASE1_ROLES}><ReviewPage /></RequireRole>} />
         <Route path="review/:poId" element={<RequireRole roles={PHASE1_ROLES}><ReviewPage /></RequireRole>} />
