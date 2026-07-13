@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { Sparkles, Trash2, Plus, CheckCircle2, ClipboardCheck, FileText } from 'lucide-react'
+import { Sparkles, Trash2, Plus, CheckCircle2, ClipboardCheck, FileText, BookMarked } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
+import { useAuth } from '@/lib/auth'
 import type { Paginated, PurchaseOrder, POLineItem, MatchType } from '@/types/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -30,6 +31,17 @@ function isBulkUnit(unit: string | null | undefined): boolean {
 /** A bulk-unit line still on quantity 1 = the operator hasn't set the real bag count. */
 function needsBagCount(item: { unit: string | null; quantity: number }): boolean {
   return isBulkUnit(item.unit) && item.quantity <= 1
+}
+
+const round = (n: number) => Math.round(n * 1000) / 1000
+
+/** Human label for a line's physical package word, pluralized (falls back to units/sacks). */
+function unitLabel(unit: string | null, qty: number): string {
+  const raw = unit?.trim()
+  // A bulk measure (KG/LTR) isn't a package word — call them "units/sacks".
+  const base = !raw || isBulkUnit(raw) ? 'unit' : raw.toLowerCase()
+  const plural = qty === 1 ? base : base.endsWith('s') ? base : `${base}s`
+  return !raw || isBulkUnit(raw) ? `${plural} / sacks` : plural
 }
 
 export function ReviewPage() {
@@ -121,6 +133,9 @@ function PoDocumentPreview({ poId }: { poId: string }) {
 
 function ReviewOne({ poId }: { poId: string }) {
   const nav = useNavigate()
+  const { user } = useAuth()
+  // Adding a new SKU to the catalogue is allowed for Store (ADMIN) and Operators.
+  const canAddSku = user?.role === 'ADMIN' || user?.role === 'OPERATOR'
   const [po, setPo] = useState<PurchaseOrder | null>(null)
   const [busy, setBusy] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
@@ -219,7 +234,7 @@ function ReviewOne({ poId }: { poId: string }) {
           ) : (
             <div className="space-y-2">
               {(po.lineItems ?? []).map((li, i) => (
-                <LineCard key={li.id} poId={poId} item={li} index={i} editable={editable} onChange={load} />
+                <LineCard key={li.id} poId={poId} item={li} index={i} editable={editable} canAddSku={canAddSku} onChange={load} />
               ))}
             </div>
           )}
@@ -293,12 +308,14 @@ function LineCard({
   item,
   index,
   editable,
+  canAddSku = false,
   onChange,
 }: {
   poId: string
   item: POLineItem
   index: number
   editable: boolean
+  canAddSku?: boolean
   onChange: () => void
 }) {
   const [v, setV] = useState({
@@ -311,6 +328,37 @@ function LineCard({
   })
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [addingSku, setAddingSku] = useState(false)
+
+  // Add this (unmatched) material to the Master Catalogue. Uses the line's own
+  // name/SKU/HSN; a provisional TMP- code is generated server-side if no SKU. Audited
+  // as added-from-no-match. After adding, re-matching turns the line EXACT.
+  const addToCatalogue = async () => {
+    setAddingSku(true)
+    try {
+      const created = await api.post<{ sku: string }>('/catalogue?source=no-match', {
+        materialName: v.materialName.trim(),
+        sku: v.sku.trim() || undefined,
+        hsnCode: v.hsnCode.trim() || undefined,
+        unit: v.unit.trim() || undefined,
+      })
+      toast({
+        title: 'Added to catalogue',
+        description: created.sku.startsWith('TMP-')
+          ? `${v.materialName} added with provisional code ${created.sku} (set a real SKU later).`
+          : `${v.materialName} added as ${created.sku}.`,
+      })
+      onChange() // reloads the PO → line re-matches to EXACT
+    } catch (err) {
+      toast({
+        variant: 'destructive',
+        title: 'Could not add to catalogue',
+        description: err instanceof ApiError ? err.message : 'Unexpected error',
+      })
+    } finally {
+      setAddingSku(false)
+    }
+  }
   const set = (k: keyof typeof v) => (e: React.ChangeEvent<HTMLInputElement>) => {
     setV({ ...v, [k]: e.target.value })
     setDirty(true)
@@ -355,11 +403,20 @@ function LineCard({
           </div>
           <span className={`shrink-0 rounded border px-2 py-0.5 text-xs ${m.cls}`}>{m.label}</span>
         </div>
+        {/* Prominent unit count generated for this line (display-only). */}
+        <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+          <span className="text-lg font-semibold text-primary">{item.quantity}</span>
+          <span className="text-sm text-muted-foreground">{unitLabel(item.unit, item.quantity)} · QR-coded</span>
+          {item.weight != null && (
+            <span className="text-sm text-muted-foreground">
+              · {item.weight} kg each = <span className="font-medium text-foreground">{round(item.quantity * item.weight)} kg</span> total
+            </span>
+          )}
+        </div>
         <div className="mt-1.5 flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground">
           <span>HSN: <span className="font-mono text-foreground">{item.hsnCode ?? '—'}</span></span>
           <span>SKU: <span className="font-mono text-foreground">{item.sku ?? '—'}</span></span>
-          <span>Qty: <span className="font-medium text-foreground">{item.quantity}</span> {item.unit ?? ''}</span>
-          <span>Weight/unit: <span className="text-foreground">{item.weight != null ? `${item.weight} kg` : '—'}</span></span>
+          {item.weight == null && <span>Weight/unit: <span className="text-foreground">—</span></span>}
         </div>
       </div>
     )
@@ -368,13 +425,26 @@ function LineCard({
   return (
     <div className={`rounded-md border p-3 ${flagged ? 'border-amber-500/50 bg-amber-500/5' : ''}`}>
       <div className="mb-2 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs text-muted-foreground">{index + 1}.</span>
           <span className={`rounded border px-2 py-0.5 text-xs ${m.cls}`}>{m.label}</span>
           {flagged && (
             <span className="rounded border border-amber-500/40 bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700">
               Enter bag count
             </span>
+          )}
+          {/* Unmatched material — let the operator add it to the Master Catalogue. */}
+          {canAddSku && item.matchType !== 'EXACT' && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 gap-1 text-xs"
+              onClick={addToCatalogue}
+              disabled={addingSku || !v.materialName.trim()}
+            >
+              <BookMarked className="h-3.5 w-3.5" />
+              {addingSku ? 'Adding…' : 'Add to catalogue'}
+            </Button>
           )}
         </div>
         <Button size="sm" variant="ghost" className="h-7 text-destructive" onClick={remove}>

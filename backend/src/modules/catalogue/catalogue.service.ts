@@ -121,18 +121,22 @@ export class CatalogueService {
     return item;
   }
 
-  async findAll(params: { search?: string; page?: number; pageSize?: number }) {
+  async findAll(params: { search?: string; page?: number; pageSize?: number; provisional?: boolean }) {
     const page = Math.max(1, params.page ?? 1);
     const pageSize = Math.min(500, Math.max(1, params.pageSize ?? 50));
-    const where: Prisma.MasterCatalogueItemWhereInput = params.search
-      ? {
-          OR: [
-            { materialName: { contains: params.search, mode: 'insensitive' } },
-            { sku: { contains: params.search, mode: 'insensitive' } },
-            { category: { contains: params.search, mode: 'insensitive' } },
-          ],
-        }
-      : {};
+    const where: Prisma.MasterCatalogueItemWhereInput = {
+      ...(params.search
+        ? {
+            OR: [
+              { materialName: { contains: params.search, mode: 'insensitive' } },
+              { sku: { contains: params.search, mode: 'insensitive' } },
+              { category: { contains: params.search, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+      // "Awaiting a real SKU" view — provisional codes are TMP-prefixed.
+      ...(params.provisional ? { sku: { startsWith: 'TMP-' } } : {}),
+    };
 
     const [data, total] = await this.prisma.$transaction([
       this.prisma.masterCatalogueItem.findMany({
@@ -154,12 +158,30 @@ export class CatalogueService {
   }
 
   async update(id: string, dto: UpdateCatalogueItemDto, actorId?: string) {
-    await this.findOne(id);
+    const before = await this.findOne(id);
+    // Snapshot the pre-update values (by value) so audit + provisional logic can't be
+    // affected by later mutation of the record.
+    const prev = {
+      sku: before.sku,
+      materialName: before.materialName,
+      active: before.active,
+      metadata: (before.metadata ?? null) as Record<string, unknown> | null,
+    };
+
+    // A new SKU must not collide with another item's SKU.
+    const newSku = dto.sku?.trim();
+    if (newSku && newSku !== prev.sku) {
+      const clash = await this.prisma.masterCatalogueItem.findUnique({ where: { sku: newSku } });
+      if (clash && clash.id !== id) {
+        throw new ConflictException(`SKU "${newSku}" already exists in the catalogue`);
+      }
+    }
+
     const item = await this.prisma.masterCatalogueItem.update({
       where: { id },
       data: {
         materialName: dto.materialName?.trim(),
-        sku: dto.sku?.trim(),
+        sku: newSku,
         hsnCode: dto.hsnCode?.trim(),
         category: dto.category?.trim(),
         unit: dto.unit?.trim(),
@@ -167,14 +189,38 @@ export class CatalogueService {
         active: dto.active,
       },
     });
+
+    // If a provisional (TMP-) code was replaced with a real one, clear the provisional
+    // metadata flag so the "awaiting SKU" list/count updates.
+    const wasProvisional = prev.sku.startsWith('TMP-');
+    const nowReal = Boolean(newSku && !newSku.startsWith('TMP-'));
+    if (wasProvisional && nowReal && prev.metadata && 'provisional' in prev.metadata) {
+      const { provisional, ...rest } = prev.metadata;
+      void provisional;
+      await this.prisma.masterCatalogueItem.update({
+        where: { id },
+        data: { metadata: Object.keys(rest).length ? (rest as Prisma.InputJsonValue) : Prisma.JsonNull },
+      });
+    }
+
     await this.audit.log({
       entityType: 'MasterCatalogueItem',
       entityId: id,
-      action: 'CATALOGUE_ITEM_UPDATED',
+      // A SKU change is the audited "provisional → real" event you can trace later.
+      action: newSku && newSku !== prev.sku ? 'CATALOGUE_ITEM_SKU_CHANGED' : 'CATALOGUE_ITEM_UPDATED',
       actorId,
+      before: { sku: prev.sku, materialName: prev.materialName, active: prev.active },
       after: { sku: item.sku, materialName: item.materialName, active: item.active },
     });
     return item;
+  }
+
+  /** Count of provisional (TMP-) SKUs still awaiting a real code (active items only). */
+  async provisionalCount(): Promise<{ count: number }> {
+    const count = await this.prisma.masterCatalogueItem.count({
+      where: { active: true, sku: { startsWith: 'TMP-' } },
+    });
+    return { count };
   }
 
   // Soft-delete (deactivate) so historical references stay intact.

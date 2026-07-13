@@ -43,26 +43,45 @@ interface ImportResult {
   errors: { row: number; message: string }[]
 }
 
+const isProvisional = (sku: string) => sku.startsWith('TMP-')
+
 export function CataloguePage() {
   const { hasRole } = useAuth()
   const isAdmin = hasRole('ADMIN')
+  const canEdit = hasRole('ADMIN') || hasRole('OPERATOR')
   const [items, setItems] = useState<CatalogueItem[]>([])
   const [total, setTotal] = useState(0)
   const [search, setSearch] = useState('')
+  const [provisionalOnly, setProvisionalOnly] = useState(false)
+  const [provisionalCount, setProvisionalCount] = useState(0)
   const [addOpen, setAddOpen] = useState(false)
   const [preview, setPreview] = useState<{ file: File; data: ImportPreview } | null>(null)
   const [previewBusy, setPreviewBusy] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
 
-  const load = (q = search) =>
+  const load = (q = search, prov = provisionalOnly) =>
     api
-      .get<Paginated<CatalogueItem>>(`/catalogue?pageSize=200&search=${encodeURIComponent(q)}`)
+      .get<Paginated<CatalogueItem>>(
+        `/catalogue?pageSize=200&search=${encodeURIComponent(q)}${prov ? '&provisional=true' : ''}`,
+      )
       .then((r) => {
         setItems(r.data)
         setTotal(r.total)
       })
       .catch(() => {})
-  useEffect(() => void load(''), [])
+
+  const loadCount = () =>
+    api.get<{ count: number }>('/catalogue/provisional-count').then((r) => setProvisionalCount(r.count)).catch(() => {})
+
+  useEffect(() => {
+    void load('')
+    void loadCount()
+  }, [])
+
+  const refresh = async () => {
+    await load()
+    await loadCount()
+  }
 
   // Step 1: parse + preview (no writes).
   const onPickFile = async (file: File) => {
@@ -100,7 +119,7 @@ export function CataloguePage() {
           (failed ? ` — ${failed} row(s) failed` : '') + '.',
       })
       setPreview(null)
-      await load()
+      await refresh()
     } catch (err) {
       toast({
         variant: 'destructive',
@@ -149,17 +168,42 @@ export function CataloguePage() {
         </div>
       </div>
 
-      <p className="text-xs text-muted-foreground">{total} SKUs</p>
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="text-xs text-muted-foreground">{total} {provisionalOnly ? 'provisional ' : ''}SKUs</p>
+        {/* Gentle nudge: how many materials still need a real SKU. */}
+        {provisionalCount > 0 && (
+          <button
+            onClick={() => {
+              const next = !provisionalOnly
+              setProvisionalOnly(next)
+              load(search, next)
+            }}
+            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors ${
+              provisionalOnly
+                ? 'border-amber-500 bg-amber-500 text-white'
+                : 'border-amber-500/40 bg-amber-500/10 text-amber-700 hover:bg-amber-500/20'
+            }`}
+          >
+            <AlertTriangle className="h-3.5 w-3.5" />
+            {provisionalCount} awaiting a real SKU
+            {provisionalOnly ? ' · show all' : ''}
+          </button>
+        )}
+      </div>
 
       {items.length === 0 ? (
-        <EmptyState icon={BookMarked} title="No catalogue items" description="Import a CSV/Excel master list or add SKUs manually." />
+        <EmptyState
+          icon={BookMarked}
+          title={provisionalOnly ? 'No provisional SKUs' : 'No catalogue items'}
+          description={provisionalOnly ? 'Every material has a real SKU.' : 'Import a CSV/Excel master list or add SKUs manually.'}
+        />
       ) : (
         <div className="overflow-x-auto rounded-md border">
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead className="min-w-[180px]">Material</TableHead>
-                <TableHead>SKU</TableHead>
+                <TableHead className="min-w-[160px]">SKU</TableHead>
                 <TableHead>HSN Code</TableHead>
                 <TableHead>Category</TableHead>
                 <TableHead>Unit</TableHead>
@@ -168,9 +212,11 @@ export function CataloguePage() {
             </TableHeader>
             <TableBody>
               {items.map((it) => (
-                <TableRow key={it.id}>
+                <TableRow key={it.id} className={isProvisional(it.sku) ? 'bg-amber-500/5' : ''}>
                   <TableCell className="font-medium">{it.materialName}</TableCell>
-                  <TableCell className="font-mono text-xs">{it.sku}</TableCell>
+                  <TableCell>
+                    <SkuCell item={it} canEdit={canEdit} onSaved={refresh} />
+                  </TableCell>
                   <TableCell className="font-mono text-xs">{it.hsnCode ?? '—'}</TableCell>
                   <TableCell>{it.category ?? '—'}</TableCell>
                   <TableCell>{it.unit ?? '—'}</TableCell>
@@ -182,7 +228,7 @@ export function CataloguePage() {
         </div>
       )}
 
-      <AddSkuModal open={addOpen} onClose={() => setAddOpen(false)} onAdded={() => load()} />
+      <AddSkuModal open={addOpen} onClose={() => setAddOpen(false)} onAdded={refresh} />
       <ImportPreviewModal
         preview={preview?.data ?? null}
         busy={previewBusy}
@@ -271,6 +317,71 @@ function ImportPreviewModal({
         </div>
       </div>
     </Modal>
+  )
+}
+
+/** SKU cell: shows the code + a "Provisional" badge for TMP- entries, with one-click
+ * inline edit to replace a provisional code with a real SKU (audited server-side). */
+function SkuCell({ item, canEdit, onSaved }: { item: CatalogueItem; canEdit: boolean; onSaved: () => void }) {
+  const provisional = isProvisional(item.sku)
+  const [editing, setEditing] = useState(false)
+  const [value, setValue] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const save = async () => {
+    const sku = value.trim()
+    if (!sku || sku === item.sku) {
+      setEditing(false)
+      return
+    }
+    setBusy(true)
+    try {
+      await api.patch(`/catalogue/${item.id}`, { sku })
+      toast({ title: 'SKU updated', description: `${item.materialName} → ${sku}` })
+      setEditing(false)
+      setValue('')
+      onSaved()
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'Could not update SKU', description: err instanceof ApiError ? err.message : '' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (editing) {
+    return (
+      <div className="flex items-center gap-1">
+        <Input
+          autoFocus
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && save()}
+          placeholder="Real SKU"
+          className="h-7 w-32 font-mono text-xs"
+        />
+        <Button size="sm" className="h-7" onClick={save} disabled={busy}>Save</Button>
+        <Button size="sm" variant="ghost" className="h-7" onClick={() => setEditing(false)}>✕</Button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <span className={`font-mono text-xs ${provisional ? 'text-amber-700' : ''}`}>{item.sku}</span>
+      {provisional && (
+        <span className="rounded border border-amber-500/40 bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+          Provisional — SKU pending
+        </span>
+      )}
+      {canEdit && (
+        <button
+          onClick={() => { setValue(provisional ? '' : item.sku); setEditing(true) }}
+          className="text-[11px] text-primary hover:underline"
+        >
+          {provisional ? 'Set real SKU' : 'Edit'}
+        </button>
+      )}
+    </div>
   )
 }
 

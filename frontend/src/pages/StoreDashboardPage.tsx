@@ -8,6 +8,7 @@ import {
   Inbox,
   TrendingUp,
   PackageCheck,
+  AlertTriangle,
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { StoreAnalytics } from '@/types/api'
@@ -21,12 +22,17 @@ import { LowStockAlerts, Kpi, ChartCard, Empty, DashboardSkeleton } from '@/comp
 export function StoreDashboardPage() {
   const [days, setDays] = useState(30)
   const [data, setData] = useState<StoreAnalytics | null>(null)
+  const [provisional, setProvisional] = useState(0)
   const [error, setError] = useState(false)
 
   useEffect(() => {
     setData(null)
     api.get<StoreAnalytics>(`/analytics/store?days=${days}`).then(setData).catch(() => setError(true))
   }, [days])
+
+  useEffect(() => {
+    api.get<{ count: number }>('/catalogue/provisional-count').then((r) => setProvisional(r.count)).catch(() => {})
+  }, [])
 
   if (error) return <EmptyState title="Could not load dashboard" description="Please refresh to try again." />
   if (!data) return <DashboardSkeleton title="Store dashboard" />
@@ -67,6 +73,20 @@ export function StoreDashboardPage() {
         <div className="flex items-center gap-2 rounded-lg border border-success/30 bg-success/10 px-4 py-2.5 text-sm text-success">
           <Inbox className="h-4 w-4" /> No requests waiting — inbox is clear.
         </div>
+      )}
+
+      {/* Provisional-SKU nudge — materials added from a PO with no official code yet. */}
+      {provisional > 0 && (
+        <Link
+          to="/catalogue"
+          className="flex items-center justify-between rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-2.5 text-sm text-amber-700 transition-colors hover:bg-amber-500/20"
+        >
+          <span className="flex items-center gap-2 font-medium">
+            <AlertTriangle className="h-4 w-4" />
+            {provisional} material{provisional === 1 ? '' : 's'} awaiting a real SKU
+          </span>
+          <span className="text-xs underline">Review in catalogue</span>
+        </Link>
       )}
 
       <LowStockAlerts lowStock={data.lowStock} />

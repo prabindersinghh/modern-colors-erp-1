@@ -33,12 +33,21 @@ export class CatalogueController {
     @Query('search') search?: string,
     @Query('page') page?: string,
     @Query('pageSize') pageSize?: string,
+    @Query('provisional') provisional?: string,
   ) {
     return this.catalogue.findAll({
       search,
       page: page ? Number(page) : undefined,
       pageSize: pageSize ? Number(pageSize) : undefined,
+      provisional: provisional === 'true' || provisional === '1',
     });
+  }
+
+  // Count of provisional (TMP-) SKUs still awaiting a real code — for the nudge.
+  // NOTE: declared before :id so "provisional-count" isn't captured as an id.
+  @Get('provisional-count')
+  provisionalCount() {
+    return this.catalogue.provisionalCount();
   }
 
   @Get('match')
