@@ -1,14 +1,11 @@
-import { useEffect, useState, useCallback, lazy, Suspense } from 'react'
-import { ScanLine, Scale, CheckCircle2, WifiOff, CloudUpload, Keyboard, RotateCcw, Loader2 } from 'lucide-react'
+import { useEffect, useState, useCallback } from 'react'
+import { Scale, CheckCircle2, WifiOff, CloudUpload, RotateCcw, ChevronLeft } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
 import type { Material } from '@/types/api'
 import { enqueue, pending, flush } from '@/lib/offlineQueue'
-import { ErrorBoundary } from '@/components/common/ErrorBoundary'
+import { ScanPanel } from '@/components/scan/ScanPanel'
+import { useScanFlow } from '@/components/scan/useScanFlow'
 
-// Lazy-loaded so the QR library is only fetched on this screen.
-const CameraQrScanner = lazy(() =>
-  import('@/components/scan/CameraQrScanner').then((m) => ({ default: m.CameraQrScanner })),
-)
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -30,12 +27,12 @@ function extractUniqueId(text: string): string {
 }
 
 export function ReceivingPage() {
-  const [scanId, setScanId] = useState('')
   const [unit, setUnit] = useState<Material | null>(null)
   const [weight, setWeight] = useState('')
   const [busy, setBusy] = useState(false)
   const [queued, setQueued] = useState(0)
-  const [manualOpen, setManualOpen] = useState(false)
+  // UPI-style loop: camera → weigh → save → 2s success → camera.
+  const flow = useScanFlow()
 
   const refreshQueue = useCallback(async () => setQueued((await pending()).length), [])
 
@@ -62,7 +59,7 @@ export function ReceivingPage() {
       })
       setUnit(res.material)
       setWeight(res.material.receivedWeight != null ? String(res.material.receivedWeight) : '')
-      setScanId('')
+      flow.openDetail() // close the camera; the weigh screen takes over
       toast({
         title: res.alreadyScanned ? 'Already scanned' : 'Scanned',
         description: `${res.material.uniqueId} — ${res.material.materialName}`,
@@ -82,6 +79,13 @@ export function ReceivingPage() {
     }
   }
 
+  /** Return to the camera (Back / scan next). */
+  const backToScan = () => {
+    flow.backToScan()
+    setUnit(null)
+    setWeight('')
+  }
+
   const weigh = async () => {
     if (!unit) return
     const w = Number(weight)
@@ -91,12 +95,14 @@ export function ReceivingPage() {
     }
     setBusy(true)
     try {
-      const res = await api.post<{ material: Material }>(
+      await api.post<{ material: Material }>(
         `/receiving/${encodeURIComponent(unit.uniqueId)}/weight`,
         { weight: w, device: DEVICE },
       )
-      setUnit(res.material)
-      toast({ title: 'Weight recorded', description: `${unit.uniqueId} → Ready for Production` })
+      // Brief confirmation, then the camera reopens automatically for the next unit.
+      flow.finish(`${unit.uniqueId} weighed ${w} kg · ready for production`)
+      setUnit(null)
+      setWeight('')
     } catch (err) {
       if (err instanceof TypeError) {
         await enqueue({
@@ -136,65 +142,30 @@ export function ReceivingPage() {
         </div>
       )}
 
-      {/* PRIMARY: live camera QR scanning */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <ScanLine className="h-4 w-4" /> Scan unit QR code
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <ErrorBoundary
-            fallback={
-              <div className="rounded-lg border bg-muted/30 p-6 text-center text-sm text-muted-foreground">
-                Camera scanner unavailable on this device — use manual entry below.
-              </div>
-            }
-          >
-            <Suspense
-              fallback={
-                <div className="flex items-center justify-center gap-2 rounded-lg border bg-muted/30 py-10 text-sm text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" /> Loading scanner…
-                </div>
-              }
-            >
-              <CameraQrScanner paused={!!unit || busy} onResult={(text) => scan(extractUniqueId(text))} />
-            </Suspense>
-          </ErrorBoundary>
-
-          {/* SECONDARY: manual / USB-scanner entry */}
-          {manualOpen ? (
-            <form
-              className="flex gap-2 border-t pt-3"
-              onSubmit={(e) => {
-                e.preventDefault()
-                scan(scanId)
-              }}
-            >
-              <Input
-                placeholder="Type or USB-scan ID (MC-000001)"
-                value={scanId}
-                onChange={(e) => setScanId(e.target.value)}
-              />
-              <Button type="submit" variant="outline" disabled={busy || !scanId.trim()}>
-                Submit
-              </Button>
-            </form>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setManualOpen(true)}
-              className="flex w-full items-center justify-center gap-1.5 border-t pt-3 text-xs text-muted-foreground hover:text-foreground"
-            >
-              <Keyboard className="h-3.5 w-3.5" /> Enter ID manually (USB scanner / typing)
-            </button>
-          )}
-        </CardContent>
-      </Card>
+      {/* PRIMARY: live camera QR scanning — mounted only while scanning, so the camera
+          is genuinely released once a unit is picked up. */}
+      {!unit && (
+        <ScanPanel
+          flow={flow}
+          title="Scan unit QR code"
+          hint="Point the rear camera at a unit's QR code."
+          placeholder="MC-000001"
+          successSub="Ready for the next unit"
+          onScan={(raw) => scan(extractUniqueId(raw))}
+        />
+      )}
 
       {unit && (
         <Card>
           <CardHeader className="pb-3">
+            {/* Back returns to the camera — wrong unit or re-scan. */}
+            <button
+              type="button"
+              onClick={backToScan}
+              className="mb-2 -ml-1 inline-flex w-fit items-center gap-1 rounded-md px-1 py-1 text-sm text-muted-foreground hover:text-foreground"
+            >
+              <ChevronLeft className="h-4 w-4" /> Back to scan
+            </button>
             <CardTitle className="flex items-center justify-between text-base">
               <span className="font-mono">{unit.uniqueId}</span>
               <Badge variant={unit.status === 'READY_FOR_PRODUCTION' ? 'default' : 'outline'}>
@@ -216,7 +187,7 @@ export function ReceivingPage() {
                   <CheckCircle2 className="h-4 w-4" />
                   Weighed {unit.receivedWeight} — Ready for Production.
                 </div>
-                <Button variant="outline" className="w-full gap-1.5" onClick={() => setUnit(null)}>
+                <Button variant="outline" className="w-full gap-1.5" onClick={backToScan}>
                   <RotateCcw className="h-4 w-4" /> Scan next unit
                 </Button>
               </div>

@@ -6,9 +6,23 @@ interface CameraQrScannerProps {
   onResult: (text: string) => void
   /** Pause decoding (e.g. while the parent processes a scan). */
   paused?: boolean
+  /**
+   * Skip the "Tap to start" gate and open the camera immediately on mount. Only honoured
+   * once the camera has already run successfully in this session (see `cameraUnlocked`)
+   * — the FIRST start always needs a real user gesture, which mobile browsers require.
+   */
+  autoStart?: boolean
 }
 
 const REGION_ID = 'qr-camera-region'
+
+/**
+ * Set after the first successful start. Browsers require a user gesture before the
+ * initial getUserMedia, but once permission is granted in this session further calls
+ * succeed without one — which is what lets the scan → confirm → scan loop reopen the
+ * camera automatically instead of asking for a tap every single time.
+ */
+let cameraUnlocked = false
 
 const SCAN_CONFIG = {
   fps: 15,
@@ -58,7 +72,7 @@ async function disposeScanner(s: Html5Qrcode | null) {
  * sequence of cameras (rear → any → each enumerated device). Manual entry always
  * remains available on the page.
  */
-export function CameraQrScanner({ onResult, paused = false }: CameraQrScannerProps) {
+export function CameraQrScanner({ onResult, paused = false, autoStart = true }: CameraQrScannerProps) {
   const scannerRef = useRef<Html5Qrcode | null>(null)
   const lastRef = useRef<{ text: string; at: number }>({ text: '', at: 0 })
   const cancelledRef = useRef(false)
@@ -72,10 +86,12 @@ export function CameraQrScanner({ onResult, paused = false }: CameraQrScannerPro
     cancelledRef.current = false
     return () => {
       cancelledRef.current = true
+      // Genuinely stops the media track — the phone's camera is released, not just hidden.
       void disposeScanner(scannerRef.current)
       scannerRef.current = null
     }
   }, [])
+
 
   const startCamera = useCallback(async () => {
     if (startingRef.current) return
@@ -113,6 +129,7 @@ export function CameraQrScanner({ onResult, paused = false }: CameraQrScannerPro
       try {
         await scanner.start(target, SCAN_CONFIG, onDecode, () => {})
         if (!cancelledRef.current) {
+          cameraUnlocked = true // permission granted: later remounts can auto-start
           setStatus('running')
           // Best-effort continuous autofocus — never allowed to break the running scanner.
           scanner
@@ -174,6 +191,14 @@ export function CameraQrScanner({ onResult, paused = false }: CameraQrScannerPro
       startingRef.current = false
     }
   }, [onResult])
+
+
+  // Reopen automatically between scans. The very first start still needs a tap (browser
+  // gesture requirement); after that `cameraUnlocked` is true and the loop is seamless.
+  useEffect(() => {
+    if (autoStart && cameraUnlocked && status === 'idle') void startCamera()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoStart, status])
 
   const retry = useCallback(() => {
     setError(null)

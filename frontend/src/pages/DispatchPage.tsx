@@ -1,29 +1,21 @@
-import { useCallback, useEffect, useState, lazy, Suspense } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
-  ScanLine,
-  Keyboard,
-  Loader2,
   Truck,
   PackageCheck,
-  CheckCircle2,
   Boxes,
-  RotateCcw,
 } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import type { DispatchHistory, DispatchReady, FinishedGood } from '@/types/api'
-import { ErrorBoundary } from '@/components/common/ErrorBoundary'
+import { ScanPanel } from '@/components/scan/ScanPanel'
+import { useScanFlow } from '@/components/scan/useScanFlow'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { EmptyState } from '@/components/common/EmptyState'
 import { ConfirmationDialog } from '@/components/common/ConfirmationDialog'
 import { toast } from '@/hooks/useToast'
 
-const CameraQrScanner = lazy(() =>
-  import('@/components/scan/CameraQrScanner').then((m) => ({ default: m.CameraQrScanner })),
-)
 
 const DEVICE = 'web-client'
 
@@ -43,10 +35,10 @@ export function DispatchPage() {
   const [ready, setReady] = useState<DispatchReady | null>(null)
   const [history, setHistory] = useState<DispatchHistory | null>(null)
   const [last, setLast] = useState<FinishedGood | null>(null)
-  const [manual, setManual] = useState('')
-  const [manualOpen, setManualOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [bulkTarget, setBulkTarget] = useState<DispatchReady['batches'][number] | null>(null)
+  // UPI-style loop: a dispatch scan is a single action, so scan → success → camera.
+  const flow = useScanFlow()
 
   const load = useCallback(async () => {
     const [r, h] = await Promise.all([
@@ -68,8 +60,8 @@ export function DispatchPage() {
         device: DEVICE,
       })
       setLast(unit)
-      setManual('')
-      toast({ title: `${unit.uniqueId} dispatched`, description: `${unit.productName} · batch ${unit.batch?.batchNumber}` })
+      // Brief confirmation, then the camera reopens automatically for the next unit.
+      flow.finish(`${unit.uniqueId} dispatched · ${unit.productName}`)
       await load()
     } catch (err) {
       toast({
@@ -121,72 +113,16 @@ export function DispatchPage() {
         </Card>
       </div>
 
-      {/* Scanner */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <ScanLine className="h-4 w-4" /> Scan a finished-goods QR
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <ErrorBoundary
-            fallback={
-              <div className="rounded-lg border bg-muted/30 p-6 text-center text-sm text-muted-foreground">
-                Camera unavailable — use manual entry below.
-              </div>
-            }
-          >
-            <Suspense
-              fallback={
-                <div className="flex items-center justify-center gap-2 rounded-lg border bg-muted/30 py-10 text-sm text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" /> Loading scanner…
-                </div>
-              }
-            >
-              <CameraQrScanner paused={busy} onResult={(t) => scan(t)} />
-            </Suspense>
-          </ErrorBoundary>
-
-          {manualOpen ? (
-            <form
-              className="flex gap-2 border-t pt-3"
-              onSubmit={(e) => {
-                e.preventDefault()
-                scan(manual)
-              }}
-            >
-              <Input placeholder="FG-000001" value={manual} onChange={(e) => setManual(e.target.value)} />
-              <Button type="submit" variant="outline" disabled={busy || !manual.trim()}>
-                Dispatch
-              </Button>
-            </form>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setManualOpen(true)}
-              className="flex w-full items-center justify-center gap-1.5 border-t pt-3 text-xs text-muted-foreground hover:text-foreground"
-            >
-              <Keyboard className="h-3.5 w-3.5" /> Enter FG code manually
-            </button>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Last dispatched confirmation */}
-      {last && (
-        <div className="flex items-center gap-3 rounded-lg border border-success/40 bg-success/10 p-3">
-          <CheckCircle2 className="h-6 w-6 shrink-0 text-success" />
-          <div className="min-w-0 flex-1 text-sm">
-            <div className="font-semibold text-success">{last.uniqueId} dispatched</div>
-            <div className="text-muted-foreground">
-              {last.productName} · {last.sizePerPackage} {last.sizeUnit} · batch {last.batch?.batchNumber}
-            </div>
-          </div>
-          <Button size="sm" variant="ghost" onClick={() => setLast(null)}>
-            <RotateCcw className="h-4 w-4" />
-          </Button>
-        </div>
-      )}
+      {/* Scanner — camera is mounted only while scanning; a success flash replaces it
+          for ~2s after each dispatch, then it reopens automatically. */}
+      <ScanPanel
+        flow={flow}
+        title="Scan a finished-goods QR"
+        hint="Point the rear camera at an FG label."
+        placeholder="FG-000001"
+        successSub={last ? `${last.productName} · batch ${last.batch?.batchNumber}` : undefined}
+        onScan={(raw) => scan(raw)}
+      />
 
       {/* Ready for dispatch, grouped by batch */}
       <Card>

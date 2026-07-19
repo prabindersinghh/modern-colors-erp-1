@@ -1,15 +1,13 @@
-import { useCallback, useEffect, useState, lazy, Suspense } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
-  ScanLine,
-  Keyboard,
-  Loader2,
   RotateCcw,
   PlusCircle,
   MinusCircle,
   Trash2,
   PackageCheck,
   AlertTriangle,
+  ChevronLeft,
 } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
@@ -22,7 +20,8 @@ import type {
   StockTxnType,
   StockUnit,
 } from '@/types/api'
-import { ErrorBoundary } from '@/components/common/ErrorBoundary'
+import { ScanPanel } from '@/components/scan/ScanPanel'
+import { useScanFlow } from '@/components/scan/useScanFlow'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -30,9 +29,6 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { toast } from '@/hooks/useToast'
 
-const CameraQrScanner = lazy(() =>
-  import('@/components/scan/CameraQrScanner').then((m) => ({ default: m.CameraQrScanner })),
-)
 
 const DEVICE = 'web-client'
 const DEPARTMENTS: Department[] = ['PU', 'ENAMEL', 'POWDER']
@@ -71,8 +67,6 @@ export function StockPage() {
   const [issue, setIssue] = useState<IssueContext | null>(null)
   const [unit, setUnit] = useState<StockUnit | null>(null)
   const [history, setHistory] = useState<StockTransaction[]>([])
-  const [scanId, setScanId] = useState('')
-  const [manualOpen, setManualOpen] = useState(false)
   const [busy, setBusy] = useState(false)
 
   // Movement form
@@ -81,6 +75,8 @@ export function StockPage() {
   const [department, setDepartment] = useState<Department | ''>('')
   const [note, setNote] = useState('')
   const [reviewOpen, setReviewOpen] = useState(false)
+  // UPI-style loop: camera → detail → confirm → 2s success → camera.
+  const flow = useScanFlow()
 
   // FIFO recommendation for the request line being issued (oldest unit to scan first).
   const [fifoHint, setFifoHint] = useState<{ uniqueId: string; balanceKg: number; ageDays: number } | null>(null)
@@ -145,8 +141,8 @@ export function StockPage() {
         return
       }
       setUnit(u)
-      setScanId('')
       if (!issue) setDepartment('')
+      flow.openDetail() // close the camera; the detail screen takes over
       await loadHistory(u.uniqueId)
     } catch (err) {
       if (err instanceof ApiError && err.status === 404) {
@@ -215,15 +211,17 @@ export function StockPage() {
         note: note.trim() || undefined,
         device: DEVICE,
       })
-      toast({
-        title: `${TYPE_META[type].label} recorded`,
-        description: `${unit.uniqueId} → ${res.unit.balanceKg} kg remaining`,
-      })
       setReviewOpen(false)
-      setUnit(res.unit)
+      // Brief confirmation, then the camera reopens automatically for the next unit.
+      flow.finish(
+        `${TYPE_META[type].label === 'Add' ? 'Added' : TYPE_META[type].label === 'Deduct' ? 'Deducted' : 'Discarded'} ${q} kg ${
+          type === 'ADD' ? 'to' : 'from'
+        } ${unit.uniqueId} · ${res.unit.balanceKg} kg remaining`,
+      )
+      setUnit(null) // detail screen closes; ScanPanel takes over
+      setHistory([])
       setQty('')
       setNote('')
-      await loadHistory(res.unit.uniqueId)
       // Refresh the issue context so "remaining" reflects what was just issued.
       if (issue) {
         try {
@@ -247,6 +245,7 @@ export function StockPage() {
   }
 
   const reset = () => {
+    flow.backToScan()
     setUnit(null)
     setHistory([])
     setQty('')
@@ -301,61 +300,31 @@ export function StockPage() {
         </Card>
       )}
 
-      {/* Scan */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <ScanLine className="h-4 w-4" /> Scan a unit QR
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <ErrorBoundary
-            fallback={
-              <div className="rounded-lg border bg-muted/30 p-6 text-center text-sm text-muted-foreground">
-                Camera scanner unavailable — use manual entry below.
-              </div>
-            }
-          >
-            <Suspense
-              fallback={
-                <div className="flex items-center justify-center gap-2 rounded-lg border bg-muted/30 py-10 text-sm text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" /> Loading scanner…
-                </div>
-              }
-            >
-              <CameraQrScanner paused={!!unit || busy} onResult={(t) => lookup(extractUniqueId(t))} />
-            </Suspense>
-          </ErrorBoundary>
-
-          {manualOpen ? (
-            <form
-              className="flex gap-2 border-t pt-3"
-              onSubmit={(e) => {
-                e.preventDefault()
-                lookup(scanId)
-              }}
-            >
-              <Input placeholder="Type or USB-scan ID (MC-000001)" value={scanId} onChange={(e) => setScanId(e.target.value)} />
-              <Button type="submit" variant="outline" disabled={busy || !scanId.trim()}>
-                Look up
-              </Button>
-            </form>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setManualOpen(true)}
-              className="flex w-full items-center justify-center gap-1.5 border-t pt-3 text-xs text-muted-foreground hover:text-foreground"
-            >
-              <Keyboard className="h-3.5 w-3.5" /> Enter ID manually (USB scanner / typing)
-            </button>
-          )}
-        </CardContent>
-      </Card>
+      {/* Scan — camera is MOUNTED only while scanning, so it is released in between.
+          A success flash replaces it briefly before it reopens automatically. */}
+      {!unit && (
+        <ScanPanel
+          flow={flow}
+          title="Scan a unit QR"
+          hint="Point the rear camera at a unit's QR code."
+          placeholder="MC-000001"
+          successSub="Ready for the next unit"
+          onScan={(raw) => lookup(extractUniqueId(raw))}
+        />
+      )}
 
       {/* Movement panel */}
       {unit && (
         <Card>
           <CardHeader className="pb-3">
+            {/* Back returns to the camera — for a wrong unit or a re-scan. */}
+            <button
+              type="button"
+              onClick={reset}
+              className="mb-2 -ml-1 inline-flex w-fit items-center gap-1 rounded-md px-1 py-1 text-sm text-muted-foreground hover:text-foreground"
+            >
+              <ChevronLeft className="h-4 w-4" /> Back to scan
+            </button>
             <CardTitle className="flex items-center justify-between text-base">
               <span className="font-mono">{unit.uniqueId}</span>
               <Badge variant="default">{unit.balanceKg} kg on unit</Badge>
