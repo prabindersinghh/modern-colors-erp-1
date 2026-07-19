@@ -1,4 +1,4 @@
-# Modern Colours — Phase 1 Build Progress (LIVING LOG)
+# Modern Colours — Build Progress (LIVING LOG)
 
 > **Purpose:** Append-only-ish running log so context never breaks between sessions.
 > **After completing any build step, update this file**: what was built, what was tested,
@@ -22,16 +22,58 @@
 | 9 | Receiving: scan + manual weight + offline-idempotent | ✅ | `receiving` module. `POST /receiving/scan` (→ SCANNED, idempotent re-scan, I9), `POST /receiving/:uniqueId/weight` (→ READY_FOR_PRODUCTION; correction = audited new entry I4; weigh-before-scan → 400). e2e verified. |
 | 11 | Dashboard (metrics, filters, search) | ✅ | `dashboard` module. `GET /dashboard/summary` (today's POs, received, pending scan/weigh, ready, supplier/material stats, PO status breakdown) + `GET /dashboard/search` (status/supplier/PO#/q/date filters). e2e verified. |
 | 4 | Master Catalogue (import + CRUD + match) | ✅ | `catalogue` module. Column-tolerant CSV/Excel import (xlsx), CRUD (soft-delete), match (exact/similar/none, Levenshtein). RBAC: import/edit/delete=Admin, new-SKU create=Admin+Operator (daily new SKUs, provisional TMP- code). 11/11 jest pass; e2e verified (import 20, match 3 types, operator 201/403/200). |
-| 4 | Master Catalogue (import + CRUD + match) | ⬜ | |
-| 5 | Settings (API key encrypt/mask/validate) | ⬜ | Invariant I2 |
-| 6 | PO upload + Claude extraction + fallback | ⬜ | Invariants I7 |
-| 7 | Operator review/confirm + validation | ⬜ | Invariants I1, I6 (hard gate) |
-| 8 | Material registration + unique IDs + QR + label PDFs | ⬜ | Invariants I3, I8 |
-| 9 | QR scan + status lifecycle + manual weight + offline queue | ⬜ | Invariant I9 |
-| 10 | Audit logging threaded through all modules | ⬜ | Invariant I4 |
-| 11 | Dashboard (metrics, filters, search) | ⬜ | |
+| 10 | Audit logging threaded through all modules | ✅ | Invariant I4. Threaded through every module as it was built; extended to all Phase 2 and Phase 3 actions. |
 | 12 | Frontend rebuild to Phase 1 + wire to API | ✅ | Real API client (JWT) + auth context + login + role-gated routes/nav. Pages: Dashboard, PO Upload, Review/Confirm (edit/add/delete + confirm gate), QR Labels (+PDF), Scan & Weigh (IndexedDB offline queue, I9), Master Catalogue (import/add), Settings (API key), Audit. `tsc`+`vite build` ✅. UI e2e via Playwright: login → live dashboard, settings, 21-SKU catalogue. |
 | 13 | End-to-end pass | ✅ | Backend verified live on Neon (upload → confirm 5 units MC-000001… → scan → weigh → READY → labels PDF). Frontend verified via Playwright against the live API (auth, dashboard metrics, catalogue, settings). |
+
+### Phase 2 — Requests, issuing & stock (complete)
+
+| # | Step | Status | Notes |
+|---|------|--------|-------|
+| P2-1 | Roles + departments (OVERSIGHT, PRODUCTION_HEAD; PU/ENAMEL/POWDER) | ✅ | `Department` enum on User; `common/auth/department-scope.ts` centralises isolation (I10). |
+| P2-2 | Production request creation (per-material lines) | ✅ | Head raises a request; `department` is **forced server-side** from the token, never taken from the body. |
+| P2-3 | Catalogue-driven material picker | ✅ | Heads pick from the master catalogue so names match what Store will scan. |
+| P2-4 | Store request inbox | ✅ | Per-LINE Accept / Partial / Reject with `approvedKg` + rejection reason; parent status derived from the line mix. |
+| P2-5 | Scan & Issue (Add / Deduct / Discard) | ✅ | QR scan → unit → movement. Deduct is capped at `approvedKg`; over-deduction blocked (I11). |
+| P2-6 | Live stock levels + append-only ledger | ✅ | `StockTransaction` + `Material.balanceKg` written in ONE transaction with `SELECT … FOR UPDATE`. |
+| P2-7 | Admin (OVERSIGHT) oversight dashboard | ✅ | Read-only across all departments; every mutating route rejects OVERSIGHT. |
+| P2-8 | Integration pass + written UAT script | ✅ | [`PHASE2_UAT.md`](./PHASE2_UAT.md) — client executes it. |
+| P2-9 | Analytics dashboards for every login | ✅ | Role-specific KPI cards + recharts; low-stock red/amber alerts; heads see only their own department. |
+
+### FIFO (First-In-First-Out) — complete
+
+| # | Step | Status | Notes |
+|---|------|--------|-------|
+| F-1 | FIFO primitives | ✅ | `stock/fifo.util.ts` — `fifoSort` (arrivedAt asc, `uniqueId` tiebreak), `ageDays`, `ageingLevel`. |
+| F-2 | Soft, non-blocking FIFO warning | ✅ | Deducting a newer unit while older stock exists warns and records a `FIFO_OVERRIDE` audit row — it never blocks. |
+| F-3 | Ageing display | ✅ | Amber ≥ 30 days, red ≥ 60 days. Stock Levels sorts oldest-first; a Stock Ageing tab buckets fresh/amber/red. |
+| F-4 | No migration | ✅ | Verified `arrivedAt` was 100 % populated first — FIFO needed **no schema change**. |
+
+### Phase 3 — Finished Goods & Dispatch (complete)
+
+| # | Step | Status | Notes |
+|---|------|--------|-------|
+| P3-1 | Schema + additive migration | ✅ | `20260719161842_phase3_finished_goods_dispatch`. Batch, ProductionOutput, FinishedGood, FinishedGoodQr; `DISPATCH` role; `BatchStatus`/`FgStatus`. All additive — `ProductionRequestItem.batchId` nullable, so the 17 existing rows were untouched. |
+| P3-2 | Batch as a first-class record | ✅ | `@@unique([department, batchNumber])`. Heads open a batch or pick an existing one for a top-up. |
+| P3-3 | Batch per request LINE | ✅ | `batchId` sits on the line, not the request, so one request can serve several batches. |
+| P3-4 | Top-up: warn, don't block | ✅ | Requesting against a CONFIRMED/CLOSED batch warns and proceeds; consumption accumulates across requests. |
+| P3-5 | Production output + confirm gate | ✅ | Head records product, package count, size, shade, date. Nothing is minted until `confirmed` (I12). |
+| P3-6 | FG QR generation | ✅ | One `FG-000001` unit + QR per package, from its **own** Postgres sequence. `fgGeneratedAt` blocks double-minting. |
+| P3-7 | Dispatch role + screens | ✅ | New `DISPATCH` role sees finished goods **only**; scan-to-dispatch, second dispatch of the same drum rejected. |
+| P3-8 | Full traceability chain | ✅ | `GET /batches/:id/trace` → materials in (with source POs/suppliers) ↔ finished goods out. |
+| P3-9 | Regression + isolation tests | ✅ | `phase1-access.spec.ts` (47 assertions — Operator/Supervisor keep every Phase 1 route) and `dispatch-isolation.spec.ts` (25 assertions — DISPATCH reaches no non-FG route). |
+
+### Client feedback round (post-Phase-3) — complete
+
+| # | Item | Status | Notes |
+|---|------|--------|-------|
+| C-1 | "In-Hand" rename | ✅ | Terminology updated across the stock screens. |
+| C-2 | Stock ageing display | ✅ | Ageing tab + amber/red badges on Stock Levels. |
+| C-3 | QR generation speed | ✅ | **100 labels 8568 ms → 2555 ms (3.35×)**; PDF 1735 KB → 698 KB; ZIP 3580 → 1199 ms. |
+| C-4 | Explicit Generate → Save → Print flow | ✅ | Each step is now a deliberate action instead of one implicit button. |
+| C-5 | Review-before-issue gate | ✅ | Store reviews the line before the deduction commits. |
+| C-6 | Actual quantity issued | ✅ | The weighed amount is captured, which may differ from the approved figure; both are kept. |
+
 
 ## Session log
 
@@ -184,6 +226,112 @@
   (Titanium Dioxide) through the proxy; no crash; `vite build` ✅ (scanner code-split to its own chunk).
 - **Pending (user, on a real phone):** verify live rear-camera QR decode and document-photo quality/focus is
   good enough for AI extraction — see README “Testing the camera on a phone”.
+
+### 2026-07-03 — Phase 2 build + going LIVE
+- **Phase 2 complete (Steps 1–9).** Departments and the two new roles; request creation from the catalogue;
+  Store inbox with per-LINE Accept/Partial/Reject; Scan & Issue (Add/Deduct/Discard); live stock levels backed
+  by an append-only ledger; OVERSIGHT read-only dashboard; a written UAT script the client executes.
+- **Concurrency hardened.** Ledger row + `Material.balanceKg` are written in ONE transaction with the unit row
+  locked `SELECT … FOR UPDATE`, so two simultaneous scans of the same drum cannot drive it negative (I11).
+  A later review found the same class of race on `ProductionRequestItem.issuedKg` (two deducts against one line
+  via different units could both pass the approved cap) — fixed by locking the request line inside the
+  transaction too.
+- **Department isolation centralised** in `common/auth/department-scope.ts` rather than re-implemented per
+  controller: the department always comes from the JWT, never from the request body (I10).
+- **WENT LIVE (2026-07-03).** Vercel (frontend) + Railway (backend, Singapore) + Neon (Postgres, Singapore) +
+  Cloudflare R2. Gotchas hit and recorded in [`DEPLOYMENT.md`](./DEPLOYMENT.md): the Neon **pooler** host is
+  required for `DATABASE_URL` while migrations need the direct host; Railway IPv6; and environment variables
+  must be staged before the deploy that reads them.
+
+### 2026-07-08 — Analytics dashboards for every login
+- **Rich dashboards per role,** not just for Admin: KPI cards, recharts charts, and low-stock alerts
+  (red/amber) sized to what that role can act on.
+- **Isolation preserved.** Department scoping is applied in the query, server-side, so a PRODUCTION_HEAD's
+  charts can only ever contain their own department's rows — the frontend does no filtering.
+- Client asked whether the other logins had really been done; at that point only Admin had been, and this was
+  said plainly rather than glossed over. Both were then built.
+
+### 2026-07-10 — 2600-QR bug + catalogue verification
+- **Bug: a PO wanted to print 2600 QR labels.** AI extraction had put the bulk KG figure (2300, 300) into
+  `quantity`, which is a **package count**, so one label per kg was queued.
+- **Fixed structurally, not just in the prompt:** a deterministic `BULK_UNITS` guard forces `quantity = 1`
+  when the unit is a bulk measure, so a future prompt regression cannot reintroduce this. The prompt was
+  tightened as well, and the live PO was corrected in the DB.
+- **Catalogue verified end-to-end:** `.xlsx` upload works; the "Add to catalogue" path for No-Match PO SKUs
+  was supported by the backend (`?source=no-match`) but **no UI called it** — the button was added on the
+  Review screen.
+- **Provisional-SKU lifecycle:** `TMP-` items get a badge, a filter, a count, and an audited edit path, so
+  provisional entries are visible and get cleaned up. Receiving is still **never blocked by a missing SKU**.
+
+### 2026-07-14 — FIFO (First-In-First-Out) stock consumption
+- **Verified before designing:** `arrivedAt` was already 100 % populated, so FIFO needed **no migration**.
+- **Soft by design.** Deducting a newer unit while older stock exists shows a warning and writes a
+  `FIFO_OVERRIDE` audit row — it never blocks the issue, because the factory floor sometimes has a good
+  reason. Ageing: amber ≥ 30 days, red ≥ 60 days. Stock Levels sorts oldest-first.
+
+### 2026-07-19 — Phase 3: Finished Goods & Dispatch
+- **Schema shown before it was applied,** then migrated additively
+  (`20260719161842_phase3_finished_goods_dispatch`). Pre/post snapshots proved the existing data was untouched:
+  171 materials, 400 audit rows, 6 units / 97.8 kg identical on both sides. Confirmed PG 18.4 supports
+  `ALTER TYPE … ADD VALUE` in a transaction rather than assuming it.
+- **Batch is a first-class record,** unique per department, held on the request **line** so one request can
+  serve several batches. Top-ups against a confirmed batch warn rather than block, and consumption
+  accumulates.
+- **Confirm gate (I12):** finished-goods QRs cannot be minted until the production output is confirmed, and
+  `fgGeneratedAt` makes a second generate a hard error — so a drum can never get two identities.
+- **`FG-` has its own Postgres sequence,** separate from `MC-`, so a raw unit can never be mistaken for
+  finished goods. `FinishedGoodQr` is a separate model because `QrCode` is hard-bound to `Material`; label
+  rendering is shared through `QrService.buildLabelRoll()`.
+- **New DISPATCH role** sees finished goods only. Proven by `dispatch-isolation.spec.ts` (25 assertions across
+  all 9 non-FG controllers).
+- **Phase 1 regression proven, not assumed.** While gating the previously ungated material/dashboard/catalogue/
+  purchase-order controllers, the client asked directly whether Operator or Supervisor access had broken.
+  `phase1-access.spec.ts` (47 assertions, using the same Reflector logic as `RolesGuard`) proves every endpoint
+  those screens call is still reachable; git history confirmed the Supervisor restrictions pre-dated this change.
+
+### 2026-07-19 — Client feedback round (six items)
+- In-Hand rename; stock ageing display; explicit **Generate → Save → Print** flow; review-before-issue gate;
+  and capture of the **actual** quantity issued (which may differ from the approved figure — both are kept).
+- **QR speed, measured before and after.** Profiled first (encode 2.0 s / embed 0.84 s / save 2.05 s), then:
+  print resolution 512 → 256 px, bounded-parallel encoding (`mapLimit`, concurrency 8), deduped embeds, and
+  `save({ objectsPerTick: 200, useObjectStreams: false })`. **100 labels: 8568 ms → 2555 ms (3.35×)**,
+  PDF 1735 KB → 698 KB, ZIP 3580 → 1199 ms.
+- **Scannability checked numerically, not by eye:** 0.544 mm module at 4.2 px/module — both comfortably above
+  scanner minimums, so the speed-up costs nothing at the label.
+
+### 2026-07-20 — Scan UX (UPI-style) + mobile responsiveness audit
+- **Scan loop reworked to feel like a payments app:** scan → camera closes → detail → confirm → ~2 s success →
+  camera reopens automatically for the next unit. A failed scan keeps the camera open. Manual entry stays as
+  the fallback.
+- **The camera genuinely releases** (battery on the factory floor): the camera component is rendered *only*
+  while scanning, so unmounting stops the media track. A module-level `cameraUnlocked` flag plus an `autoStart`
+  prop makes every reopen after the first silent. New `components/scan/useScanFlow.ts` holds the state machine;
+  `ScanPanel` / `ScanSuccess` share it across screens.
+- **Mobile audit at 320/375/390/412/768.** Playwright MCP dropped mid-audit, so a self-auditing harness page
+  was built and run in headless Chrome, measuring `scrollWidth` vs `innerWidth` in-page across 85
+  screen × viewport combinations (with real login tokens, since the app calls `/auth/me`).
+- **Stock Levels was the only overflowing screen** (+101 px @320, +46 @375, +31 @390, +9 @412, clean @768).
+  Two root causes: a fixed-width `TabsList`, and `AppLayout`'s `<main>` having no width constraint. Fixed with
+  `min-w-0 max-w-full overflow-x-clip` on `<main>` and `max-w-full overflow-x-auto` + `shrink-0` on the tabs,
+  so wide content scrolls inside its own container instead of stretching the page. **Re-verified: 85/85 clean.**
+- **Touch targets raised to 44 px** via `[@media(pointer:coarse)]` only — desktop output is byte-identical.
+- **Regression:** 169/169 backend tests passing across 16 suites.
+
+### 2026-07-20 — Documentation refresh
+- Brought [`ARCHITECTURE.md`](./ARCHITECTURE.md), [`FIELD_REFERENCE.md`](./FIELD_REFERENCE.md), this log,
+  [`PHASE2_UAT.md`](./PHASE2_UAT.md), [`DEPLOYMENT.md`](./DEPLOYMENT.md) and the README current with Phase 3
+  and everything since. Rewritten as coherent current documents rather than an original plus an addendum:
+  where an earlier statement was superseded it was **corrected**, not left alongside the new one (e.g. the
+  3-role `User.role` list, and the stale duplicate rows in the build table above).
+- **Docs only — no code changed in this pass.**
+
+## Open / pending
+
+- **UI/UX overhaul — ON HOLD.** A 5-page preview PDF (3 complete options, each shown on laptop + iPad + phone,
+  plus a tagline page for the moving strip on login and in the app bar) is with the factory owner. **No rebuild
+  has started**; it waits on their choice of option and tagline.
+- **Client click-through verification** still to be done by the client on real hardware: Phase 3 end-to-end,
+  the six feedback items, the scan loop on an actual phone, and label printing on the real label printer.
 
 ---
 _Update this log after every step. Newest entries at the bottom of the session log._

@@ -1,4 +1,4 @@
-# Modern Colours — Phase 1 Architecture Map (LIVING DOCUMENT)
+# Modern Colours — Architecture Map (LIVING DOCUMENT)
 
 > **Purpose:** This is the single source of truth for the system's shape. It must
 > stay alive across coding sessions. **Whenever a structural decision, module
@@ -6,55 +6,71 @@
 > Read this first at the start of any new session before touching code.
 >
 > Companion file: [`PROGRESS.md`](./PROGRESS.md) tracks what has actually been built.
-> Source of truth for scope: [`Modern_Colours_PRD_Phase1_Final (1).docx`](./Modern_Colours_PRD_Phase1_Final%20(1).docx) (PRD v3.0, FINAL).
+> Field-by-field data reference: [`FIELD_REFERENCE.md`](./FIELD_REFERENCE.md).
+> Manual test script: [`PHASE2_UAT.md`](./PHASE2_UAT.md).
+> Original scope: [`Modern_Colours_PRD_Phase1_Final (1).docx`](./Modern_Colours_PRD_Phase1_Final%20(1).docx) (PRD v3.0) — Phase 1 only; Phases 2–3 were specified later by the client directly.
 
 ---
 
 ## 1. What this system is
 
-Digitizes raw-material inward at a paint factory. The flow:
+An ERP for a paint factory, covering the full material journey from supplier delivery
+to dispatched finished goods. It has shipped in three phases, all now live.
 
 ```
-Operator uploads PO bill (PDF/img/scan)
-   → Claude API extracts structured fields (PO#, supplier, materials, qty, unit, batch, date)
-   → Each material validated against Master Catalogue (exact / similar / no-match)
-   → Operator REVIEWS & CORRECTS, then EXPLICITLY CONFIRMS  (HARD GATE — nothing saved before this)
-   → Backend registers ONE material record PER PHYSICAL UNIT, each with unique ID MC-000001…
-   → ONE QR code per physical unit + printable label sheets (PDF)
-   → Truck arrives → operator SCANS each QR → manually enters ONE confirmed weight
-   → Unit reaches "Ready for Production"
-   → Live dashboard reflects everything
+PHASE 1 — Raw material inward
+  Operator uploads supplier invoice (PDF/img/scan)
+     → Claude API extracts fields (PO#, supplier, materials, qty, unit, batch, date)
+     → Each material matched against the Master Catalogue (exact / similar / no-match)
+     → Operator REVIEWS & CORRECTS, then EXPLICITLY CONFIRMS   (HARD GATE)
+     → ONE Material record PER PHYSICAL UNIT, unique ID MC-000001…
+     → ONE QR per unit + printable 3×1.5" label roll (PDF)
+     → Truck arrives → scan each QR → enter one confirmed weight
+     → Unit reaches "Ready for Production"
+
+PHASE 2 — Requests, Store approval, stock movement
+     Production head raises a multi-material request (per-line quantities)
+     → Store reviews EACH LINE: accept / partial / reject-with-reason
+     → Store scans a physical unit, QR-verifies the material, REVIEWS, confirms
+     → Add / Deduct / Discard recorded in an append-only ledger; per-unit balance updated
+     → FIFO advisory: oldest stock recommended, override warned + audited
+
+PHASE 3 — Finished goods & dispatch
+     Head opens a BATCH → requests raw materials against it (top-ups allowed)
+     → Head records production OUTPUT for that batch → REVIEWS → CONFIRMS  (HARD GATE)
+     → FG QR minted per drum, FG-000001…, same 3×1.5" label roll
+     → Dispatch role scans FG QRs to ship them (or bulk-dispatches a batch)
+     → Full traceability: FG unit → batch → issues → source units → PO → supplier
 ```
 
-## 2. Scope guardrails (DO NOT CROSS)
+## 2. Scope guardrails
 
-**Phase 1 ONLY.** Explicitly OUT OF SCOPE (these are Phase 2 — building them is scope creep):
-- Production work orders, batch scheduling, recipe/BOM.
-- Production consumption (scan → scale → pour → Initial−Final → auto inventory deduction).
-- Live weighing-machine hardware integration (USB/RS-232/Ethernet/WiFi/BT/SDK). **Phase 1 weight is a single MANUAL entry only.**
-- Inventory forecasting, demand prediction, AI optimization.
-- Worker lot/task views, printable work instructions.
+Phases 1–3 are complete and live. Still explicitly **out of scope** (do not build without
+a client decision):
 
-> The pre-existing frontend prototype was modeled on this Phase 2 product
-> (Production/Warehouse/consumption). It has been **fully removed from the active app**
-> and preserved intact on the **`phase2-draft` git branch** (commit where the prototype
-> last existed). Nothing Phase 2 — pages, types, routes, services, components — is reachable,
-> imported, or wired into the Phase 1 codebase. When Phase 2 starts, branch from `phase2-draft`.
-> Do NOT re-add Phase 2 code to `phase-1`.
+- Live weighing-machine hardware integration (USB/RS-232/Ethernet/BT/SDK). **All weights
+  are manual entry.**
+- Inventory forecasting, demand prediction, AI optimisation.
+- A purchase review/approval gate before QR printing (client explicitly deferred this).
+- The UI/UX visual overhaul (three design directions were proposed and are awaiting the
+  factory owner's choice — see `Modern_Colours_Design_Options.pdf`).
 
 ## 3. Non-negotiable invariants (enforced + tested)
 
 | # | Invariant | Where enforced |
 |---|-----------|----------------|
-| I1 | **No auto-save of AI output.** Materials persist ONLY after explicit operator confirm. | `purchase-order` confirm endpoint + service; integration test |
+| I1 | **No auto-save of AI output.** Materials persist ONLY after explicit operator confirm. | `purchase-order` confirm endpoint + service; test |
 | I2 | **Claude API key encrypted at rest**, never returned in full to frontend (masked `sk-ant-…xxxx`). | `settings` module crypto; unit test on masking |
-| I3 | **QR is 1:1 with physical units**, not line items. 50 bags ⇒ 50 IDs + 50 QRs. | `material` registration service; test asserts count |
-| I4 | **Audit log is append-only.** Corrections = new entries referencing the original; never overwrite/delete. | `audit` module; DB has no update/delete path for AuditLog |
-| I5 | **RBAC enforced server-side** on every protected endpoint (not just UI hiding). | Nest `RolesGuard` + `@Roles()`; e2e tests per role |
-| I6 | **Master Catalogue never gates operations.** No-match materials can still be confirmed. | validation returns status only; confirm has no catalogue hard-block |
-| I7 | **Claude failure ⇒ manual fallback**, operator never blocked. | extraction service returns fallback flag; PO can be confirmed from manual entry |
-| I8 | **Unique IDs are sequential, zero-padded** `MC-000001`. | DB sequence/counter in `material` service; concurrency-safe |
-| I9 | **Scans/weights tolerate offline**, queue locally, sync on reconnect — no silent data loss. | frontend IndexedDB queue + idempotent backend endpoints |
+| I3 | **QR is 1:1 with physical units**, not line items. 50 bags ⇒ 50 IDs + 50 QRs. Same rule for FG drums. | `material` + `finished-goods` services; tests assert count |
+| I4 | **Audit log is append-only.** Corrections = new entries referencing the original; never overwrite/delete. Extends to `StockTransaction`. | `audit` module; no update/delete path |
+| I5 | **RBAC enforced server-side** on every protected endpoint (not just UI hiding). | `RolesGuard` + `@Roles()`; `phase1-access.spec.ts`, `dispatch-isolation.spec.ts` |
+| I6 | **Master Catalogue never gates operations.** No-match materials can still be confirmed. | validation returns status only |
+| I7 | **Claude failure ⇒ manual fallback**, operator never blocked. | extraction service returns fallback flag |
+| I8 | **Unique IDs are sequential, zero-padded** — `MC-000001` (raw), `FG-000001` (finished). Separate Postgres sequences. | `material` / `finished-goods` services; concurrency-safe |
+| I9 | **Scans/weights tolerate offline**, queue locally, sync on reconnect — no silent data loss. | frontend IndexedDB queue + idempotent endpoints |
+| I10 | **Department isolation is server-side.** A production head can never read or write another department's data. | `common/auth/department-scope.ts`; verified against live data |
+| I11 | **Stock can never go negative.** Deduct/discard above a unit's balance is rejected. | `stock.service` row-locked check; tests |
+| I12 | **FG QRs require a confirmed output**, and can be minted only once per output. | `finished-goods.service` confirm + `fgGeneratedAt` guards; tests |
 
 ## 4. Tech stack (locked)
 
@@ -63,98 +79,194 @@ Operator uploads PO bill (PDF/img/scan)
 ```
 modern-colors-erp/
 ├── frontend/          Vite 6 + React 19 + TS + Tailwind 3 + shadcn/ui + react-router 7 + recharts
-├── backend/           NestJS + TypeScript + Prisma + PostgreSQL  (built fresh)
-├── docs/              ARCHITECTURE.md (this) + PROGRESS.md + PRD + phase2 notes
+├── backend/           NestJS 11 + TypeScript + Prisma 6 + PostgreSQL
+├── docs/              ARCHITECTURE.md (this) + PROGRESS.md + FIELD_REFERENCE.md + UAT + PRD
 └── README.md
 ```
 
-> **DATABASE = Neon (hosted Postgres, free tier). NOT Docker.** The client does not have
-> Docker installed and will not install it for this project. There is intentionally **no
-> `docker-compose.yml`** and no local-Postgres setup. `DATABASE_URL` points at the Neon
-> connection string (keep `sslmode=require`). **Do not reintroduce a Docker-based Postgres
-> in any future session.**
+> **DATABASE = Neon (hosted Postgres, Singapore). NOT Docker.** The client does not have
+> Docker and will not install it. There is intentionally **no `docker-compose.yml`**.
+> `DATABASE_URL` is the pooled Neon string; `DIRECT_URL` is the non-pooled one used only
+> for migrations (Prisma's advisory locks hang on PgBouncer). **Do not reintroduce a
+> Docker Postgres in any future session.**
 
-- **Backend:** NestJS + TS, **Neon** PostgreSQL + Prisma ORM, JWT auth + RBAC, REST (no GraphQL).
-- **AI:** Anthropic official SDK `@anthropic-ai/sdk` (no hand-rolled HTTP).
-- **QR:** `qrcode` for generation, `pdf-lib` for printable label sheets.
-- **File storage:** **Cloudflare R2** (S3 API) in prod, abstracted behind `StorageService`.
-  Local dev uses a **disk fallback driver** when R2 creds are absent, so dev is never blocked.
-- **Frontend:** kept on existing Vite stack (NOT migrated to Next.js — would violate the
-  "don't introduce a second UI framework" rule). Design system / layout / shadcn primitives reused.
+- **Backend:** NestJS + TS, Neon PostgreSQL + Prisma, JWT auth + RBAC, REST (no GraphQL).
+- **AI:** Anthropic official SDK `@anthropic-ai/sdk`.
+- **QR:** `qrcode` for generation, `pdf-lib` for the label roll.
+- **File storage:** **Cloudflare R2** (S3 API) in prod, behind `StorageService`; disk
+  fallback locally when R2 creds are absent.
+- **Frontend:** Vite stack (NOT migrated to Next.js). Charts via recharts, lazy-loaded so
+  the library only downloads when a dashboard is opened.
 
-## 5. Backend module map
+## 5. Roles (6)
 
-NestJS modules (each = folder under `backend/src/modules/`):
+| Role (enum) | Called in the UI | Scope |
+|---|---|---|
+| `ADMIN` | **Store** | Everything in Phase 1 + Store actions in Phases 2–3. The original admin login. |
+| `OVERSIGHT` | **Admin** | Factory-wide, **view only**. No actions. Lands on the Oversight dashboard. |
+| `PRODUCTION_HEAD` | PU / Enamel / Powder Head | Scoped to **one department** via `User.department`. Raises requests, records output. |
+| `OPERATOR` | Operator | Phase 1 inward screens. |
+| `SUPERVISOR` | Supervisor | Phase 1 read access + audit log. |
+| `DISPATCH` | Dispatch | **Finished goods only.** Sees FG across all departments (it ships everything) but has zero access to raw stock, requests, batches, POs or Phase 1 screens. |
 
-| Module | Responsibility | Key endpoints (REST) |
+**Isolation is enforced server-side, not by hiding nav.** Two specs guard this:
+- `dispatch-isolation.spec.ts` — asserts from the real `@Roles` metadata that every route
+  on all nine non-FG controllers is gated and never grants `DISPATCH`.
+- `phase1-access.spec.ts` — asserts Operator/Supervisor still reach every endpoint their
+  Phase 1 screens call, so tightening a gate can never silently lock them out.
+
+## 6. Backend module map
+
+| Module | Responsibility | Key endpoints (REST, prefix `/api`) |
 |--------|----------------|----------------------|
 | `auth` | JWT login, token issue/verify, password hashing | `POST /auth/login`, `GET /auth/me` |
 | `users` | User CRUD (Admin), role assignment, seed admin | `GET/POST/PATCH /users` |
-| `catalogue` | Master Catalogue import (Excel/CSV) + CRUD + match lookup | `POST /catalogue/import` (Admin), `GET /catalogue`, `GET /catalogue/match?q=`, `POST /catalogue` (Admin+**Operator** for new-SKU) |
-| `settings` | Claude API key: encrypt/store/mask/validate/remove (Admin only) | `GET /settings/api-key`, `PUT /settings/api-key`, `DELETE /settings/api-key` |
-| `purchase-order` | PO upload, lifecycle, history, **confirm gate** | `POST /purchase-orders` (upload), `POST /:id/confirm`, `GET /purchase-orders` |
-| `ai-extraction` | Call Claude via stored key, parse JSON, run catalogue validation, fallback flag | invoked by purchase-order; `POST /:id/extract` |
-| `material` | Register 1 record/unit, unique ID gen, status transitions | `GET /materials`, `GET /materials/:id` |
-| `qr` | Generate QR per unit, build printable label PDF, decode/scan resolve | `GET /materials/:id/qr`, `POST /qr/labels` (PDF), `POST /qr/scan` |
-| `receiving` | Scan resolve + manual weight entry + status → Weighed → Ready | `POST /receiving/scan`, `POST /receiving/:unitId/weight` |
-| `dashboard` | Aggregated metrics, supplier/material stats, search & filters | `GET /dashboard/summary`, `GET /dashboard/search` |
-| `audit` | Append-only log writer + reader (Supervisor/Admin) | `GET /audit` (read-only) |
+| `catalogue` | Master Catalogue import (**.xlsx / .xls / .csv**) + CRUD + match + provisional-SKU lifecycle | `POST /catalogue/import`, `GET /catalogue?provisional=`, `GET /catalogue/provisional-count`, `POST /catalogue?source=no-match`, `PATCH /catalogue/:id` |
+| `settings` | Claude API key: encrypt/store/mask/validate/remove (Admin) | `GET/PUT/DELETE /settings/api-key` |
+| `purchase-order` | PO upload, lifecycle, history, **confirm gate** | `POST /purchase-orders`, `POST /:id/extract`, `POST /:id/confirm` |
+| `ai-extraction` | Claude call, JSON parse, catalogue validation, **bulk-unit guard** | invoked by purchase-order |
+| `material` | Register 1 record/unit, unique ID gen, status transitions, label outputs | `GET /materials`, `GET /purchase-orders/:poId/units`, `.../labels.pdf|zip|csv` |
+| `qr` | QR image generation + 3×1.5" label roll PDF (shared by raw + FG) | used by `material` and `finished-goods` |
+| `receiving` | Scan resolve + manual weight entry + status → Ready | `POST /receiving/scan`, `POST /receiving/:uniqueId/weight` |
+| `dashboard` | Phase 1 material-inward metrics + search | `GET /dashboard/summary`, `GET /dashboard/search` |
+| `audit` | Append-only log writer + reader | `GET /audit` |
+| `production-request` | Multi-material requests, per-line review, oversight rollup | `POST /production-requests`, `PATCH /:reqId/items/:itemId/review`, `GET /overview` |
+| `stock` | Unit lookup, Add/Deduct/Discard ledger, live levels, **stock ageing**, FIFO | `GET /stock/units/:id`, `POST /stock/transactions`, `GET /stock/levels`, `GET /stock/ageing`, `GET /stock/transactions` |
+| `analytics` | Role-specific dashboards (Admin / Store / Head) | `GET /analytics/overview`, `/analytics/store`, `/analytics/my` |
+| `batch` | Batches as first-class records + **traceability chain** | `POST /batches`, `GET /batches`, `GET /batches/:id/trace` |
+| `production-output` | Output recording + **confirm gate** | `POST /production-outputs`, `POST /:id/confirm` |
+| `finished-goods` | FG minting, FG labels, dispatch | `POST /finished-goods/generate/:outputId`, `GET /by-output/:id/labels.pdf`, `POST /dispatch/scan`, `POST /dispatch/batch` |
 
-Cross-cutting: `common/` (guards, decorators, interceptors, crypto util), `prisma/` (PrismaService).
+Cross-cutting: `common/` (guards, decorators, `auth/department-scope.ts`, crypto), `prisma/`.
 
-## 6. Data model (Prisma) — canonical entities
+## 7. Data model (Prisma) — canonical entities
 
-> Full schema lives in `backend/prisma/schema.prisma`. This is the conceptual map.
+> Full schema in `backend/prisma/schema.prisma`; field-level detail in `FIELD_REFERENCE.md`.
 
-- **User** `{ id, email, passwordHash, name, role(enum ADMIN|SUPERVISOR|OPERATOR), active, createdAt }`
-- **MasterCatalogueItem** `{ id, materialName, sku(unique), category, unit, standardPackaging, metadata Json?, createdAt }`
-- **PurchaseOrder** `{ id, poNumber?, supplier?, fileKey(storage), status(POStatus), source(AI|MANUAL), extractedJson Json?, deliveryDate?, uploadedById, confirmedById?, confirmedAt?, createdAt }`
-  - `POStatus`: `PO_UPLOADED → AI_EXTRACTED → OPERATOR_VERIFIED → REGISTERED`
-- **POLineItem** (draft, pre-confirm working set) `{ id, poId, materialName, sku?, quantity, unit, batchNumber?, matchType(EXACT|SIMILAR|NONE), matchedCatalogueId?, edited }`
-- **Material** (ONE per physical unit) `{ id, uniqueId(unique, "MC-000001"), poId, materialName, sku?, supplier?, batchNumber?, unit, status(MaterialStatus), receivedWeight?, weighedById?, weighedAt?, createdAt }`
-  - `MaterialStatus`: `REGISTERED → ARRIVED → SCANNED → WEIGHED → READY_FOR_PRODUCTION`
-- **QrCode** `{ id, materialId(unique), payload Json (uniqueId, name, sku, supplier, poNumber, batch, date), imageRef, createdAt }`
-- **Setting** (singleton-ish, key/value) — Claude key stored here: `{ id, key, valueEncrypted, valueMasked, iv, updatedById, updatedAt }`
-- **AuditLog** (APPEND-ONLY) `{ id, entityType, entityId, action, actorId, beforeJson?, afterJson?, correctionOfId?, createdAt }`
+**Phase 1**
+- **User** `{ id, email, passwordHash, name, role(Role), department(Department?), active }`
+- **MasterCatalogueItem** `{ id, materialName, sku(unique), hsnCode?, category?, unit?, standardPackaging?, metadata Json?, active }`
+- **PurchaseOrder** `{ id, poNumber?, supplier?, fileKey, status(POStatus), source(AI|MANUAL), extractedJson?, deliveryDate? }`
+- **POLineItem** (pre-confirm working set) `{ id, poId, materialName, sku?, hsnCode?, quantity, unit?, weight?, matchType, edited }`
+- **Material** (ONE per physical unit) `{ id, uniqueId "MC-000001", poId, materialName, sku?, status(MaterialStatus), receivedWeight?, arrivedAt?, balanceKg? }`
+- **QrCode** `{ id, materialId(unique), payload Json, imageRef }`
+- **Setting**, **AuditLog** (append-only)
 
-> **Status note:** PRD lists a combined lifecycle `PO Uploaded → AI Extracted → Operator Verified →
-> Material Registered/QR → Arrived → Scanned/Unloaded → Weighed → Ready for Production`.
-> We model it as **PO-level statuses** (first 3 + registered) and **per-unit Material statuses**
-> (registered → arrived → scanned → weighed → ready), since post-registration the unit is the
-> tracked entity. "Arrived" is contextual; "Ready for Production" is set on weight confirmation.
+**Phase 2**
+- **ProductionRequest** (header) `{ id, department, requestedById, note?, status(RequestStatus), reviewedById?, reviewedAt? }`
+- **ProductionRequestItem** (line) `{ id, requestId, materialName, sku?, requestedKg, status, approvedKg?, rejectionReason?, issuedKg, batchId? }`
+- **StockTransaction** (APPEND-ONLY ledger) `{ id, materialId, type(ADD|DEDUCT|DISCARD), quantityKg, department?, requestItemId?, actorId, balanceAfter, note? }`
 
-## 7. Key flows / sequence
+**Phase 3**
+- **Batch** `{ id, batchNumber, department, status(BatchStatus), note?, createdById }` — `@@unique([department, batchNumber])`
+- **ProductionOutput** `{ id, batchId, productName, packageCount, sizePerPackage, sizeUnit, productionDate, shade?, productSku?, notes?, confirmed, confirmedById?, confirmedAt?, fgGeneratedAt? }`
+- **FinishedGood** (ONE per drum) `{ id, uniqueId "FG-000001", outputId, batchId, productName, sizePerPackage, sizeUnit, status(FgStatus), dispatchedAt?, dispatchedById?, dispatchNote? }`
+- **FinishedGoodQr** `{ id, finishedGoodId(unique), payload Json, imageRef }` — separate from `QrCode`, which is hard-bound to `Material`.
 
-**Extraction + confirm (the hard gate):**
-1. `POST /purchase-orders` (Operator) → file to storage, PO row `PO_UPLOADED`, audit.
-2. `POST /:id/extract` → settings.getDecryptedKey → Claude SDK → JSON → POLineItems with match status → PO `AI_EXTRACTED`. On failure: return `{ fallback: true }`, PO stays `PO_UPLOADED`, operator enters manually.
-3. Operator edits line items (working set only — **not** Materials yet).
-4. `POST /:id/confirm` → **only now** create N Material rows (N = Σ quantities), unique IDs, QRs; PO `OPERATOR_VERIFIED`→`REGISTERED`; audit each. *(I1)*
+**Enums**
+- `Role`: ADMIN | SUPERVISOR | OPERATOR | OVERSIGHT | PRODUCTION_HEAD | DISPATCH
+- `Department`: PU | ENAMEL | POWDER
+- `POStatus`: PO_UPLOADED → AI_EXTRACTED → OPERATOR_VERIFIED → REGISTERED
+- `MaterialStatus`: REGISTERED → ARRIVED → SCANNED → WEIGHED → READY_FOR_PRODUCTION
+- `RequestStatus`: PENDING | IN_PROGRESS (parent only) | APPROVED | PARTIAL | REJECTED
+- `StockTxnType`: ADD | DEDUCT | DISCARD
+- `BatchStatus`: OPEN → OUTPUT_RECORDED → CONFIRMED → CLOSED
+- `FgStatus`: GENERATED → READY → DISPATCHED
+- `MatchType`: EXACT | SIMILAR | NONE
 
-**Receiving:**
-1. `POST /receiving/scan` `{ uniqueId }` → resolve Material, status `ARRIVED`→`SCANNED`, audit. Idempotent (offline-safe). *(I9)*
-2. `POST /receiving/:unitId/weight` `{ weight }` → set receivedWeight, status `WEIGHED`→`READY_FOR_PRODUCTION`, audit. *(I9)*
+## 8. Key flows
 
-## 8. Conventions
+**Extraction + confirm (Phase 1 hard gate)**
+1. `POST /purchase-orders` → file to storage, PO `PO_UPLOADED`, audit.
+2. `POST /:id/extract` → Claude → line items with match status → `AI_EXTRACTED`. On failure `{ fallback: true }` and manual entry.
+3. Operator edits the working set (**not** Materials).
+4. `POST /:id/confirm` → **only now** create N Material rows + QRs → `REGISTERED`. *(I1, I3)*
 
-- REST, JSON, `kebab` URL segments. All write endpoints emit an AuditLog entry.
+> **Bulk-unit guard:** when the AI reads a line's quantity in a weight/volume unit
+> (KG/LTR/MT/…), that number is a bulk total, not a package count. The server forces
+> `quantity = 1` and surfaces the bulk figure so the operator enters the real bag count.
+> This exists because one invoice produced 2600 QR codes from "2300 KG" + "300 KG".
+
+**Request → issue (Phase 2)**
+1. Head raises a request; each line optionally carries a `batchId`.
+2. Store reviews each line (accept / partial / reject-with-reason); parent status is derived from the line mix.
+3. Store scans a unit → QR-verify against the line → **review screen** (unit, material, department, batch, quantity, resulting balance) → confirm.
+4. `POST /stock/transactions` writes the ledger row and updates `Material.balanceKg` **in one DB transaction**, with the unit row locked. Over-deduction rejected. *(I11)*
+
+**FIFO (soft, never blocks)**
+- Basis: `Material.arrivedAt` ascending, tie-broken by `uniqueId`. Only units with balance > 0.
+- Scanning a non-oldest unit shows a prominent warning naming the older unit; the operator may proceed.
+- Proceeding writes a `FIFO_OVERRIDE` audit entry (unit used, unit skipped, both ages, actor) — computed server-side so it cannot be suppressed.
+- Ageing thresholds: **amber ≥ 30 days, red ≥ 60 days** (`fifo.util.ts`), surfaced on the dashboards and on the Stock Levels → **Stock ageing** tab.
+
+**Batch → output → FG → dispatch (Phase 3)**
+1. Head creates a **Batch** (number unique within their department).
+2. Request lines reference `batchId` **per line**, so one request can serve several batches. A later top-up against the same batch **accumulates** (total consumed = sum of everything issued across all requests).
+3. Requesting against a CONFIRMED/CLOSED batch is **warned, not blocked**, and audited `BATCH_POST_CONFIRM_TOPUP`.
+4. Head records **ProductionOutput** as a draft → reviews → `POST /:id/confirm`. *(hard gate)*
+5. `POST /finished-goods/generate/:outputId` mints one `FinishedGood` + QR per package. Blocked unless confirmed; `fgGeneratedAt` prevents a second minting. *(I12)*
+6. Dispatch scans each FG QR (`MC-` codes are rejected with a clear message), or bulk-dispatches the remainder of a batch (audited distinctly).
+
+**Traceability** — `GET /batches/:id/trace` returns both directions:
+`FinishedGood → Batch → ProductionRequestItem[] → StockTransaction[] → Material → PurchaseOrder → supplier`,
+plus what came out (outputs, FG units, dispatch state).
+
+## 9. Scanning UX (all three scan screens)
+
+A single shared loop, modelled on UPI payment scanners, because operators scan many units
+back to back:
+
+```
+camera live → locks on → camera CLOSES → detail/action → confirm
+   ↑                                                        ↓
+   └────────── reopens automatically ←── ~2s success ───────┘
+```
+
+- `useScanFlow` owns the state machine (`scanning | detail | success`); `ScanPanel` renders
+  the camera **only** while scanning, so a hit **unmounts** `CameraQrScanner` and its cleanup
+  (`stop()` + `clear()`) genuinely releases the media track — hiding it would keep the phone's
+  camera powered.
+- The first camera start needs a tap (browsers require a user gesture); after permission is
+  granted in the session, reopens are silent.
+- **Failed scans keep the camera open** and show the error inline, so the operator retries
+  without navigating.
+- Applies to Scan & Weigh, Scan & Issue and Dispatch. The manual/USB-scanner field follows
+  the same loop and refocuses automatically after each success.
+
+## 10. Conventions
+
+- REST, JSON, `kebab` URL segments, `/api` prefix. All write endpoints emit an AuditLog entry.
 - Auth: `Authorization: Bearer <jwt>`. Guards: `JwtAuthGuard` + `RolesGuard`.
-- Errors: Nest exception filters → `{ statusCode, message, code }`.
-- Tests: critical invariants (I1–I9) get tests before/with implementation (TDD where it counts).
-- Frontend talks to backend via `frontend/src/services/api.ts` (base URL from `VITE_API_URL`).
+- Tests: invariants get tests with implementation. **169 backend tests** across 16 suites.
+- Frontend calls the backend via `frontend/src/lib/api.ts` (base from `VITE_API_URL`, `/api` in prod).
 - Env: every secret via env var; `.env.example` committed, `.env` ignored.
+- **Mobile-first where it matters.** Audited at 320/375/390/412/768 px; layout containers carry
+  `min-w-0` so a wide table or tab strip scrolls inside itself instead of stretching the page.
+  Touch devices get 44px tap targets via `@media(pointer:coarse)`; desktop sizing is unchanged.
 
-## 9. Open / deferred decisions
+## 11. Audit events (current, all phases)
 
-- **Daily new SKUs (client requirement):** new materials arrive daily. When a PO line has
-  **No Match**, the operator can add it to the catalogue **with confirmation** (UI confirm) — this is
-  additive + audited (`CATALOGUE_ITEM_ADDED_FROM_NO_MATCH`). Decision: bulk import + edit/delete = **Admin**;
-  single new-SKU create = **Admin + Operator**. If no official SKU code is given, a provisional `TMP-XXXXXX`
-  SKU is auto-generated and flagged `provisional` in metadata for an Admin to normalize later. (Never gates — I6.)
-- Exact catalogue import column mapping — importer is column-tolerant (maps Material Name/SKU/Category/Unit/
-  Standard Packaging + common variants; unknown columns kept in `metadata`). Will confirm against client's real CSV when provided.
-- QR label physical dimensions — default to a printable A4 grid of labels; adjustable.
-- "Ready for Production" = auto on weigh (chosen default) vs. separate confirm tap — using auto for now.
+| Area | Actions |
+|---|---|
+| PO / material | `PO_UPLOADED`, `PO_EXTRACTED`, `PO_CONFIRMED`, `MATERIAL_REGISTERED`, `SCANNED`, `WEIGHT_ENTERED`, `WEIGHT_CORRECTED` |
+| Catalogue | `CATALOGUE_IMPORTED`, `CATALOGUE_ITEM_CREATED`, `CATALOGUE_ITEM_ADDED_FROM_NO_MATCH`, `CATALOGUE_ITEM_UPDATED`, `CATALOGUE_ITEM_SKU_CHANGED`, `CATALOGUE_ITEM_DEACTIVATED` |
+| Requests | `PRODUCTION_REQUEST_CREATED`, `REQUEST_ITEM_APPROVED`, `REQUEST_ITEM_PARTIAL`, `REQUEST_ITEM_REJECTED`, `BATCH_POST_CONFIRM_TOPUP` |
+| Stock | `STOCK_ADD`, `STOCK_DEDUCT`, `STOCK_DISCARD`, `FIFO_OVERRIDE` |
+| Phase 3 | `BATCH_CREATED`, `OUTPUT_RECORDED`, `OUTPUT_RECORDED_EXTRA`, `OUTPUT_UPDATED`, `OUTPUT_CONFIRMED`, `OUTPUT_DRAFT_DELETED`, `FG_QR_GENERATED`, `FG_DISPATCHED`, `FG_DISPATCHED_BULK` |
+| Users | `USER_SEEDED` |
+
+## 12. Open / deferred decisions
+
+- **UI/UX overhaul** — three directions (Studio Violet / Signal Dark / Paint Chip) plus five
+  taglines are in `Modern_Colours_Design_Options.pdf`, awaiting the factory owner's pick. The
+  tagline is intended to run as a moving strip on the login window and an in-app bar.
+- **Purchase review gate before QR printing** — client explicitly deferred.
+- **Low-stock tiers** (`< 5 kg` critical, `< 20 kg` low) and **ageing tiers** (30/60 days) are
+  code constants; move to Settings if the client wants them tunable.
+- **Seeded passwords** — the five non-admin logins still use the default `ChangeMe123!`
+  (override via `SEED_PHASE2_PASSWORD` / `SEED_PHASE3_PASSWORD`). Change before real go-live.
+- **Frontend has no test runner.** All 169 tests are backend. Adding vitest + testing-library
+  would be a deliberate separate task.
 
 ---
-_Last updated: 2026-06-24 — initial architecture established post-discovery._
+_Last updated: 2026-07-20 — Phases 1–3 live; FIFO, client-feedback items, scan-flow UX and mobile responsiveness audit included._

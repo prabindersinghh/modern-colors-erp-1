@@ -4,18 +4,24 @@ Manual end-to-end test for **Production Requests, Store Approval & Stock Movemen
 Run against the live deployment (or a local build). Nothing here is destructive to
 Phase 1 data. Tick each ☐ as you go; note any ✗ with what you saw.
 
-## 0. Logins (all live in the database)
+## 0. Logins (all six roles, all live in the database)
 
-| Role (display)      | Email                          | Password        | Dept   |
-|---------------------|--------------------------------|-----------------|--------|
-| **Store**           | `admin@moderncolours.local`    | *(your admin pw)* | —    |
-| **Admin** (oversight, view-only) | `oversight@moderncolours.local` | `ChangeMe123!`¹ | — |
-| **PU Head**         | `pu@moderncolours.local`       | `ChangeMe123!`¹ | PU     |
-| **Enamel Head**     | `enamel@moderncolours.local`   | `ChangeMe123!`¹ | ENAMEL |
-| **Powder Head**     | `powder@moderncolours.local`   | `ChangeMe123!`¹ | POWDER |
+| Role (display)      | Email                          | Password        | Dept   | Sees |
+|---------------------|--------------------------------|-----------------|--------|------|
+| **Store** (`ADMIN`) | `admin@moderncolours.local`    | *(your admin pw)* | —    | Everything except other users' settings |
+| **Admin** (`OVERSIGHT`, view-only) | `oversight@moderncolours.local` | `ChangeMe123!`¹ | — | All departments, read-only |
+| **PU Head**         | `pu@moderncolours.local`       | `ChangeMe123!`¹ | PU     | PU only |
+| **Enamel Head**     | `enamel@moderncolours.local`   | `ChangeMe123!`¹ | ENAMEL | ENAMEL only |
+| **Powder Head**     | `powder@moderncolours.local`   | `ChangeMe123!`¹ | POWDER | POWDER only |
+| **Dispatch**        | `dispatch@moderncolours.local` | `ChangeMe123!`¹ | —      | Finished goods only (Phase 3) |
 
-¹ Unless overridden via `SEED_PHASE2_PASSWORD` when the seed was run. Change these
-after first login for a real go-live.
+¹ Unless overridden when the seed was run — `SEED_PHASE2_PASSWORD` for the oversight and department-head
+logins, `SEED_PHASE3_PASSWORD` for dispatch.
+**Change every one of these after first login before a real go-live** — the default is
+published in this document, so it must not survive into production use.
+
+> Phase 1 also has `SUPERVISOR` and `OPERATOR` logins for the receiving floor; they are
+> unchanged by Phase 2/3 and are covered by the Phase 1 checks, not this script.
 
 > Tip: use separate browsers / private windows so you can stay logged in as more
 > than one role at once (Store in one, PU Head in another).

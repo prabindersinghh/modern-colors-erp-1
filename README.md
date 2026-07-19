@@ -2,15 +2,15 @@
   <img src="docs/_banner.png" alt="Modern Colours — Factory Material Inward Digitization Platform" width="100%" />
 </p>
 
-<h1 align="center">Modern Colours — Material Inward Digitization Platform</h1>
+<h1 align="center">Modern Colours — Factory ERP</h1>
 
 <p align="center">
-  AI-powered Purchase-Order extraction, per-unit QR tracking, and receiving-weight confirmation
-  for a paint manufacturing facility.
+  AI-powered Purchase-Order extraction, per-unit QR tracking, department stock issuing,
+  and finished-goods dispatch for a paint manufacturing facility.
 </p>
 
 <p align="center">
-  <img alt="Phase" src="https://img.shields.io/badge/Phase-1-3b82f6" />
+  <img alt="Phase" src="https://img.shields.io/badge/Phase-3%20live-3b82f6" />
   <img alt="Backend" src="https://img.shields.io/badge/Backend-NestJS%2011-e0234e" />
   <img alt="Frontend" src="https://img.shields.io/badge/Frontend-React%2019%20%2B%20Vite-646cff" />
   <img alt="DB" src="https://img.shields.io/badge/DB-PostgreSQL%20(Neon)-336791" />
@@ -24,15 +24,24 @@
 ## Overview
 
 Modern Colours receives raw materials (pigments, fillers, binders, solvents) against paper Purchase
-Orders. This platform digitizes that inward process end-to-end:
+Orders, issues them to production departments, and ships finished paint. This platform digitizes that
+whole chain — from the supplier's invoice to the drum leaving the gate:
 
-> **Operator uploads a PO → Claude extracts the line items → the operator reviews & confirms →
-> the system mints one QR-coded unit per physical item → each unit is scanned and weighed on arrival
-> until it is _Ready for Production_ — with a live dashboard over everything.**
+> **Phase 1 — Inward.** Operator uploads a PO → Claude extracts the line items → the operator reviews
+> & confirms → the system mints one QR-coded unit per physical item → each unit is scanned and weighed
+> on arrival until it is _Ready for Production_.
+>
+> **Phase 2 — Requests & stock.** A department head requests materials → Store accepts, part-accepts or
+> rejects each line → Store scans the drum and issues the actual weighed amount → live stock levels are
+> kept by an append-only ledger, oldest stock first (FIFO).
+>
+> **Phase 3 — Finished goods & dispatch.** Materials are issued against a **batch** → the head records
+> what that batch produced and confirms it → the system mints one `FG-` QR per drum produced → Dispatch
+> scans each drum out, and any finished drum traces back to the exact raw materials and suppliers behind it.
 
 Nothing the AI extracts is persisted until an operator explicitly confirms it, every state change is
-written to an append-only audit log, and the factory's own Claude API key is encrypted at rest and used
-server-side only.
+written to an append-only audit log, stock balances can never go negative or drift from the ledger, and
+the factory's own Claude API key is encrypted at rest and used server-side only.
 
 <p align="center">
   <img src="docs/architecture.png" alt="Architecture map" width="100%" />
@@ -74,13 +83,54 @@ server-side only.
 ### Settings, roles & audit
 - **Settings (Admin-only)** — the Claude API key is entered, validated against a live API call, **encrypted
   at rest (AES-256-GCM)**, masked in every response, and used server-side only.
-- **Role-based access control** — **Admin** (full access incl. users, catalogue, API key), **Supervisor**
-  (read-only dashboard, records, audit), **Operator** (upload, review/confirm, QR, scan, weigh). Enforced
-  server-side on every endpoint, not just hidden in the UI.
+- **Role-based access control — six roles**, enforced server-side on every endpoint, not just hidden in
+  the UI:
+
+  | Role | Displayed as | Can do |
+  |---|---|---|
+  | `ADMIN` | **Store** | Users, catalogue, API key; approves requests and issues stock |
+  | `SUPERVISOR` | Supervisor | Read-only dashboard, records, audit |
+  | `OPERATOR` | Operator | Upload, review/confirm, QR, scan, weigh |
+  | `OVERSIGHT` | **Admin** | Read-only across **all** departments; every mutating route rejects it |
+  | `PRODUCTION_HEAD` | PU / Enamel / Powder Head | Requests, batches and output **for their own department only** |
+  | `DISPATCH` | Dispatch | Finished goods only — nothing else in the system |
+
+  Department isolation is derived from the JWT, never from the request body, so a head cannot see or
+  touch another department's data by editing a request.
 - **Immutable audit trail** — every status change, PO entry, and weight entry is logged with timestamp and
   operator. Corrections are new audited entries that reference the original, never silent overwrites.
 
+### Requests & stock (Phase 2)
+- **Per-material requests** — a department head raises a request from the master catalogue, so the names
+  match exactly what Store will scan.
+- **Per-line decisions** — Store accepts, part-accepts (with an approved quantity) or rejects **each line**
+  independently, with a reason; the request's overall status is derived from the mix.
+- **Scan & Issue** — Store scans the drum's QR, reviews the line, then records **Add / Deduct / Discard**.
+  The **actual weighed amount** is captured, which may differ from the approved figure — both are kept.
+- **Append-only ledger** — every movement is a permanent row. The ledger and the unit's balance are written
+  in one transaction with the row locked, so simultaneous scans can never drive stock negative or let the
+  two drift apart.
+- **FIFO, softly** — oldest arrival is suggested first. Issuing newer stock while older exists **warns and
+  records the override; it never blocks**, because the floor sometimes has a good reason.
+- **Stock ageing** — amber at 30 days, red at 60, with an ageing view that buckets what is sitting too long.
+
+### Finished goods & dispatch (Phase 3)
+- **Batch as a real record** — not free text. Unique per department, and held on each request **line**, so
+  one request can serve several batches and a trace can never break on a typo.
+- **Top-ups warn, don't block** — requesting more against an already-confirmed batch is allowed; consumption
+  accumulates across every request pointing at that batch.
+- **Production output + confirm gate** — the head records product, package count, size, shade and date.
+  **No finished-goods QR is minted until that output is confirmed**, and a second generate is refused, so a
+  drum can never end up with two identities.
+- **`FG-` labels** — one QR per drum produced, from its own sequence, kept deliberately distinct from `MC-`
+  so a raw unit can never be mistaken for finished goods.
+- **Scan-to-dispatch** — Dispatch scans each drum out; dispatching the same drum twice is rejected.
+- **Full traceability** — any finished drum traces back through its batch to the exact raw-material units,
+  POs and suppliers that went into it.
+
 ### Dashboard
+- **A dashboard per role** — KPI cards, charts and low-stock alerts (red/amber) sized to what that role can
+  actually act on. Department heads' charts are filtered server-side to their own department.
 - Live metrics: today's POs, materials received, pending scans/weighing, ready-for-production counts.
 - Supplier-wise and material-wise statistics.
 - Search & filters by date, PO number, supplier, material name/SKU, and status.
@@ -96,6 +146,14 @@ PO Uploaded → AI Extracted → Operator Verified → Material Registered / QR 
 
 The first four are **PO-level** statuses; once registered, each **physical unit** is tracked
 independently through arrival, scan, weigh, and ready.
+
+From there Phase 2/3 continue the chain:
+
+```
+Ready for Production → issued against a Batch (ledger + balance)
+   → Production Output recorded → Confirmed → FG QRs minted
+   → Finished Good: Generated → Ready → Dispatched
+```
 
 ---
 
@@ -123,15 +181,17 @@ modern-colors-erp/
 ├── frontend/          Vite + React 19 + TS + Tailwind + shadcn/ui  (UI)
 │   └── src/
 │       ├── components/  ui/ (design system) · common/ · layout/
-│       └── pages/       Phase 1 screens
+│       └── pages/       screens for all three phases
 ├── backend/           NestJS + Prisma + PostgreSQL  (API)
 │   ├── prisma/          schema.prisma · seed.ts · migrations/
 │   └── src/
 │       ├── common/      guards · decorators · crypto · config (env validation)
 │       ├── prisma/      PrismaService
-│       └── modules/     auth · users · catalogue · settings · audit
-│                        (+ purchase-order · ai-extraction · material · qr ·
-│                           receiving · dashboard — added incrementally)
+│       └── modules/     Phase 1: auth · users · catalogue · settings · audit ·
+│                        purchase-order · ai-extraction · material · qr ·
+│                        receiving · dashboard
+│                        Phase 2: production-request · stock
+│                        Phase 3: batch · finished-goods
 └── docs/              ARCHITECTURE.md · PROGRESS.md · architecture.png · PRD
 ```
 
