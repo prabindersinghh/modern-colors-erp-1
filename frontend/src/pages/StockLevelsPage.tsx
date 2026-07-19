@@ -1,9 +1,10 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
-import { Boxes, ScrollText, Search, ChevronRight, Lock } from 'lucide-react'
+import { Boxes, ScrollText, Search, ChevronRight, Lock, Clock } from 'lucide-react'
 import { api } from '@/lib/api'
 import type {
   Department,
   Paginated,
+  StockAgeing,
   StockLevels,
   StockTransaction,
   StockTxnType,
@@ -32,12 +33,18 @@ export function StockLevelsPage() {
           <TabsTrigger value="levels" className="gap-1.5">
             <Boxes className="h-4 w-4" /> Live levels
           </TabsTrigger>
+          <TabsTrigger value="ageing" className="gap-1.5">
+            <Clock className="h-4 w-4" /> Stock ageing
+          </TabsTrigger>
           <TabsTrigger value="ledger" className="gap-1.5">
             <ScrollText className="h-4 w-4" /> Movement ledger
           </TabsTrigger>
         </TabsList>
         <TabsContent value="levels" className="mt-4">
           <LevelsTab />
+        </TabsContent>
+        <TabsContent value="ageing" className="mt-4">
+          <AgeingTab />
         </TabsContent>
         <TabsContent value="ledger" className="mt-4">
           <LedgerTab />
@@ -86,7 +93,7 @@ function LevelsTab() {
       <p className="text-xs text-muted-foreground">Expand a material to see its units — listed oldest-first (FIFO); use the "use first" unit before newer ones.</p>
 
       {!loading && data && data.materials.length === 0 ? (
-        <EmptyState title="No stock on hand" description="Weighed units with a remaining balance will appear here." />
+        <EmptyState title="No stock in hand" description="Weighed units with a remaining balance will appear here." />
       ) : (
         <div className="overflow-x-auto rounded-md border">
           <Table>
@@ -95,7 +102,7 @@ function LevelsTab() {
                 <TableHead className="w-8" />
                 <TableHead className="min-w-[180px]">Material</TableHead>
                 <TableHead>SKU</TableHead>
-                <TableHead className="text-right">On hand</TableHead>
+                <TableHead className="text-right">In hand</TableHead>
                 <TableHead className="text-right">Units</TableHead>
               </TableRow>
             </TableHeader>
@@ -154,6 +161,135 @@ function LevelsTab() {
         </div>
       )}
     </div>
+  )
+}
+
+/** Stock ageing — the plain "how old is my stock" view (30-day / 60-day buckets). */
+function AgeingTab() {
+  const [q, setQ] = useState('')
+  const [data, setData] = useState<StockAgeing | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [filter, setFilter] = useState<'ALL' | 'AMBER' | 'RED'>('ALL')
+
+  useEffect(() => {
+    const t = setTimeout(async () => {
+      setLoading(true)
+      try {
+        setData(await api.get<StockAgeing>(`/stock/ageing${q ? `?q=${encodeURIComponent(q)}` : ''}`))
+      } finally {
+        setLoading(false)
+      }
+    }, 250)
+    return () => clearTimeout(t)
+  }, [q])
+
+  const rows = (data?.units ?? []).filter((u) => (filter === 'ALL' ? true : u.level === filter))
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="relative max-w-xs flex-1">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input className="pl-8" placeholder="Search material / SKU / unit" value={q} onChange={(e) => setQ(e.target.value)} />
+        </div>
+        {data && (
+          <div className="text-sm text-muted-foreground">
+            Oldest unit: <span className="font-medium text-foreground">{data.oldestAgeDays} days</span>
+          </div>
+        )}
+      </div>
+
+      {/* Age buckets — click to filter */}
+      {data && (
+        <div className="grid gap-3 sm:grid-cols-3">
+          <BucketCard
+            tone="fresh" label={data.buckets.fresh.label} b={data.buckets.fresh}
+            active={filter === 'ALL'} onClick={() => setFilter('ALL')}
+          />
+          <BucketCard
+            tone="amber" label={data.buckets.amber.label} b={data.buckets.amber}
+            active={filter === 'AMBER'} onClick={() => setFilter(filter === 'AMBER' ? 'ALL' : 'AMBER')}
+          />
+          <BucketCard
+            tone="red" label={data.buckets.red.label} b={data.buckets.red}
+            active={filter === 'RED'} onClick={() => setFilter(filter === 'RED' ? 'ALL' : 'RED')}
+          />
+        </div>
+      )}
+
+      <p className="text-xs text-muted-foreground">
+        Stock held {data?.thresholds.amberDays ?? 30}+ days is flagged amber, {data?.thresholds.redDays ?? 60}+ days red.
+        Oldest first — use these before newer stock.
+      </p>
+
+      {!loading && rows.length === 0 ? (
+        <EmptyState title="No stock in this range" description="Nothing matches the current filter." />
+      ) : (
+        <div className="overflow-x-auto rounded-md border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Unit</TableHead>
+                <TableHead className="min-w-[150px]">Material</TableHead>
+                <TableHead className="text-right">Balance</TableHead>
+                <TableHead>Received</TableHead>
+                <TableHead className="text-right">Age</TableHead>
+                <TableHead>Supplier</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((u, i) => {
+                const cls = u.level === 'RED' ? 'text-destructive' : u.level === 'AMBER' ? 'text-warning' : 'text-muted-foreground'
+                return (
+                  <TableRow key={u.uniqueId}>
+                    <TableCell className="whitespace-nowrap">
+                      <span className="font-mono text-xs">{u.uniqueId}</span>
+                      {i === 0 && filter === 'ALL' && (
+                        <span className="ml-2 rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary">use first</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {u.materialName}
+                      {u.sku ? <span className="ml-1.5 font-mono text-[11px] text-muted-foreground">{u.sku}</span> : null}
+                    </TableCell>
+                    <TableCell className="text-right text-sm">{u.balanceKg} kg</TableCell>
+                    <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{fmtDate(u.arrivedAt)}</TableCell>
+                    <TableCell className={`text-right text-sm font-medium ${cls}`}>{u.ageDays}d</TableCell>
+                    <TableCell className="truncate text-xs text-muted-foreground">{u.supplier ?? '—'}</TableCell>
+                  </TableRow>
+                )
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function BucketCard({
+  tone, label, b, active, onClick,
+}: {
+  tone: 'fresh' | 'amber' | 'red'
+  label: string
+  b: { unitCount: number; totalKg: number }
+  active: boolean
+  onClick: () => void
+}) {
+  const styles = {
+    fresh: 'border-success/30 bg-success/5 text-success',
+    amber: 'border-warning/40 bg-warning/10 text-warning',
+    red: 'border-destructive/40 bg-destructive/10 text-destructive',
+  }[tone]
+  return (
+    <button
+      onClick={onClick}
+      className={`rounded-lg border p-3 text-left transition-all ${styles} ${active ? 'ring-2 ring-offset-1' : 'opacity-90 hover:opacity-100'}`}
+    >
+      <div className="text-xs font-medium">{label}</div>
+      <div className="mt-1 text-2xl font-semibold">{b.totalKg} kg</div>
+      <div className="text-xs opacity-80">{b.unitCount} unit{b.unitCount === 1 ? '' : 's'}</div>
+    </button>
   )
 }
 

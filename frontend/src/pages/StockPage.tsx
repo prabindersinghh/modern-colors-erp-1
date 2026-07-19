@@ -80,6 +80,7 @@ export function StockPage() {
   const [qty, setQty] = useState('')
   const [department, setDepartment] = useState<Department | ''>('')
   const [note, setNote] = useState('')
+  const [reviewOpen, setReviewOpen] = useState(false)
 
   // FIFO recommendation for the request line being issued (oldest unit to scan first).
   const [fifoHint, setFifoHint] = useState<{ uniqueId: string; balanceKg: number; ageDays: number } | null>(null)
@@ -160,7 +161,12 @@ export function StockPage() {
     }
   }
 
-  const submit = async () => {
+  /**
+   * Validate, then open the REVIEW step. Nothing is committed here — the Store Head sees
+   * a full summary (unit, material, department, batch, quantity, resulting balance) and
+   * must explicitly confirm, mirroring the Phase 1 PO review gate.
+   */
+  const openReview = () => {
     if (!unit) return
     const q = Number(qty)
     if (!(q > 0)) {
@@ -179,6 +185,25 @@ export function StockPage() {
       })
       return
     }
+    // Approved-cap check for a request-driven issue (the server enforces it too).
+    if (type === 'DEDUCT' && issue) {
+      const remaining = Math.max(0, (issue.item.approvedKg ?? 0) - issue.item.issuedKg)
+      if (q > remaining + 1e-9) {
+        toast({
+          variant: 'destructive',
+          title: 'Over the approved amount',
+          description: `Only ${round(remaining)} kg of the approved ${issue.item.approvedKg ?? 0} kg remain on this line.`,
+        })
+        return
+      }
+    }
+    setReviewOpen(true)
+  }
+
+  /** Commit the movement — only reachable from the review step. */
+  const commit = async () => {
+    if (!unit) return
+    const q = Number(qty)
     setBusy(true)
     try {
       const res = await api.post<{ unit: StockUnit }>('/stock/transactions', {
@@ -194,10 +219,22 @@ export function StockPage() {
         title: `${TYPE_META[type].label} recorded`,
         description: `${unit.uniqueId} → ${res.unit.balanceKg} kg remaining`,
       })
+      setReviewOpen(false)
       setUnit(res.unit)
       setQty('')
       setNote('')
       await loadHistory(res.unit.uniqueId)
+      // Refresh the issue context so "remaining" reflects what was just issued.
+      if (issue) {
+        try {
+          const r = await api.get<{ data: ProductionRequest[] }>('/production-requests?pageSize=200')
+          const parent = r.data.find((x) => x.items.some((i) => i.id === issue.item.id))
+          const item = parent?.items.find((i) => i.id === issue.item.id)
+          if (parent && item) setIssue({ request: parent, item })
+        } catch {
+          /* best-effort refresh */
+        }
+      }
     } catch (err) {
       toast({
         variant: 'destructive',
@@ -382,7 +419,9 @@ export function StockPage() {
 
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
-                <Label htmlFor="qty">Quantity (kg)</Label>
+                <Label htmlFor="qty">
+                  {issue && type === 'DEDUCT' ? 'Actual quantity issued (kg)' : 'Quantity (kg)'}
+                </Label>
                 <Input
                   id="qty"
                   type="number"
@@ -392,7 +431,19 @@ export function StockPage() {
                   value={qty}
                   onChange={(e) => setQty(e.target.value)}
                   placeholder={type === 'ADD' ? 'e.g. 5' : `≤ ${unit.balanceKg}`}
+                  className="h-11 text-base"
                 />
+                {/* Item 6 — the Store Head weighs out the REAL amount, which may differ
+                    from what was approved. Pre-filled, but freely editable within caps. */}
+                {issue && type === 'DEDUCT' && (
+                  <p className="text-xs text-muted-foreground">
+                    Approved {issue.item.approvedKg ?? 0} kg · already issued {issue.item.issuedKg} kg ·{' '}
+                    <span className="font-medium text-foreground">
+                      {round(Math.max(0, (issue.item.approvedKg ?? 0) - issue.item.issuedKg))} kg remaining
+                    </span>
+                    . Enter what you actually weighed out.
+                  </p>
+                )}
               </div>
               {type !== 'DISCARD' && (
                 <div className="space-y-1.5">
@@ -421,8 +472,8 @@ export function StockPage() {
             </div>
 
             <div className="flex gap-2">
-              <Button className="flex-1" onClick={submit} disabled={busy}>
-                Confirm {TYPE_META[type].label}
+              <Button className="flex-1" onClick={openReview} disabled={busy}>
+                Review {TYPE_META[type].label}
               </Button>
               <Button variant="outline" className="gap-1.5" onClick={reset} disabled={busy}>
                 <RotateCcw className="h-4 w-4" /> Next
@@ -452,6 +503,135 @@ export function StockPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* REVIEW & CONFIRM — nothing is deducted until the Store Head confirms here. */}
+      {reviewOpen && unit && (
+        <IssueReviewDialog
+          unit={unit}
+          type={type}
+          quantityKg={Number(qty)}
+          department={type === 'DISCARD' ? null : (department as Department)}
+          issue={issue}
+          note={note.trim() || null}
+          busy={busy}
+          onCancel={() => setReviewOpen(false)}
+          onConfirm={commit}
+        />
+      )}
+    </div>
+  )
+}
+
+const round = (n: number) => Math.round(n * 1000) / 1000
+
+/**
+ * The review gate for a stock movement (item 5). Shows exactly what will happen —
+ * unit, material, department, batch, quantity and the resulting balance — and commits
+ * only on explicit confirmation. Mirrors the Phase 1 PO review pattern.
+ */
+function IssueReviewDialog({
+  unit,
+  type,
+  quantityKg,
+  department,
+  issue,
+  note,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  unit: StockUnit
+  type: StockTxnType
+  quantityKg: number
+  department: Department | null
+  issue: IssueContext | null
+  note: string | null
+  busy: boolean
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  const meta = TYPE_META[type]
+  const balanceAfter =
+    type === 'ADD' ? round(unit.balanceKg + quantityKg) : round(unit.balanceKg - quantityKg)
+  const approved = issue?.item.approvedKg ?? null
+  const remainingBefore = issue ? Math.max(0, (approved ?? 0) - issue.item.issuedKg) : null
+  const differsFromApproved =
+    issue != null && remainingBefore != null && Math.abs(quantityKg - remainingBefore) > 1e-9
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4">
+      <div className="max-h-[92vh] w-full overflow-y-auto rounded-t-2xl bg-background p-5 shadow-xl sm:max-w-md sm:rounded-2xl">
+        <h2 className="text-lg font-semibold">Confirm {meta.label.toLowerCase()}</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Check the details below. Nothing is deducted until you confirm.
+        </p>
+
+        <dl className="mt-4 space-y-0 divide-y rounded-lg border">
+          <Row label="Unit" value={<span className="font-mono">{unit.uniqueId}</span>} />
+          <Row label="Material" value={`${unit.materialName}${unit.sku ? ` · ${unit.sku}` : ''}`} />
+          {department && <Row label="Department" value={department} />}
+          {issue?.item.batch && <Row label="Batch" value={issue.item.batch.batchNumber} />}
+          <Row
+            label={type === 'DEDUCT' && issue ? 'Actual quantity issued' : 'Quantity'}
+            value={
+              <span className={`text-base font-semibold ${meta.cls}`}>
+                {type === 'ADD' ? '+' : '−'}
+                {quantityKg} kg
+              </span>
+            }
+          />
+          <Row
+            label="Balance on unit"
+            value={
+              <span>
+                {unit.balanceKg} kg → <span className="font-semibold">{balanceAfter} kg</span>
+              </span>
+            }
+          />
+          {note && <Row label="Note" value={note} />}
+        </dl>
+
+        {/* Flag when the actual amount differs from what was approved (allowed). */}
+        {differsFromApproved && (
+          <p className="mt-3 flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-2.5 text-xs text-amber-700">
+            <AlertTriangle className="mt-px h-4 w-4 shrink-0" />
+            <span>
+              This differs from the {remainingBefore} kg remaining on the approved line
+              (approved {approved} kg). The actual amount above is what will be recorded.
+            </span>
+          </p>
+        )}
+
+        {/* FIFO advisory carried into the review so it can't be missed. */}
+        {type !== 'ADD' && unit.fifo && !unit.fifo.isOldest && unit.fifo.recommended && (
+          <p className="mt-3 flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-2.5 text-xs text-amber-700">
+            <AlertTriangle className="mt-px h-4 w-4 shrink-0" />
+            <span>
+              Older stock available — <b>{unit.fifo.recommended.uniqueId}</b> (
+              {unit.fifo.recommended.balanceKg} kg, {unit.fifo.recommended.ageDays} days old). You can
+              still proceed.
+            </span>
+          </p>
+        )}
+
+        <div className="mt-5 flex gap-2">
+          <Button variant="outline" className="flex-1 h-12" onClick={onCancel} disabled={busy}>
+            Go back
+          </Button>
+          <Button className="flex-1 h-12" onClick={onConfirm} disabled={busy}>
+            {busy ? 'Recording…' : `Confirm ${meta.label.toLowerCase()}`}
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function Row({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex items-start justify-between gap-3 px-3 py-2.5 text-sm">
+      <dt className="shrink-0 text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 text-right">{value}</dd>
     </div>
   )
 }

@@ -6,7 +6,6 @@ import {
   QrCode,
   AlertTriangle,
   Trash2,
-  Printer,
   PackageCheck,
 } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
@@ -20,6 +19,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { EmptyState } from '@/components/common/EmptyState'
 import { ConfirmationDialog } from '@/components/common/ConfirmationDialog'
 import { toast } from '@/hooks/useToast'
+import { LabelRollFlow } from '@/components/labels/LabelRollFlow'
 
 export function ProductionOutputPage() {
   const { user } = useAuth()
@@ -159,21 +159,21 @@ export function ProductionOutputPage() {
                     </Button>
                   )}
                   {o.fgGeneratedAt && (
-                    <>
-                      <span className="flex items-center gap-1.5 rounded-md bg-success/10 px-3 py-1.5 text-sm text-success">
-                        <PackageCheck className="h-4 w-4" /> {o._count?.finishedGoods ?? o.packageCount} FG units created
-                      </span>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="gap-1.5"
-                        onClick={() => openLabels(o.id)}
-                      >
-                        <Printer className="h-4 w-4" /> Print labels
-                      </Button>
-                    </>
+                    <span className="flex items-center gap-1.5 rounded-md bg-success/10 px-3 py-1.5 text-sm text-success">
+                      <PackageCheck className="h-4 w-4" /> {o._count?.finishedGoods ?? o.packageCount} FG units created
+                    </span>
                   )}
                 </div>
+
+                {/* Explicit Generate → Save → Print for the FG label roll (item 4). */}
+                {o.fgGeneratedAt && (
+                  <LabelRollFlow
+                    path={`/finished-goods/by-output/${o.id}/labels.pdf`}
+                    fileName={`fg-labels-${o.batch?.batchNumber ?? o.id}.pdf`}
+                    unitCount={o._count?.finishedGoods ?? o.packageCount}
+                    label="FG label roll"
+                  />
+                )}
               </CardContent>
             </Card>
           ))}
@@ -198,18 +198,6 @@ export function ProductionOutputPage() {
 
 const round = (n: number) => Math.round(n * 1000) / 1000
 
-/** Open the FG label roll (authenticated blob — same pattern as Phase 1 QR labels). */
-async function openLabels(outputId: string) {
-  try {
-    await api.openBlob(`/finished-goods/by-output/${outputId}/labels.pdf`)
-  } catch (err) {
-    toast({
-      variant: 'destructive',
-      title: 'Could not open labels',
-      description: err instanceof ApiError ? err.message : '',
-    })
-  }
-}
 
 function OutputForm({ batches, onSaved }: { batches: Batch[]; onSaved: () => void }) {
   const [v, setV] = useState({

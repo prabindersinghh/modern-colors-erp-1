@@ -25,6 +25,13 @@ export class StockController {
     return this.stock.levels({ q });
   }
 
+  /** Stock ageing — every in-stock unit bucketed by age, oldest first (read-only). */
+  @Get('ageing')
+  @Roles(...STORE_AND_ADMIN)
+  ageing(@Query('q') q?: string) {
+    return this.stock.ageing({ q });
+  }
+
   /** The append-only movement ledger — filterable, read-only (I4). */
   @Get('transactions')
   @Roles(...STORE_AND_ADMIN)

@@ -95,7 +95,7 @@ export function StoreDashboardPage() {
 
       {/* KPIs */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Kpi label="On-hand stock" value={`${data.snapshot.grandTotalKg} kg`} sub={`${data.snapshot.unitCount} units · ${data.snapshot.materialCount} materials`} tone="primary" />
+        <Kpi label="In-hand stock" value={`${data.snapshot.grandTotalKg} kg`} sub={`${data.snapshot.unitCount} units · ${data.snapshot.materialCount} materials`} tone="primary" />
         <Kpi label="Added today" value={`${data.totals.today.ADD} kg`} sub={`${data.totals.window.ADD} kg in ${data.windowDays}d`} tone="success" />
         <Kpi label="Issued today" value={`${data.totals.today.DEDUCT} kg`} sub={`${data.totals.window.DEDUCT} kg in ${data.windowDays}d`} tone="info" />
         <Kpi label="Discarded today" value={`${data.totals.today.DISCARD} kg`} sub={`${data.totals.window.DISCARD} kg in ${data.windowDays}d`} tone="danger" />

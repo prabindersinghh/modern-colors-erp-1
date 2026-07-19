@@ -23,6 +23,31 @@ const LABEL_W = 216;
 const LABEL_H = 108;
 
 /**
+ * QR raster width for PRINT. The QR occupies ~1.3in on the label, so 256px is ~197 dpi —
+ * far above the ~150 dpi a scanner needs, and a QR is pure black/white so it stays
+ * razor-sharp. Down from 512, which cost 4x the encode time for no visible gain.
+ */
+const QR_PRINT_PX = 256;
+
+/** How many QR images to encode concurrently (CPU-bound; keeps big batches responsive). */
+const QR_CONCURRENCY = 8;
+
+/** Map with bounded concurrency — parallelises the encode without unbounded memory. */
+async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T, i: number) => Promise<R>): Promise<R[]> {
+  const out = new Array<R>(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    for (;;) {
+      const i = next++;
+      if (i >= items.length) return;
+      out[i] = await fn(items[i], i);
+    }
+  });
+  await Promise.all(workers);
+  return out;
+}
+
+/**
  * QR generation (1 per physical unit) + printable outputs:
  *  - a label sheet PDF sized to 3×1.5" stickers (item 11),
  *  - individual PNGs bundled as a ZIP, named by unique ID (item 12).
@@ -33,8 +58,8 @@ export class QrService {
     return QRCode.toDataURL(JSON.stringify(payload), { width: 320, margin: 1 });
   }
 
-  pngBuffer(payload: QrPayload): Promise<Buffer> {
-    return QRCode.toBuffer(JSON.stringify(payload), { type: 'png', width: 512, margin: 1 });
+  pngBuffer(payload: QrPayload, width = QR_PRINT_PX): Promise<Buffer> {
+    return QRCode.toBuffer(JSON.stringify(payload), { type: 'png', width, margin: 1 });
   }
 
   /**
@@ -47,23 +72,42 @@ export class QrService {
     const doc = await PDFDocument.create();
     const font = await doc.embedFont(StandardFonts.Helvetica);
     const bold = await doc.embedFont(StandardFonts.HelveticaBold);
-    for (const item of items) {
+
+    // Encode every QR PNG up front, in parallel. This is the expensive part and it is
+    // pure CPU per item, so it parallelises cleanly — previously it ran one at a time
+    // interleaved with PDF drawing. Output/format is unchanged.
+    const pngs = await mapLimit(items, QR_CONCURRENCY, (item) => this.pngBuffer(item.payload));
+
+    // Identical QR payloads (rare, but possible) embed once and are reused.
+    const embedded = new Map<string, Awaited<ReturnType<PDFDocument['embedPng']>>>();
+    for (let i = 0; i < items.length; i++) {
+      const png = pngs[i];
+      const key = png.toString('base64');
+      let img = embedded.get(key);
+      if (!img) {
+        img = await doc.embedPng(png);
+        embedded.set(key, img);
+      }
       const page = doc.addPage([LABEL_W, LABEL_H]);
-      const img = await doc.embedPng(await this.pngBuffer(item.payload));
       // yTop = LABEL_H, x = 0, no cut border → the label fills the whole page.
-      await this.drawLabel(page, 0, LABEL_H, item.payload, img, font, bold, false);
+      await this.drawLabel(page, 0, LABEL_H, items[i].payload, img, font, bold, false);
     }
-    const bytes = await doc.save();
+    // objectsPerTick keeps pdf-lib from starving the event loop on very large rolls.
+    // useObjectStreams:false skips pdf-lib's object-stream compression, which dominated
+    // save time on big rolls. The PDF is slightly larger but renders identically.
+    const bytes = await doc.save({ objectsPerTick: 200, useObjectStreams: false });
     return Buffer.from(bytes);
   }
 
   /** ZIP of individual QR PNGs, one per unit, named "<uniqueId>.png" (item 12). */
   async buildLabelsZip(items: LabelInput[]): Promise<Buffer> {
     const zip = new JSZip();
-    for (const { payload } of items) {
+    // Same parallel encode as the label roll.
+    const pngs = await mapLimit(items, QR_CONCURRENCY, ({ payload }) => this.pngBuffer(payload));
+    items.forEach(({ payload }, i) => {
       const safe = payload.uniqueId.replace(/[^A-Za-z0-9._-]/g, '_') || 'unit';
-      zip.file(`${safe}.png`, await this.pngBuffer(payload));
-    }
+      zip.file(`${safe}.png`, pngs[i]);
+    });
     return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
   }
 

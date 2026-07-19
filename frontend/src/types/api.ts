@@ -460,3 +460,27 @@ export interface BatchTrace {
     outputs: (ProductionOutput & { finishedGoods: { id: string; uniqueId: string; status: FgStatus; dispatchedAt: string | null; dispatchedBy?: { name: string } | null }[] })[]
   }
 }
+
+// GET /stock/ageing — plain "how old is my stock" view (Store / Admin).
+export interface StockAgeingRow {
+  uniqueId: string
+  materialName: string
+  sku: string | null
+  balanceKg: number
+  arrivedAt: string | null
+  ageDays: number
+  level: AgeingLevel
+  supplier: string | null
+  poNumber: string | null
+}
+export interface StockAgeing {
+  thresholds: { amberDays: number; redDays: number }
+  units: StockAgeingRow[]
+  buckets: {
+    fresh: { label: string; unitCount: number; totalKg: number }
+    amber: { label: string; unitCount: number; totalKg: number }
+    red: { label: string; unitCount: number; totalKg: number }
+  }
+  oldestAgeDays: number
+  totalUnits: number
+}

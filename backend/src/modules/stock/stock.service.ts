@@ -9,7 +9,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { AuthUser } from '../../common/decorators/current-user.decorator';
 import { CreateStockTransactionDto } from './dto/create-stock-transaction.dto';
-import { ageDays, ageingLevel as ageingLevelFor, fifoSort, olderUnitsThan } from './fifo.util';
+import { AGEING, ageDays, ageingLevel as ageingLevelFor, fifoSort, olderUnitsThan } from './fifo.util';
 
 const unitSelect = {
   id: true,
@@ -109,6 +109,80 @@ export class StockService {
       orderBy: { createdAt: 'desc' },
     });
     return { unit, transactions };
+  }
+
+  /**
+   * Stock ageing view (Store / Admin) — every in-stock unit bucketed by how long it has
+   * been held, oldest first. This is the plain "how old is my stock" answer, surfaced in
+   * its own tab rather than only inside the FIFO advisory panels.
+   * Buckets use the shared AGEING thresholds (amber ≥30d, red ≥60d).
+   */
+  async ageing(params: { q?: string } = {}) {
+    const now = new Date();
+    const units = await this.prisma.material.findMany({
+      where: {
+        balanceKg: { gt: 0 },
+        ...(params.q
+          ? {
+              OR: [
+                { materialName: { contains: params.q, mode: 'insensitive' } },
+                { sku: { contains: params.q, mode: 'insensitive' } },
+                { uniqueId: { contains: params.q, mode: 'insensitive' } },
+              ],
+            }
+          : {}),
+      },
+      select: {
+        uniqueId: true,
+        materialName: true,
+        sku: true,
+        balanceKg: true,
+        arrivedAt: true,
+        po: { select: { poNumber: true, supplier: true } },
+      },
+    });
+
+    const rows = fifoSort(units).map((u) => {
+      const days = ageDays(u.arrivedAt, now);
+      return {
+        uniqueId: u.uniqueId,
+        materialName: u.materialName,
+        sku: u.sku,
+        balanceKg: u.balanceKg ?? 0,
+        arrivedAt: u.arrivedAt,
+        ageDays: days,
+        level: ageingLevelFor(days),
+        supplier: u.po?.supplier ?? null,
+        poNumber: u.po?.poNumber ?? null,
+      };
+    });
+
+    const sumKg = (f: (d: number) => boolean) =>
+      Number(rows.filter((r) => f(r.ageDays)).reduce((s, r) => s + r.balanceKg, 0).toFixed(6));
+
+    return {
+      thresholds: { amberDays: AGEING.AMBER_DAYS, redDays: AGEING.RED_DAYS },
+      units: rows, // oldest first
+      buckets: {
+        fresh: {
+          label: `Under ${AGEING.AMBER_DAYS} days`,
+          unitCount: rows.filter((r) => r.level === 'FRESH').length,
+          totalKg: sumKg((d) => d < AGEING.AMBER_DAYS),
+        },
+        amber: {
+          label: `${AGEING.AMBER_DAYS}–${AGEING.RED_DAYS - 1} days`,
+          unitCount: rows.filter((r) => r.level === 'AMBER').length,
+          totalKg: sumKg((d) => d >= AGEING.AMBER_DAYS && d < AGEING.RED_DAYS),
+        },
+        red: {
+          label: `${AGEING.RED_DAYS}+ days`,
+          unitCount: rows.filter((r) => r.level === 'RED').length,
+          totalKg: sumKg((d) => d >= AGEING.RED_DAYS),
+        },
+      },
+      oldestAgeDays: rows[0]?.ageDays ?? 0,
+      totalUnits: rows.length,
+    };
   }
 
   /**

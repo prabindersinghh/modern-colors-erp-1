@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams, Link } from 'react-router-dom'
-import { Printer, QrCode, ImageDown, FileSpreadsheet } from 'lucide-react'
+import { QrCode, ImageDown, FileSpreadsheet } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { Paginated, PurchaseOrder } from '@/types/api'
 import { Button } from '@/components/ui/button'
@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { EmptyState } from '@/components/common/EmptyState'
 import { toast } from '@/hooks/useToast'
+import { LabelRollFlow } from '@/components/labels/LabelRollFlow'
 
 export function LabelsPage() {
   const [params] = useSearchParams()
@@ -62,16 +63,6 @@ function LabelsForPo({ poId }: { poId: string }) {
       .catch(() => {})
   }, [poId])
 
-  const downloadPdf = async () => {
-    setBusy('pdf')
-    try {
-      await api.openBlob(`/purchase-orders/${poId}/labels.pdf`)
-    } catch {
-      toast({ variant: 'destructive', title: 'Could not open labels PDF' })
-    } finally {
-      setBusy(null)
-    }
-  }
   const downloadZip = async () => {
     setBusy('zip')
     try {
@@ -100,9 +91,7 @@ function LabelsForPo({ poId }: { poId: string }) {
           <span className="font-medium">{units.length}</span> QR-coded units
         </p>
         <div className="flex flex-wrap gap-2">
-          <Button onClick={downloadPdf} className="gap-1.5" disabled={!units.length || busy !== null}>
-            <Printer className="h-4 w-4" /> {busy === 'pdf' ? 'Preparing…' : 'Label roll (PDF)'}
-          </Button>
+
           <Button variant="outline" onClick={downloadZip} className="gap-1.5" disabled={!units.length || busy !== null}>
             <ImageDown className="h-4 w-4" /> {busy === 'zip' ? 'Zipping…' : 'Individual PNGs (ZIP)'}
           </Button>
@@ -111,6 +100,13 @@ function LabelsForPo({ poId }: { poId: string }) {
           </Button>
         </div>
       </div>
+      {/* Explicit Generate → Save → Print for the label roll (item 4). */}
+      <LabelRollFlow
+        path={`/purchase-orders/${poId}/labels.pdf`}
+        fileName={`labels-${poId}.pdf`}
+        unitCount={units.length}
+      />
+
       <p className="text-xs text-muted-foreground">
         <span className="font-medium">PDF</span> — one 3×1.5" label per page ({units.length} page{units.length === 1 ? '' : 's'}), ready for the label-roll printer.{' '}
         <span className="font-medium">ZIP</span> — one PNG per unit (MC-000001.png…).{' '}

@@ -75,7 +75,7 @@ export function OversightPage() {
 
       {/* KPI cards */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Kpi label="On-hand stock" value={`${data.snapshot.grandTotalKg} kg`} sub={`${data.snapshot.unitCount} units · ${data.snapshot.materialCount} materials`} tone="primary" />
+        <Kpi label="In-hand stock" value={`${data.snapshot.grandTotalKg} kg`} sub={`${data.snapshot.unitCount} units · ${data.snapshot.materialCount} materials`} tone="primary" />
         <Kpi label="Added" value={`${data.totals.window.ADD} kg`} sub={`${data.totals.today.ADD} today · ${data.totals.allTime.ADD} all-time`} tone="success" />
         <Kpi label="Deducted" value={`${data.totals.window.DEDUCT} kg`} sub={`${data.totals.today.DEDUCT} today · ${data.totals.allTime.DEDUCT} all-time`} tone="info" />
         <Kpi label="Discarded" value={`${data.totals.window.DISCARD} kg`} sub={`${data.totals.today.DISCARD} today · ${data.totals.allTime.DISCARD} all-time`} tone="danger" />
