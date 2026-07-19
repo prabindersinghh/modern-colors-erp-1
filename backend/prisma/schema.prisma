@@ -22,6 +22,7 @@ enum Role {
   OPERATOR
   OVERSIGHT // Phase 2 — factory-wide VIEW-ONLY "Admin" (no actions)
   PRODUCTION_HEAD // Phase 2 — PU/Enamel/Powder head, scoped by `department`
+  DISPATCH // Phase 3 — finished-goods dispatch ONLY (no raw stock, no requests)
 }
 
 // Phase 2 — production departments. A PRODUCTION_HEAD is scoped to exactly one.
@@ -46,6 +47,21 @@ enum StockTxnType {
   ADD // material coming back INTO stock (from a department)
   DEDUCT // material going OUT (for a department)
   DISCARD // wasted/damaged, not tied to a department
+}
+
+// Phase 3 — batch lifecycle. A batch is the thread from raw materials to finished goods.
+enum BatchStatus {
+  OPEN // created; materials being requested / issued against it
+  OUTPUT_RECORDED // production output entered, awaiting the head's confirmation
+  CONFIRMED // output confirmed — FG QR codes may now be generated
+  CLOSED // FG generated/dispatched; further requests warn (never blocked)
+}
+
+// Phase 3 — per-drum finished-goods lifecycle.
+enum FgStatus {
+  GENERATED // QR minted, sticker printable
+  READY // labelled / stored, awaiting dispatch
+  DISPATCHED // scanned out by the Dispatch role
 }
 
 // PO-level lifecycle (the document). See ARCHITECTURE.md §6 status note.
@@ -99,6 +115,12 @@ model User {
   productionRequests ProductionRequest[] @relation("RequestedBy")
   reviewedRequests   ProductionRequest[] @relation("ReviewedBy")
   stockTransactions  StockTransaction[]  @relation("TxnActor")
+
+  // Phase 3 — batches, production output, dispatch
+  createdBatches   Batch[]            @relation("BatchCreatedBy")
+  recordedOutputs  ProductionOutput[] @relation("OutputRecordedBy")
+  confirmedOutputs ProductionOutput[] @relation("OutputConfirmedBy")
+  dispatchedGoods  FinishedGood[]     @relation("FgDispatchedBy")
 
   @@index([role])
 }
@@ -313,10 +335,16 @@ model ProductionRequestItem {
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
 
+  // Phase 3 — the batch this material line is for. Per LINE (not per request) because a
+  // head may order for several batches at once. Nullable: pre-Phase-3 lines have none.
+  batchId String?
+  batch   Batch?  @relation(fields: [batchId], references: [id])
+
   transactions StockTransaction[]
 
   @@index([requestId])
   @@index([status])
+  @@index([batchId])
 }
 
 // ───────────────────────── Phase 2: Stock Transactions (APPEND-ONLY) ─────────────────────────
@@ -344,4 +372,111 @@ model StockTransaction {
   @@index([department])
   @@index([requestItemId])
   @@index([createdAt])
+}
+
+// ───────────────────────── Phase 3: Batches, Finished Goods & Dispatch ─────────────────────────
+
+// A production batch — the thread tying raw materials to finished goods. A first-class
+// record (not free text) so heads can SELECT an existing batch for top-up requests and
+// the FG → material trace can never break on a typo.
+model Batch {
+  id          String      @id @default(uuid())
+  batchNumber String // human code typed by the head, e.g. "B-001"
+  department  Department // scoped: a PU head only ever sees PU batches
+  status      BatchStatus @default(OPEN)
+  note        String?
+
+  createdById String
+  createdBy   User   @relation("BatchCreatedBy", fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  requestItems      ProductionRequestItem[] // every line, incl. later top-ups
+  productionOutputs ProductionOutput[]
+  finishedGoods     FinishedGood[]
+
+  // Unique per department — PU "B-001" and ENAMEL "B-001" may coexist.
+  @@unique([department, batchNumber])
+  @@index([department, status])
+  @@index([createdAt])
+}
+
+// What was actually produced from a batch. Recorded by the head, then explicitly
+// CONFIRMED (the review gate) — FG QR codes cannot be generated before confirmation.
+model ProductionOutput {
+  id             String   @id @default(uuid())
+  batchId        String
+  batch          Batch    @relation(fields: [batchId], references: [id])
+  productName    String
+  packageCount   Int // number of drums/packages produced → one FG QR each
+  sizePerPackage Float // e.g. 20
+  sizeUnit       String   @default("L") // "L" or "Kg"
+  productionDate DateTime
+  shade          String? // colour / shade reference
+  productSku     String?
+  notes          String?
+
+  // Review gate (mirrors the Phase 1 PO confirm pattern).
+  confirmed     Boolean   @default(false)
+  confirmedById String?
+  confirmedBy   User?     @relation("OutputConfirmedBy", fields: [confirmedById], references: [id])
+  confirmedAt   DateTime?
+
+  // Set once FG units have been minted, so QRs are never generated twice.
+  fgGeneratedAt DateTime?
+
+  recordedById String
+  recordedBy   User   @relation("OutputRecordedBy", fields: [recordedById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  finishedGoods FinishedGood[]
+
+  @@index([batchId])
+  @@index([confirmed])
+}
+
+// ONE row per physical drum/package of finished product — the FG counterpart of
+// Material. Its uniqueId uses the FG- prefix so it can never be confused with a raw
+// material unit (MC-) in a scan or a report.
+model FinishedGood {
+  id       String @id @default(uuid())
+  uniqueId String @unique // "FG-000001" — sequential, zero-padded
+
+  outputId String
+  output   ProductionOutput @relation(fields: [outputId], references: [id])
+  batchId  String
+  batch    Batch            @relation(fields: [batchId], references: [id])
+
+  productName    String
+  sizePerPackage Float
+  sizeUnit       String
+  status         FgStatus @default(GENERATED)
+
+  dispatchedAt   DateTime?
+  dispatchedById String?
+  dispatchedBy   User?     @relation("FgDispatchedBy", fields: [dispatchedById], references: [id])
+  dispatchNote   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  qrCode FinishedGoodQr?
+
+  @@index([batchId])
+  @@index([outputId])
+  @@index([status])
+}
+
+// FG QR payload/image. Kept separate from QrCode (which is hard-bound to Material), so
+// Phase 1's QR pipeline is untouched. Label rendering reuses the same 3×1.5" roll.
+model FinishedGoodQr {
+  id             String       @id @default(uuid())
+  finishedGoodId String       @unique
+  finishedGood   FinishedGood @relation(fields: [finishedGoodId], references: [id], onDelete: Cascade)
+  payload        Json // { uniqueId, productName, batch, size, department, date }
+  imageRef       String? // data URL of the rendered QR PNG
+  createdAt      DateTime     @default(now())
 }
