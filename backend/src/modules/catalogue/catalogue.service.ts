@@ -337,6 +337,84 @@ export class CatalogueService {
     };
   }
 
+  /**
+   * Import an explicit list of rows (already parsed, possibly EDITED in the preview).
+   *
+   * This is what makes "fix it in the preview and import the good ones" possible: Store
+   * corrects flagged cells on screen, deselects rows they are not ready for, and imports
+   * the rest — instead of editing the source file and re-uploading. Reuses the same
+   * upsert path as a file import, so behaviour cannot drift between the two.
+   */
+  async importRows(
+    rows: {
+      materialName: string;
+      sku?: string | null;
+      hsnCode?: string | null;
+      category?: string | null;
+      unit?: string | null;
+      standardPackaging?: string | null;
+    }[],
+    actorId?: string,
+  ): Promise<ImportResult> {
+    const result: ImportResult = { created: 0, updated: 0, skipped: 0, errors: [] };
+
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      const rowNum = i + 1;
+      const materialName = r.materialName?.trim();
+      if (!materialName) {
+        result.skipped++;
+        result.errors.push({ row: rowNum, message: 'Missing material name' });
+        continue;
+      }
+      try {
+        const sku = r.sku?.trim() || null;
+        const data = {
+          materialName,
+          hsnCode: r.hsnCode?.trim() || null,
+          category: r.category?.trim() || null,
+          unit: r.unit?.trim() || null,
+          standardPackaging: r.standardPackaging?.trim() || null,
+        };
+        const existing = sku
+          ? await this.prisma.masterCatalogueItem.findUnique({ where: { sku } })
+          : null;
+        if (existing) {
+          await this.prisma.masterCatalogueItem.update({
+            where: { id: existing.id },
+            data: { ...data, active: true },
+          });
+          result.updated++;
+        } else {
+          await this.prisma.masterCatalogueItem.create({
+            data: { ...data, sku: sku ?? (await this.generateProvisionalSku()) },
+          });
+          result.created++;
+        }
+      } catch (e) {
+        result.skipped++;
+        result.errors.push({
+          row: rowNum,
+          message: e instanceof Error ? e.message : 'Could not import this row',
+        });
+      }
+    }
+
+    await this.audit.log({
+      entityType: 'MasterCatalogue',
+      entityId: 'import',
+      action: 'CATALOGUE_IMPORTED',
+      actorId,
+      after: {
+        created: result.created,
+        updated: result.updated,
+        skipped: result.skipped,
+        source: 'reviewed-preview',
+      },
+    });
+    return result;
+  }
+
   // ── helpers ──
   private parseWorkbook(buffer: Buffer): { rows: ParsedRow[]; detectedColumns: string[] } {
     // `raw: false` renders formatted cell text (dates/numbers) consistently; CSV and
@@ -375,7 +453,11 @@ export class CatalogueService {
           p.unit ||
           p.standardPackaging ||
           p.metadata,
-      );
+      )
+      // Drop comment/notes rows. The downloadable template ends with '#'-prefixed
+      // usage notes, and operators annotate their own sheets the same way; without
+      // this they would import as materials literally named "# HOW TO USE...".
+      .filter((p) => !(p.materialName ?? '').trimStart().startsWith('#'));
 
     return { rows, detectedColumns: [...detected] };
   }

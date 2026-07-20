@@ -11,13 +11,19 @@ import {
   UseGuards,
   UseInterceptors,
   BadRequestException,
+  Res,
+  StreamableFile,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Role } from '@prisma/client';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
+import { buildTemplateCsv, buildTemplateXlsx } from './catalogue-template';
+import { CatalogueValidationService } from './catalogue-validation.service';
+import { ImportRowsDto, RevalidateRowsDto } from './dto/import-rows.dto';
 import { CatalogueService } from './catalogue.service';
 import { CreateCatalogueItemDto } from './dto/create-catalogue-item.dto';
 import { UpdateCatalogueItemDto } from './dto/update-catalogue-item.dto';
@@ -37,7 +43,10 @@ const CATALOGUE_READ_ROLES = [
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(...CATALOGUE_READ_ROLES)
 export class CatalogueController {
-  constructor(private readonly catalogue: CatalogueService) {}
+  constructor(
+    private readonly catalogue: CatalogueService,
+    private readonly validation: CatalogueValidationService,
+  ) {}
 
   // Read + match: Phase 1 roles + production heads (needed during PO review / picking).
   @Get()
@@ -86,6 +95,31 @@ export class CatalogueController {
   }
 
   // Bulk import: Admin only (one-time / periodic master list setup).
+  /**
+   * Downloadable import template (CSV or Excel).
+   *
+   * Store previously had to guess the column layout; a guessed header means a failed or
+   * half-imported file. This returns the exact expected structure with worked examples.
+   * Read-only and generated in-process — no DB access, no file storage.
+   */
+  @Get('import/template')
+  @Roles(Role.ADMIN)
+  template(
+    @Query('format') format: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ): StreamableFile {
+    const xlsx = (format ?? 'csv').toLowerCase() === 'xlsx';
+    const body = xlsx ? buildTemplateXlsx() : buildTemplateCsv();
+    const name = xlsx ? 'catalogue-template.xlsx' : 'catalogue-template.csv';
+    res.set({
+      'Content-Type': xlsx
+        ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        : 'text/csv; charset=utf-8',
+      'Content-Disposition': `attachment; filename="${name}"`,
+    });
+    return new StreamableFile(body);
+  }
+
   @Post('import')
   @Roles(Role.ADMIN)
   @UseInterceptors(
@@ -114,6 +148,66 @@ export class CatalogueController {
   importPreview(@UploadedFile() file: Express.Multer.File) {
     if (!file) throw new BadRequestException('No file uploaded (field name "file")');
     return this.catalogue.previewImport(file.buffer);
+  }
+
+  /**
+   * Preview + validate in one call. Parses the file (as today), then layers on
+   * deterministic checks and — unless skipped — an AI sanity pass.
+   *
+   * Pass ?ai=false for a small addition where waiting on an API call is not worth it.
+   * If AI is unavailable for ANY reason the response still returns the parsed rows and
+   * the deterministic flags, so the import path is never blocked by this layer.
+   */
+  @Post('import/validate')
+  @Roles(Role.ADMIN)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { files: 1, fileSize: 10 * 1024 * 1024, fields: 5, fieldNameSize: 100 },
+    }),
+  )
+  async importValidate(
+    @UploadedFile() file: Express.Multer.File,
+    @Query('ai') ai?: string,
+  ) {
+    if (!file) throw new BadRequestException('No file uploaded (field name "file")');
+    const preview = this.catalogue.previewImport(file.buffer);
+    const validation = await this.validation.validate(preview.rows, {
+      useAi: ai !== 'false' && ai !== '0',
+    });
+    return { ...preview, validation };
+  }
+
+  /**
+   * Re-validate rows the operator has edited in the preview, without re-uploading the
+   * file. This is what lets them fix a flagged cell on screen and check their work.
+   */
+  @Post('import/revalidate')
+  @Roles(Role.ADMIN)
+  async importRevalidate(@Body() dto: RevalidateRowsDto) {
+    // Normalise undefined -> null: the DTO allows omitted optional fields, the
+    // validator works on an explicit "known blank".
+    const rows = dto.rows.map((r) => ({
+      row: r.row,
+      materialName: r.materialName ?? null,
+      sku: r.sku ?? null,
+      hsnCode: r.hsnCode ?? null,
+      category: r.category ?? null,
+      unit: r.unit ?? null,
+      standardPackaging: r.standardPackaging ?? null,
+    }));
+    return this.validation.validate(rows, { useAi: dto.ai !== false });
+  }
+
+  /**
+   * Commit an explicit set of rows — the reviewed/edited/partial import.
+   *
+   * Store selects which rows to bring in (typically the clean ones) and imports those,
+   * leaving flagged rows behind to fix later. Same upsert path as a file import.
+   */
+  @Post('import/rows')
+  @Roles(Role.ADMIN)
+  importRows(@Body() dto: ImportRowsDto, @CurrentUser() actor: AuthUser) {
+    return this.catalogue.importRows(dto.rows, actor.id);
   }
 
   // Edit / delete: Admin only (per PRD §7).

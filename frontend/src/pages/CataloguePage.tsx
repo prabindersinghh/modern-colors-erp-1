@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Upload, Plus, BookMarked, CheckCircle2, AlertTriangle } from 'lucide-react'
+import { Upload, Plus, BookMarked, AlertTriangle, FileDown } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
 import type { CatalogueItem, Paginated } from '@/types/api'
 import { useAuth } from '@/lib/auth'
@@ -17,31 +17,8 @@ import {
 import { Modal } from '@/components/common/Modal'
 import { EmptyState } from '@/components/common/EmptyState'
 import { toast } from '@/hooks/useToast'
+import { ImportReviewDialog, type ImportPreview } from '@/components/catalogue/ImportReviewDialog'
 
-interface PreviewRow {
-  row: number
-  materialName: string | null
-  sku: string | null
-  hsnCode: string | null
-  category: string | null
-  unit: string | null
-  standardPackaging: string | null
-  valid: boolean
-  error: string | null
-}
-interface ImportPreview {
-  rows: PreviewRow[]
-  totalRows: number
-  validRows: number
-  invalidRows: number
-  detectedColumns: string[]
-}
-interface ImportResult {
-  created: number
-  updated: number
-  skipped: number
-  errors: { row: number; message: string }[]
-}
 
 const isProvisional = (sku: string) => sku.startsWith('TMP-')
 
@@ -83,13 +60,27 @@ export function CataloguePage() {
     await loadCount()
   }
 
+  /** Download the import template so Store fills in a known-good structure. */
+  const downloadTemplate = async (format: 'csv' | 'xlsx') => {
+    try {
+      await api.downloadBlob(
+        `/catalogue/import/template?format=${format}`,
+        `catalogue-template.${format}`,
+      )
+    } catch {
+      toast({ variant: 'destructive', title: 'Could not download the template' })
+    }
+  }
+
   // Step 1: parse + preview (no writes).
   const onPickFile = async (file: File) => {
     setPreviewBusy(true)
     try {
       const form = new FormData()
       form.append('file', file)
-      const data = await api.postForm<ImportPreview>('/catalogue/import/preview', form)
+      // Validating preview: parse + deterministic checks + (best-effort) AI pass.
+      // Falls back gracefully — the endpoint never fails because AI is unavailable.
+      const data = await api.postForm<ImportPreview>('/catalogue/import/validate', form)
       setPreview({ file, data })
     } catch (err) {
       toast({
@@ -102,34 +93,6 @@ export function CataloguePage() {
     }
   }
 
-  // Step 2: commit the import after the operator reviews the preview.
-  const confirmImport = async () => {
-    if (!preview) return
-    setPreviewBusy(true)
-    try {
-      const form = new FormData()
-      form.append('file', preview.file)
-      const r = await api.postForm<ImportResult>('/catalogue/import', form)
-      const failed = r.errors.length
-      toast({
-        title: 'Catalogue imported',
-        description:
-          `${r.created} created, ${r.updated} updated` +
-          (r.skipped ? `, ${r.skipped} skipped` : '') +
-          (failed ? ` — ${failed} row(s) failed` : '') + '.',
-      })
-      setPreview(null)
-      await refresh()
-    } catch (err) {
-      toast({
-        variant: 'destructive',
-        title: 'Import failed',
-        description: err instanceof ApiError ? err.message : 'Unexpected error',
-      })
-    } finally {
-      setPreviewBusy(false)
-    }
-  }
 
   return (
     <div className="space-y-4">
@@ -160,8 +123,16 @@ export function CataloguePage() {
                   e.target.value = ''
                 }}
               />
+              <Button
+                variant="outline"
+                className="gap-1.5"
+                onClick={() => downloadTemplate('xlsx')}
+                title="Download a ready-made file with the correct columns and examples"
+              >
+                <FileDown className="h-4 w-4" /> Template
+              </Button>
               <Button className="gap-1.5" onClick={() => fileInput.current?.click()} disabled={previewBusy}>
-                <Upload className="h-4 w-4" /> {previewBusy ? 'Reading…' : 'Import CSV/Excel'}
+                <Upload className="h-4 w-4" /> {previewBusy ? 'Checking…' : 'Import CSV/Excel'}
               </Button>
             </>
           )}
@@ -229,96 +200,20 @@ export function CataloguePage() {
       )}
 
       <AddSkuModal open={addOpen} onClose={() => setAddOpen(false)} onAdded={refresh} />
-      <ImportPreviewModal
-        preview={preview?.data ?? null}
-        busy={previewBusy}
-        onCancel={() => setPreview(null)}
-        onConfirm={confirmImport}
-      />
+      {preview && (
+        <ImportReviewDialog
+          preview={preview.data}
+          onCancel={() => setPreview(null)}
+          onImported={() => {
+            setPreview(null)
+            void refresh()
+          }}
+        />
+      )}
     </div>
   )
 }
 
-function ImportPreviewModal({
-  preview,
-  busy,
-  onCancel,
-  onConfirm,
-}: {
-  preview: ImportPreview | null
-  busy: boolean
-  onCancel: () => void
-  onConfirm: () => void
-}) {
-  if (!preview) return null
-  return (
-    <Modal open onOpenChange={(o) => !o && onCancel()} title="Review import">
-      <div className="space-y-3">
-        <div className="flex flex-wrap gap-4 text-sm">
-          <span className="inline-flex items-center gap-1 text-healthy">
-            <CheckCircle2 className="h-4 w-4" /> {preview.validRows} valid
-          </span>
-          {preview.invalidRows > 0 && (
-            <span className="inline-flex items-center gap-1 text-brand-amber">
-              <AlertTriangle className="h-4 w-4" /> {preview.invalidRows} will be skipped
-            </span>
-          )}
-          <span className="text-muted-foreground">{preview.totalRows} rows total</span>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          Detected columns: {preview.detectedColumns.length ? preview.detectedColumns.join(', ') : 'none recognized'}
-        </p>
-
-        <div className="max-h-[50vh] overflow-auto rounded-md border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-10">#</TableHead>
-                <TableHead className="min-w-[150px]">Material</TableHead>
-                <TableHead>SKU</TableHead>
-                <TableHead>HSN</TableHead>
-                <TableHead>Category</TableHead>
-                <TableHead>Unit</TableHead>
-                <TableHead>Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {preview.rows.slice(0, 200).map((r) => (
-                <TableRow key={r.row} className={r.valid ? '' : 'bg-warning-surface'}>
-                  <TableCell className="text-xs text-muted-foreground">{r.row}</TableCell>
-                  <TableCell className="font-medium">{r.materialName ?? <span className="text-muted-foreground">—</span>}</TableCell>
-                  <TableCell className="font-mono text-xs">{r.sku ?? '—'}</TableCell>
-                  <TableCell className="font-mono text-xs">{r.hsnCode ?? '—'}</TableCell>
-                  <TableCell className="text-xs">{r.category ?? '—'}</TableCell>
-                  <TableCell className="text-xs">{r.unit ?? '—'}</TableCell>
-                  <TableCell className="text-xs">
-                    {r.valid ? (
-                      <span className="text-healthy">OK</span>
-                    ) : (
-                      <span className="text-brand-amber">{r.error}</span>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-        {preview.rows.length > 200 && (
-          <p className="text-xs text-muted-foreground">Showing first 200 of {preview.rows.length} rows.</p>
-        )}
-
-        <div className="flex justify-end gap-2 pt-1">
-          <Button variant="outline" onClick={onCancel} disabled={busy}>
-            Cancel
-          </Button>
-          <Button onClick={onConfirm} disabled={busy || preview.validRows === 0}>
-            {busy ? 'Importing…' : `Import ${preview.validRows} row${preview.validRows === 1 ? '' : 's'}`}
-          </Button>
-        </div>
-      </div>
-    </Modal>
-  )
-}
 
 /** SKU cell: shows the code + a "Provisional" badge for TMP- entries, with one-click
  * inline edit to replace a provisional code with a real SKU (audited server-side). */
