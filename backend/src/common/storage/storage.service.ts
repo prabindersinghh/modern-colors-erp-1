@@ -149,10 +149,14 @@ export class StorageService implements OnModuleInit {
             : code === 'ENOTFOUND' || code === 'EAI_AGAIN'
               ? `the R2 endpoint "${this.endpointHost ?? '?'}" could not be reached`
               : `R2 returned ${code}${status ? ` (HTTP ${status})` : ''}`;
-      return new ServiceUnavailableException(
+      const ex = new ServiceUnavailableException(
         `Could not ${op} the document — file storage is unavailable: ${hint}. ` +
           'The rest of the system is unaffected; you can still enter this invoice manually.',
       );
+      // Attached for the health probe only — not part of the operator-facing message.
+      (ex as unknown as { driverCode?: string; driverStatus?: number }).driverCode = code;
+      (ex as unknown as { driverCode?: string; driverStatus?: number }).driverStatus = status;
+      return ex;
     }
 
     return new ServiceUnavailableException(
@@ -174,6 +178,8 @@ export class StorageService implements OnModuleInit {
     endpoint?: string;
     misconfigured?: string[];
     error?: string;
+    driverCode?: string;
+    driverStatus?: number;
     ms: number;
   }> {
     const started = Date.now();
@@ -191,10 +197,17 @@ export class StorageService implements OnModuleInit {
       const ok = back.toString() === 'ok';
       return { ...base, ok, ms: Date.now() - started };
     } catch (err) {
+      const d = err as { driverCode?: string; driverStatus?: number };
       return {
         ...base,
         ok: false,
         error: err instanceof Error ? err.message : String(err),
+        // The precise backend code, so the fix is unambiguous:
+        //   InvalidAccessKeyId   -> the access key no longer exists (token revoked)
+        //   SignatureDoesNotMatch-> the secret is wrong or truncated
+        //   AccessDenied / 403   -> credentials valid, but no rights on this bucket
+        ...(d?.driverCode ? { driverCode: d.driverCode } : {}),
+        ...(d?.driverStatus ? { driverStatus: d.driverStatus } : {}),
         ms: Date.now() - started,
       };
     }
