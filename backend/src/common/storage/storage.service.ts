@@ -141,14 +141,23 @@ export class StorageService implements OnModuleInit {
     if (this.driver === 'r2') {
       // Map the R2/S3 failures that actually happen in practice to a cause the
       // maintainer can fix, rather than a generic "something went wrong".
+      // The hint names the CATEGORY of failure so the maintainer knows what to fix,
+      // but deliberately contains NO infrastructure identifiers.
+      //
+      // The bucket name and especially the endpoint host must not appear here: the
+      // endpoint host embeds the Cloudflare ACCOUNT ID, and this message is both
+      // returned to callers (including OPERATOR, not just admins) and written into
+      // the append-only audit log, where it would persist permanently. The full
+      // detail — driver, bucket, endpoint, key, code, status — is already in the
+      // server log line above, which is the right place for it.
       const hint =
         code === 'InvalidAccessKeyId' || code === 'SignatureDoesNotMatch' || status === 401 || status === 403
-          ? 'the R2 API token is wrong, expired or lacks Object Read & Write on this bucket'
+          ? 'the storage access token is wrong, expired, or lacks read/write permission'
           : code === 'NoSuchBucket' || status === 404
-            ? `the R2 bucket "${this.bucket}" does not exist or the endpoint is wrong`
+            ? 'the configured storage bucket does not exist'
             : code === 'ENOTFOUND' || code === 'EAI_AGAIN'
-              ? `the R2 endpoint "${this.endpointHost ?? '?'}" could not be reached`
-              : `R2 returned ${code}${status ? ` (HTTP ${status})` : ''}`;
+              ? 'the storage service could not be reached'
+              : `the storage service returned an error (${code})`;
       const ex = new ServiceUnavailableException(
         `Could not ${op} the document — file storage is unavailable: ${hint}. ` +
           'The rest of the system is unaffected; you can still enter this invoice manually.',

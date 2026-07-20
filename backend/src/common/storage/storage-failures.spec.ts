@@ -38,12 +38,14 @@ describe('StorageService — failure handling', () => {
     await expect(svc.put('po/x.pdf', Buffer.from('x'))).rejects.toBeInstanceOf(
       ServiceUnavailableException,
     );
-    await expect(svc.put('po/x.pdf', Buffer.from('x'))).rejects.toThrow(/API token/i);
+    await expect(svc.put('po/x.pdf', Buffer.from('x'))).rejects.toThrow(/access token/i);
   });
 
   it('reports a missing bucket distinctly from a credential problem', async () => {
     const svc = r2WithError({ name: 'NoSuchBucket', $metadata: { httpStatusCode: 404 } });
-    await expect(svc.put('po/x.pdf', Buffer.from('x'))).rejects.toThrow(/bucket "modern-colours"/);
+    await expect(svc.put('po/x.pdf', Buffer.from('x'))).rejects.toThrow(/bucket does not exist/i);
+    // ...but WITHOUT naming the bucket — see the identifier-leak test below.
+    await expect(svc.put('po/x.pdf', Buffer.from('x'))).rejects.not.toThrow(/modern-colours/);
   });
 
   it('reports an unreachable endpoint', async () => {
@@ -60,6 +62,29 @@ describe('StorageService — failure handling', () => {
   it('never leaks credentials in the message', async () => {
     const svc = r2WithError({ name: 'SignatureDoesNotMatch', $metadata: { httpStatusCode: 403 } });
     await expect(svc.put('po/x.pdf', Buffer.from('x'))).rejects.not.toThrow(/secret|key/);
+  });
+
+  it('never leaks INFRASTRUCTURE IDENTIFIERS in the message', async () => {
+    // Regression: the endpoint host embeds the Cloudflare ACCOUNT ID, and the bucket
+    // name is deployment detail. This message is returned to callers (OPERATOR too,
+    // not just admins) AND written into the append-only audit log, where it would
+    // persist permanently. Identifiers belong in the server log only.
+    for (const err of [
+      { name: 'ENOTFOUND' },
+      { name: 'NoSuchBucket', $metadata: { httpStatusCode: 404 } },
+      { name: 'InvalidAccessKeyId', $metadata: { httpStatusCode: 403 } },
+    ]) {
+      const svc = r2WithError(err);
+      const thrown: Error = await svc
+        .put('po/x.pdf', Buffer.from('x'))
+        .then(() => new Error('expected a rejection'))
+        .catch((e: unknown) => e as Error);
+      expect(thrown.message).not.toMatch(/acct\.r2\.cloudflarestorage\.com/);
+      expect(thrown.message).not.toMatch(/r2\.cloudflarestorage\.com/);
+      expect(thrown.message).not.toMatch(/modern-colours/);
+      // Still useful: it always says what to do about it.
+      expect(thrown.message).toMatch(/storage/i);
+    }
   });
 
   it('does NOT mask the path-traversal guard as a storage outage', async () => {
@@ -104,7 +129,7 @@ describe('StorageService — failure handling', () => {
       const health = await svc.healthCheck();
       // The probe must never take the health endpoint down with it.
       expect(health.ok).toBe(false);
-      expect(health.error).toMatch(/API token/i);
+      expect(health.error).toMatch(/access token/i);
       expect(health.driver).toBe('r2');
     });
   });

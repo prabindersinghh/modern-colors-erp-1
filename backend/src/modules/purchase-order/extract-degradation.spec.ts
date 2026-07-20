@@ -52,11 +52,15 @@ describe('PurchaseOrderService.extract — storage degradation', () => {
 
   it('preserves the specific cause the storage layer determined', async () => {
     const { svc } = build(
-      new Error('Could not read the document — file storage is unavailable: the R2 API token is wrong.'),
+      new Error(
+        'Could not read the document — file storage is unavailable: the storage access token is wrong, expired, or lacks read/write permission.',
+      ),
     );
     const res = (await svc.extract('po-1', 'user-1')) as { message?: string };
-    // The generic "could not be read from storage" wording threw away the real reason.
-    expect(res.message).toMatch(/R2 API token/);
+    // The old generic "could not be read from storage" wording threw away the cause.
+    // The cause is kept; infrastructure identifiers are stripped upstream in
+    // StorageService (this message is persisted to the audit log verbatim).
+    expect(res.message).toMatch(/access token/i);
   });
 
   it('never calls the AI when the document could not be fetched', async () => {
