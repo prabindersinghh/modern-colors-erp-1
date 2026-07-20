@@ -138,7 +138,13 @@ export class MaterialController {
   }
 
   // ── helpers ──
-  private async labelItems(poId: string): Promise<LabelInput[]> {
+  /**
+   * Label inputs for a PO's units. Narrowed to the RAW-MATERIAL payload: this
+   * controller only ever deals with MC- units, and the CSV export below reads
+   * material-only fields (sku/hsnCode/supplier/poNumber) that do not exist on
+   * the finished-goods payload.
+   */
+  private async labelItems(poId: string): Promise<{ payload: QrPayload }[]> {
     const materials = await this.materials.forPurchaseOrder(poId);
     if (materials.length === 0) throw new NotFoundException('No units for this invoice');
     return materials.map((m) => ({ payload: this.payloadFor(m) }));

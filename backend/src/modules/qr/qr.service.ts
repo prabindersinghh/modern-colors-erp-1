@@ -3,6 +3,7 @@ import * as QRCode from 'qrcode';
 import { PDFDocument, StandardFonts, PDFFont, PDFPage, rgb } from 'pdf-lib';
 import JSZip from 'jszip';
 
+/** Raw-material unit label (MC-xxxxxx) — printed at receiving. */
 export interface QrPayload {
   uniqueId: string;
   materialName: string;
@@ -14,8 +15,79 @@ export interface QrPayload {
   date: string; // ISO
 }
 
+/**
+ * Finished-goods unit label (FG-xxxxxx) — printed after a production output is
+ * confirmed. A DIFFERENT shape from QrPayload: there is no supplier, PO or HSN,
+ * and the product is `productName`, not `materialName`.
+ */
+export interface FgQrPayload {
+  kind: 'FINISHED_GOOD';
+  uniqueId: string;
+  productName: string;
+  batch: string | null;
+  department: string | null;
+  size: string | null;
+  shade: string | null;
+  productSku: string | null;
+  date: string; // ISO
+}
+
+export type AnyQrPayload = QrPayload | FgQrPayload;
+
 export interface LabelInput {
-  payload: QrPayload;
+  payload: AnyQrPayload;
+}
+
+function isFgPayload(p: AnyQrPayload): p is FgQrPayload {
+  return (p as FgQrPayload).kind === 'FINISHED_GOOD';
+}
+
+/**
+ * The fields a label actually renders, normalised from either payload shape.
+ *
+ * Both label kinds share one geometry and one renderer (so the 3×1.5in roll can
+ * never drift between them); only the field mapping differs. Everything is
+ * defensive about missing values because these payloads are JSON columns written
+ * by earlier releases — a label must degrade to a blank line, never throw and
+ * take the whole print run down.
+ */
+interface LabelView {
+  id: string;
+  title: string;
+  lines: Array<[string, string | null | undefined]>;
+  date: string | null;
+}
+
+/** ISO date → YYYY-MM-DD, or null if absent/unparseable. Never throws. */
+function formatLabelDate(iso: string | null): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+}
+
+function toLabelView(p: AnyQrPayload): LabelView {
+  if (isFgPayload(p)) {
+    return {
+      id: p.uniqueId ?? '',
+      title: p.productName ?? '',
+      lines: [
+        ['Batch: ', p.batch],
+        ['Size: ', p.size],
+        ['Shade: ', p.shade],
+        ['SKU: ', p.productSku],
+      ],
+      date: p.date ?? null,
+    };
+  }
+  return {
+    id: p.uniqueId ?? '',
+    title: p.materialName ?? '',
+    lines: [
+      ['Inv: ', p.poNumber],
+      ['HSN: ', p.hsnCode],
+    ],
+    date: p.date ?? null,
+  };
 }
 
 // Physical sticker size: 3 in × 1.5 in = 216 pt × 108 pt (72 pt/in). See item 11.
@@ -54,11 +126,11 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T, i: number
  */
 @Injectable()
 export class QrService {
-  dataUrl(payload: QrPayload): Promise<string> {
+  dataUrl(payload: AnyQrPayload): Promise<string> {
     return QRCode.toDataURL(JSON.stringify(payload), { width: 320, margin: 1 });
   }
 
-  pngBuffer(payload: QrPayload, width = QR_PRINT_PX): Promise<Buffer> {
+  pngBuffer(payload: AnyQrPayload, width = QR_PRINT_PX): Promise<Buffer> {
     return QRCode.toBuffer(JSON.stringify(payload), { type: 'png', width, margin: 1 });
   }
 
@@ -116,7 +188,7 @@ export class QrService {
     page: PDFPage,
     x: number,
     yTop: number,
-    payload: QrPayload,
+    payload: AnyQrPayload,
     img: Awaited<ReturnType<PDFDocument['embedPng']>>,
     font: PDFFont,
     bold: PDFFont,
@@ -131,24 +203,28 @@ export class QrService {
     const maxW = x + LABEL_W - pad - tx;
     let ty = yTop - pad - 9;
 
+    // Normalise the payload (raw-material OR finished-goods) into one view, so
+    // both label kinds share this renderer and can never drift in geometry.
+    const view = toLabelView(payload);
+
     // Unique ID — the primary, largest field.
-    page.drawText(this.fit(payload.uniqueId, bold, 12, maxW), { x: tx, y: ty, size: 12, font: bold, color: ink });
+    page.drawText(this.fit(view.id, bold, 12, maxW), { x: tx, y: ty, size: 12, font: bold, color: ink });
     ty -= 15;
 
-    // Material name — wrap to at most 2 lines.
-    for (const ln of this.wrap(payload.materialName, font, 9, maxW, 2)) {
+    // Product / material name — wrap to at most 2 lines.
+    for (const ln of this.wrap(view.title, font, 9, maxW, 2)) {
       page.drawText(ln, { x: tx, y: ty, size: 9, font, color: ink });
       ty -= 11;
     }
 
-    const small = (label: string, value: string | null) => {
+    const small = (label: string, value: string | null | undefined) => {
       if (!value) return;
       page.drawText(this.fit(`${label}${value}`, font, 8, maxW), { x: tx, y: ty, size: 8, font, color: ink });
       ty -= 10;
     };
-    small('Inv: ', payload.poNumber);
-    if (payload.hsnCode) small('HSN: ', payload.hsnCode);
-    small('', new Date(payload.date).toISOString().slice(0, 10));
+    for (const [label, value] of view.lines) small(label, value);
+    // A malformed/missing date must not abort the print run.
+    small('', formatLabelDate(view.date));
 
     if (border) {
       page.drawRectangle({
@@ -164,6 +240,7 @@ export class QrService {
 
   // Truncate a single line to fit maxW at the given size (adds an ellipsis).
   private fit(s: string, font: PDFFont, size: number, maxW: number): string {
+    if (!s) return '';
     if (font.widthOfTextAtSize(s, size) <= maxW) return s;
     let out = s;
     while (out.length > 1 && font.widthOfTextAtSize(out + '…', size) > maxW) out = out.slice(0, -1);
@@ -172,7 +249,9 @@ export class QrService {
 
   // Word-wrap to at most `maxLines` lines that each fit maxW; last line truncated.
   private wrap(s: string, font: PDFFont, size: number, maxW: number, maxLines: number): string[] {
-    const words = s.split(/\s+/).filter(Boolean);
+    // Defensive: these strings come from JSON payload columns written by earlier
+    // releases. A missing field must render blank, not throw and kill the roll.
+    const words = (s ?? '').split(/\s+/).filter(Boolean);
     const lines: string[] = [];
     let cur = '';
     for (const w of words) {

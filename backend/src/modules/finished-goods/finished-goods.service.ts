@@ -8,7 +8,7 @@ import {
 import { BatchStatus, FgStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
-import { QrService } from '../qr/qr.service';
+import { QrService, type FgQrPayload } from '../qr/qr.service';
 import { AuthUser } from '../../common/decorators/current-user.decorator';
 import { assertDepartmentAccess, departmentFilter } from '../../common/auth/department-scope';
 
@@ -91,7 +91,10 @@ export class FinishedGoodsService implements OnModuleInit {
             },
           });
 
-          const payload = {
+          // Explicitly typed so the compiler checks this against what the label
+          // renderer reads. It was previously untyped and cast with `as never`,
+          // which is exactly how the FG label roll shipped broken.
+          const payload: FgQrPayload = {
             uniqueId,
             productName: output.productName,
             batch: output.batch.batchNumber,
@@ -102,7 +105,7 @@ export class FinishedGoodsService implements OnModuleInit {
             date: output.productionDate.toISOString(),
             kind: 'FINISHED_GOOD' as const,
           };
-          const imageRef = await this.qr.dataUrl(payload as never);
+          const imageRef = await this.qr.dataUrl(payload);
           await tx.finishedGoodQr.create({
             data: { finishedGoodId: fg.id, payload: payload as unknown as Prisma.InputJsonValue, imageRef },
           });
@@ -162,7 +165,10 @@ export class FinishedGoodsService implements OnModuleInit {
       throw new NotFoundException('No finished-goods units to print for this output.');
     }
     return this.qr.buildLabelRoll(
-      units.map((u) => ({ payload: (u.qrCode?.payload ?? {}) as never })),
+      // Cast through the FG payload type, NOT `as never`. The original `as never`
+      // silenced the compiler and let a raw-material-shaped renderer receive an
+      // FG payload — which threw at run time on every FG label roll.
+      units.map((u) => ({ payload: u.qrCode?.payload as unknown as FgQrPayload })),
     );
   }
 
