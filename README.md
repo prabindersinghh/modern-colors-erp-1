@@ -192,7 +192,7 @@ modern-colors-erp/
 │                        receiving · dashboard
 │                        Phase 2: production-request · stock
 │                        Phase 3: batch · finished-goods
-└── docs/              ARCHITECTURE.md · PROGRESS.md · architecture.png · PRD
+└── docs/              ARCHITECTURE.md · PROGRESS.md · HANDOVER.md · architecture.png · PRD
 ```
 
 > **Start here for context:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) is the living architecture map

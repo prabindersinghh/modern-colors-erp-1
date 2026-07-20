@@ -172,7 +172,7 @@ or a preview) → check `GET /api/health` directly from that device → only the
 | `DATABASE_URL` | ✅ | Neon **pooled** string (`...-pooler...`, `sslmode=require`) |
 | `DIRECT_URL` | ✅ | Neon **direct** string — migrations only; the pooler hangs on advisory locks |
 | `JWT_SECRET` | ✅ | ≥32 chars; boot fails if weak/placeholder |
-| `ENCRYPTION_KEY` | ✅ | 64 hex chars; **never change** once keys are stored |
+| `ENCRYPTION_KEY` | ✅ | 64 hex chars; **never change** once keys are stored — see [HANDOVER.md](./HANDOVER.md) for why a change is unrecoverable |
 | `CORS_ORIGIN` | ✅ | exact Vercel origin(s), comma-separated, **no trailing slash** |
 | `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` | ✅ | initial admin (seeded once) |
 | `STORAGE_DRIVER` | ✅ | `r2` in production |
