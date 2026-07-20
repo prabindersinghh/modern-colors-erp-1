@@ -170,7 +170,10 @@ export function StockPage() {
       toast({ variant: 'destructive', title: 'Enter a quantity greater than 0' })
       return
     }
-    if (type !== 'DISCARD' && !department) {
+    // When issuing against a request line the department is the request's, never the
+    // (possibly stale) local field — so this can't be blocked by an empty dropdown.
+    const dept = issue ? issue.request.department : department
+    if (type !== 'DISCARD' && !dept) {
       toast({ variant: 'destructive', title: 'Select a department for an Add or Deduct' })
       return
     }
@@ -201,13 +204,14 @@ export function StockPage() {
   const commit = async () => {
     if (!unit) return
     const q = Number(qty)
+    const dept = issue ? issue.request.department : department
     setBusy(true)
     try {
       const res = await api.post<{ unit: StockUnit }>('/stock/transactions', {
         uniqueId: unit.uniqueId,
         type,
         quantityKg: q,
-        department: type === 'DISCARD' ? undefined : (department as Department),
+        department: type === 'DISCARD' ? undefined : (dept as Department),
         requestItemId: type === 'DEDUCT' && issue ? issue.item.id : undefined,
         note: note.trim() || undefined,
         device: DEVICE,
@@ -264,6 +268,10 @@ export function StockPage() {
   }
 
   const remaining = issue ? Math.max(0, (issue.item.approvedKg ?? 0) - issue.item.issuedKg) : null
+  // A request-issue locks the department to the request's; a standalone scan uses the
+  // field. Deriving it here (not reading `department`) means a stale scan can never leave
+  // the issue flow showing an empty, un-selectable dropdown.
+  const effectiveDepartment: Department | '' = issue ? issue.request.department : department
 
   return (
     <div className="mx-auto max-w-xl space-y-4">
@@ -429,7 +437,7 @@ export function StockPage() {
                   <Label htmlFor="dept">Department</Label>
                   <select
                     id="dept"
-                    value={department}
+                    value={effectiveDepartment}
                     onChange={(e) => setDepartment(e.target.value as Department)}
                     disabled={!!issue}
                     className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm disabled:opacity-70"
@@ -489,7 +497,7 @@ export function StockPage() {
           unit={unit}
           type={type}
           quantityKg={Number(qty)}
-          department={type === 'DISCARD' ? null : (department as Department)}
+          department={type === 'DISCARD' ? null : (effectiveDepartment as Department)}
           issue={issue}
           note={note.trim() || null}
           busy={busy}

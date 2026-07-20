@@ -29,6 +29,15 @@ interface ScanResponse {
   needsWeight?: boolean
 }
 
+/** A previously-received unit, returned by GET /receiving/recent (newest first). */
+interface RecentReceipt {
+  uniqueId: string
+  materialName: string
+  balanceKg: number | null
+  needsWeight: boolean
+  scannedAt: string | null
+}
+
 /**
  * Receiving — rapid-fire scanning, no weighing.
  *
@@ -47,6 +56,34 @@ export function ReceivingPage() {
   const [blocked, setBlocked] = useState(0)
 
   const refreshQueue = useCallback(async () => setQueued((await pending()).length), [])
+
+  // Seed the running log with the last few units received (from the server), so opening
+  // this screen — or reloading it — shows recent context instead of an empty list. The
+  // in-page log otherwise only holds what THIS session scanned. Best-effort: on any
+  // failure the log simply stays session-only.
+  useEffect(() => {
+    let cancelled = false
+    api
+      .get<RecentReceipt[]>('/receiving/recent?take=12')
+      .then((rows) => {
+        if (cancelled) return
+        setRecent((prev) => {
+          // Never clobber live scans if the operator has already started.
+          if (prev.length > 0) return prev
+          return rows.map((r) => ({
+            ok: true,
+            title: `${r.uniqueId} received`,
+            detail: `${r.materialName} · ${r.balanceKg != null ? `${r.balanceKg} kg` : 'no weight'}`,
+          }))
+        })
+      })
+      .catch(() => {
+        /* best-effort context only */
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     refreshQueue()

@@ -81,6 +81,31 @@ export class ReceivingService {
   }
 
   /**
+   * The most recently received units, newest first.
+   *
+   * Used to seed the receiving screen's running log, so an operator opening it mid-shift
+   * (or after a reload) sees recent context instead of an empty list — the in-page log
+   * otherwise only holds what THIS browser session scanned. Read-only; only units that
+   * have actually been scanned in appear.
+   */
+  async recent(take = 12) {
+    const n = Math.min(50, Math.max(1, Math.floor(take)));
+    const rows = await this.prisma.material.findMany({
+      where: { scannedAt: { not: null } },
+      orderBy: { scannedAt: 'desc' },
+      take: n,
+      select: { uniqueId: true, materialName: true, balanceKg: true, scannedAt: true },
+    });
+    return rows.map((m) => ({
+      uniqueId: m.uniqueId,
+      materialName: m.materialName,
+      balanceKg: m.balanceKg,
+      needsWeight: m.balanceKg == null,
+      scannedAt: m.scannedAt,
+    }));
+  }
+
+  /**
    * Set/correct a unit's received weight.
    *
    * NO LONGER PART OF THE RECEIVING FLOW — receiving is scan-only. This remains as the

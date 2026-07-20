@@ -1,4 +1,4 @@
-import { Body, Controller, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -17,6 +17,13 @@ export class ReceivingController {
   @Post('scan')
   scan(@Body() dto: ScanDto, @CurrentUser() actor: AuthUser) {
     return this.receiving.scan(dto.uniqueId, actor.id, dto.device);
+  }
+
+  /** Recently received units (newest first) — seeds the screen's running log. */
+  @Get('recent')
+  recent(@Query('take') take?: string) {
+    const n = take ? Number.parseInt(take, 10) : 12;
+    return this.receiving.recent(Number.isFinite(n) ? n : 12);
   }
 
   @Post(':uniqueId/weight')

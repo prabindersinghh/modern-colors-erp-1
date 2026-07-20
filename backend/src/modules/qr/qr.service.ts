@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import * as QRCode from 'qrcode';
 import { PDFDocument, StandardFonts, PDFFont, PDFPage, rgb } from 'pdf-lib';
 import JSZip from 'jszip';
+import Jimp from 'jimp';
 
 /** Raw-material unit label (MC-xxxxxx) — printed at receiving. */
 export interface QrPayload {
@@ -120,6 +121,37 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T, i: number
 }
 
 /**
+ * Raster geometry for the individual label PNGs — 2:1 like the physical 3×1.5in sticker,
+ * at ~200dpi. The QR sits on the left, the printed fields on the right.
+ */
+const PNG_LABEL_W = 600;
+const PNG_LABEL_H = 300;
+const PNG_LABEL_PAD = 20;
+
+/**
+ * jimp ships its own bitmap fonts, so label PNGs render identically everywhere —
+ * critically, on the container image, which has no system fonts installed. Loaded once
+ * and reused; a load failure is cached as "retry next time" so a transient problem
+ * doesn't permanently disable the printed text.
+ */
+type JimpFont = Awaited<ReturnType<typeof Jimp.loadFont>>;
+let labelFonts: Promise<{ big: JimpFont; small: JimpFont }> | null = null;
+function loadLabelFonts() {
+  if (!labelFonts) {
+    labelFonts = Promise.all([
+      Jimp.loadFont(Jimp.FONT_SANS_32_BLACK),
+      Jimp.loadFont(Jimp.FONT_SANS_16_BLACK),
+    ])
+      .then(([big, small]) => ({ big, small }))
+      .catch((e) => {
+        labelFonts = null;
+        throw e;
+      });
+  }
+  return labelFonts;
+}
+
+/**
  * QR generation (1 per physical unit) + printable outputs:
  *  - a label sheet PDF sized to 3×1.5" stickers (item 11),
  *  - individual PNGs bundled as a ZIP, named by unique ID (item 12).
@@ -132,6 +164,48 @@ export class QrService {
 
   pngBuffer(payload: AnyQrPayload, width = QR_PRINT_PX): Promise<Buffer> {
     return QRCode.toBuffer(JSON.stringify(payload), { type: 'png', width, margin: 1 });
+  }
+
+  /**
+   * A single unit's label rendered as a PNG: the QR on the left and the SAME key fields
+   * the PDF roll prints on the right (unique ID, material/product name, HSN/invoice or
+   * batch/size/shade, date). This is what the "Individual PNGs" export uses, so every
+   * downloaded image is a readable label — not a bare QR square that can't be identified
+   * without scanning it.
+   */
+  async labelPngBuffer(payload: AnyQrPayload): Promise<Buffer> {
+    const { big, small } = await loadLabelFonts();
+    const view = toLabelView(payload);
+
+    const W = PNG_LABEL_W;
+    const H = PNG_LABEL_H;
+    const pad = PNG_LABEL_PAD;
+    const qrSize = H - pad * 2;
+    const img = new Jimp(W, H, 0xffffffff);
+
+    // QR on the left, sized to the label height.
+    const qr = await Jimp.read(await this.pngBuffer(payload, qrSize));
+    qr.resize(qrSize, qrSize);
+    img.composite(qr, pad, pad);
+
+    // Key fields stacked on the right.
+    const tx = pad + qrSize + pad;
+    const maxW = W - pad - tx;
+    let ty = pad - 2;
+    const line = (font: JimpFont, text: string, maxHeight?: number) => {
+      if (!text) return;
+      if (maxHeight != null) img.print(font, tx, ty, text, maxW, maxHeight);
+      else img.print(font, tx, ty, text, maxW);
+      ty += Math.min(maxHeight ?? Infinity, Jimp.measureTextHeight(font, text, maxW)) + 3;
+    };
+
+    line(big, view.id); // unique ID — the largest field
+    line(small, view.title, 48); // material / product name — up to ~2 lines
+    for (const [label, value] of view.lines) if (value) line(small, `${label}${value}`);
+    const date = formatLabelDate(view.date);
+    if (date) line(small, date);
+
+    return img.getBufferAsync(Jimp.MIME_PNG);
   }
 
   /**
@@ -171,11 +245,23 @@ export class QrService {
     return Buffer.from(bytes);
   }
 
-  /** ZIP of individual QR PNGs, one per unit, named "<uniqueId>.png" (item 12). */
+  /**
+   * ZIP of individual label PNGs, one per unit, named "<uniqueId>.png" (item 12).
+   *
+   * Each PNG is a full label (QR + printed fields). If the image library or a font ever
+   * fails at runtime, that unit falls back to the bare QR PNG — the previous behaviour —
+   * so the export always succeeds and never 500s. The worst case is an image without the
+   * printed text, never a broken download.
+   */
   async buildLabelsZip(items: LabelInput[]): Promise<Buffer> {
     const zip = new JSZip();
-    // Same parallel encode as the label roll.
-    const pngs = await mapLimit(items, QR_CONCURRENCY, ({ payload }) => this.pngBuffer(payload));
+    const pngs = await mapLimit(items, QR_CONCURRENCY, async ({ payload }) => {
+      try {
+        return await this.labelPngBuffer(payload);
+      } catch {
+        return this.pngBuffer(payload);
+      }
+    });
     items.forEach(({ payload }, i) => {
       const safe = payload.uniqueId.replace(/[^A-Za-z0-9._-]/g, '_') || 'unit';
       zip.file(`${safe}.png`, pngs[i]);

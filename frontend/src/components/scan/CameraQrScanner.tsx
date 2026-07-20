@@ -81,6 +81,13 @@ export function CameraQrScanner({ onResult, paused = false, autoStart = true }: 
   const [error, setError] = useState<string | null>(null)
   const pausedRef = useRef(paused)
   pausedRef.current = paused
+  // The camera is started ONCE and keeps calling the decode callback captured at start()
+  // time. If we closed over `onResult` directly, a scan would fire the handler from the
+  // render when the camera opened — stale if the parent's state has since changed (e.g. a
+  // request-issue context finished loading). Route every decode through a ref so the
+  // running scanner always calls the LATEST onResult.
+  const onResultRef = useRef(onResult)
+  onResultRef.current = onResult
 
   useEffect(() => {
     cancelledRef.current = false
@@ -109,7 +116,7 @@ export function CameraQrScanner({ onResult, paused = false, autoStart = true }: 
       const now = Date.now()
       if (text === lastRef.current.text && now - lastRef.current.at < 2500) return
       lastRef.current = { text, at: now }
-      onResult(text)
+      onResultRef.current(text)
     }
 
     let lastErr: unknown
@@ -190,7 +197,7 @@ export function CameraQrScanner({ onResult, paused = false, autoStart = true }: 
     } finally {
       startingRef.current = false
     }
-  }, [onResult])
+  }, [])
 
 
   // Reopen automatically between scans. The very first start still needs a tap (browser
