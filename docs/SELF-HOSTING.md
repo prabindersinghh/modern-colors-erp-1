@@ -1,5 +1,11 @@
 # Self-Hosting Guide — Modern Colours (on-premise factory server)
 
+> **Document version:** 1.0  
+> **Last updated:** 2026-07-21  
+> **Describes:** Alternative on-premise deployment. NOT what is currently live.  
+> **Earlier versions:** see [`docs/archive/`](./archive/) · full history in [`CHANGELOG.md`](./CHANGELOG.md)
+
+
 This is the **recommended handoff path**: run the entire platform on one server the factory owns and
 controls, on the local network. No cloud accounts required. The same codebase supports this with only
 environment configuration — **local PostgreSQL** instead of Neon, and **local disk storage** instead of
@@ -135,7 +141,7 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 825 \
 2. Log in with `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD`, then **change the admin password**.
 3. **Settings** → paste the factory's **Claude API key** (validated, encrypted at rest).
 4. **Master Catalogue** → import the SKU CSV/Excel.
-5. Run a PO end‑to‑end: PO Upload (camera or file) → Review & Confirm → QR Labels (print) → Scan & Weigh.
+5. Run a PO end‑to‑end: PO Upload (camera or file) → Review & Confirm → QR Labels (print) → Receive Stock.
 
 ## 6. Backups & maintenance
 - **Database:** schedule `pg_dump modern_colours > backup-$(date +%F).sql` (daily).

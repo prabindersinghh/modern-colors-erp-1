@@ -1,5 +1,11 @@
 # Field Reference — Modern Colours
 
+> **Document version:** 2.0  
+> **Last updated:** 2026-07-21  
+> **Describes:** Every database column across Phases 1-3.  
+> **Earlier versions:** see [`docs/archive/`](./archive/) · full history in [`CHANGELOG.md`](./CHANGELOG.md)
+
+
 A complete reference for every database column across all three phases (raw-material
 inward, requests/stock movement, finished goods & dispatch).
 Source of truth: [`backend/prisma/schema.prisma`](../backend/prisma/schema.prisma).
@@ -66,7 +72,7 @@ an operator/admin · **System** = generated/derived by the backend.
 | `sku` | Supplier item/product code | PO / User | String? | Match key; **never** the HSN or quantity |
 | `quantity` | **Number of physical packages** (bags/drums) | PO / User | Int | One QR/Material created per unit on confirm |
 | `unit` | Package type (Bag/Drum) or bulk measure | PO / User | String? | Display; carried to Material |
-| `weight` | PO-stated weight **per package** (kg) | PO / User | Float? | Reference; carried to Material |
+| `weight` | PO-stated weight **per package** (kg) | PO / User | Float? | **Load-bearing since 2026-07-20.** Receiving no longer weighs each unit, so this seeds every unit's `balanceKg` on confirm. A line with `weight = null` produces units that **cannot be issued** until a pack weight is set on the line — at which point every unit on that line inherits it. |
 | `batchNumber` | Batch/lot number | PO / User | String? | **Kept in DB, hidden in UI** — see note below |
 | `matchType` | `EXACT`\|`SIMILAR`\|`NONE` catalogue match | System | Enum | Informational only (I6) |
 | `matchedCatalogueId` | Linked catalogue item | System | UUID? | Informational |
@@ -132,7 +138,16 @@ an operator/admin · **System** = generated/derived by the backend.
 
 | Field | Purpose | Source | Type | Workflow |
 |---|---|---|---|---|
-| `balanceKg` | **Live remaining stock (KG) on this unit** | System | Float? | Initialised to `receivedWeight` when the unit is weighed; updated in the same DB transaction as every ledger row, so balance and ledger can never drift. `null` = never weighed, and such units are blocked from all stock movement. |
+| `balanceKg` | **Live remaining stock (KG) on this unit** | System | Float? | Seeded from the **PO line's pack weight** (`POLineItem.weight`) at registration; updated in the same DB transaction as every ledger row, with the unit row locked `FOR UPDATE`, so balance and ledger can never drift and can never go negative (I11). `null` = no pack weight known, and such units are blocked from all stock movement. |
+| `receivedWeight` | Actual weighed weight, when someone corrects it | User | Float? | No longer part of the receiving flow — set only via the weight-**correction** endpoint. If stock has already moved on the unit, a correction **shifts** `balanceKg` by the delta rather than overwriting it, so it never erases recorded consumption. |
+
+> **This changed on 2026-07-20.** Receiving used to weigh every unit, and `balanceKg` was
+> initialised from `receivedWeight`. A truckload can be ~2,500 sacks, so weighing was removed
+> and the balance now comes from the PO. Two consequences worth knowing:
+> - PO pack-weight coverage was only **19.7%** when this was measured, so a backfill was needed;
+>   a few units are **deliberately left blocked** to keep the "no pack weight" path demonstrable.
+> - Until this change `weigh()` set `receivedWeight` but **never** `balanceKg` — every balance in
+>   the system had come from a one-time migration backfill. It now maintains the balance itself.
 
 > `arrivedAt` does double duty in Phase 2: it is the **FIFO basis** (oldest arrival is
 > consumed first, tie-broken by `uniqueId`) and the **stock-ageing basis**

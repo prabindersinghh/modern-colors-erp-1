@@ -1,20 +1,25 @@
+<!-- ARCHIVED DOCUMENT — DO NOT EDIT -->
+
+> ## 🗄️ Archived: ARCHITECTURE v2
+> **Covers:** 2026-07-20 → 2026-07-20  
+> **Describes:** All three phases as of the 20 July documentation pass, before the weighing removal, Paint Chip rollout and analytics work were documented.  
+> **Why archived:** Superseded by v3 (the live ARCHITECTURE.md). Kept because it is the first version that described Phases 1-3 together and defined invariants I10-I12.  
+> **Current version:** [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md) · [`docs/PROGRESS.md`](../PROGRESS.md)  
+> **Archived on:** 2026-07-21
+
+---
+
 # Modern Colours — Architecture Map (LIVING DOCUMENT)
-
-> **Document version:** 3.0  
-> **Last updated:** 2026-07-21  
-> **Describes:** Phases 1-3 complete and live, plus analytics and handover tooling. This is the CURRENT architecture.  
-> **Earlier versions:** see [`docs/archive/`](./archive/) · full history in [`CHANGELOG.md`](./CHANGELOG.md)
-
 
 > **Purpose:** This is the single source of truth for the system's shape. It must
 > stay alive across coding sessions. **Whenever a structural decision, module
 > boundary, data model, or contract changes, update THIS file in the same change.**
 > Read this first at the start of any new session before touching code.
 >
-> Companion file: [`PROGRESS.md`](./PROGRESS.md) tracks what has actually been built.
-> Field-by-field data reference: [`FIELD_REFERENCE.md`](./FIELD_REFERENCE.md).
-> Manual test script: [`PHASE2_UAT.md`](./PHASE2_UAT.md).
-> Original scope: [`Modern_Colours_PRD_Phase1_Final (1).docx`](./Modern_Colours_PRD_Phase1_Final%20(1).docx) (PRD v3.0) — Phase 1 only; Phases 2–3 were specified later by the client directly.
+> Companion file: [`PROGRESS.md`](../PROGRESS.md) tracks what has actually been built.
+> Field-by-field data reference: [`FIELD_REFERENCE.md`](../FIELD_REFERENCE.md).
+> Manual test script: [`PHASE2_UAT.md`](../PHASE2_UAT.md).
+> Original scope: [`Modern_Colours_PRD_Phase1_Final (1).docx`](../Modern_Colours_PRD_Phase1_Final%20(1).docx) (PRD v3.0) — Phase 1 only; Phases 2–3 were specified later by the client directly.
 
 ---
 
@@ -71,9 +76,9 @@ a client decision):
 | I4 | **Audit log is append-only.** Corrections = new entries referencing the original; never overwrite/delete. Extends to `StockTransaction`. | `audit` module; no update/delete path |
 | I5 | **RBAC enforced server-side** on every protected endpoint (not just UI hiding). | `RolesGuard` + `@Roles()`; `phase1-access.spec.ts`, `dispatch-isolation.spec.ts` |
 | I6 | **Master Catalogue never gates operations.** No-match materials can still be confirmed. | validation returns status only |
-| I7 | **Any extraction failure ⇒ manual fallback**, operator never blocked — covers Claude being down, no API key, *and* file storage being unavailable. | extraction service returns fallback flag; `extract-degradation.spec.ts` |
+| I7 | **Claude failure ⇒ manual fallback**, operator never blocked. | extraction service returns fallback flag |
 | I8 | **Unique IDs are sequential, zero-padded** — `MC-000001` (raw), `FG-000001` (finished). Separate Postgres sequences. | `material` / `finished-goods` services; concurrency-safe |
-| I9 | **Scans tolerate offline**, queue locally, sync on reconnect — no silent data loss. Re-scanning a unit is idempotent. | frontend IndexedDB queue + idempotent endpoints |
+| I9 | **Scans/weights tolerate offline**, queue locally, sync on reconnect — no silent data loss. | frontend IndexedDB queue + idempotent endpoints |
 | I10 | **Department isolation is server-side.** A production head can never read or write another department's data. | `common/auth/department-scope.ts`; verified against live data |
 | I11 | **Stock can never go negative.** Deduct/discard above a unit's balance is rejected. | `stock.service` row-locked check; tests |
 | I12 | **FG QRs require a confirmed output**, and can be minted only once per output. | `finished-goods.service` confirm + `fgGeneratedAt` guards; tests |
@@ -127,30 +132,23 @@ modern-colors-erp/
 |--------|----------------|----------------------|
 | `auth` | JWT login, token issue/verify, password hashing | `POST /auth/login`, `GET /auth/me` |
 | `users` | User CRUD (Admin), role assignment, seed admin | `GET/POST/PATCH /users` |
-| `catalogue` | Master Catalogue import (**.xlsx / .xls / .csv**) + CRUD + match + provisional-SKU lifecycle | `POST /catalogue/import`, `GET /catalogue/import/template`, `POST /catalogue/import/preview|validate|revalidate|rows`, `GET /catalogue?provisional=`, `GET /catalogue/provisional-count`, `POST /catalogue?source=no-match`, `PATCH /catalogue/:id` |
+| `catalogue` | Master Catalogue import (**.xlsx / .xls / .csv**) + CRUD + match + provisional-SKU lifecycle | `POST /catalogue/import`, `GET /catalogue?provisional=`, `GET /catalogue/provisional-count`, `POST /catalogue?source=no-match`, `PATCH /catalogue/:id` |
 | `settings` | Claude API key: encrypt/store/mask/validate/remove (Admin) | `GET/PUT/DELETE /settings/api-key` |
 | `purchase-order` | PO upload, lifecycle, history, **confirm gate** | `POST /purchase-orders`, `POST /:id/extract`, `POST /:id/confirm` |
 | `ai-extraction` | Claude call, JSON parse, catalogue validation, **bulk-unit guard** | invoked by purchase-order |
 | `material` | Register 1 record/unit, unique ID gen, status transitions, label outputs | `GET /materials`, `GET /purchase-orders/:poId/units`, `.../labels.pdf|zip|csv` |
 | `qr` | QR image generation + 3×1.5" label roll PDF (shared by raw + FG) | used by `material` and `finished-goods` |
-| `receiving` | Scan resolve + rapid-fire scanning + status → Ready. Weighing is **no longer part of the receiving flow** (balance comes from the PO pack weight, see §8), but the endpoint survives as a **weight-correction** path. | `POST /receiving/scan`, `POST /receiving/:uniqueId/weight` |
+| `receiving` | Scan resolve + manual weight entry + status → Ready | `POST /receiving/scan`, `POST /receiving/:uniqueId/weight` |
 | `dashboard` | Phase 1 material-inward metrics + search | `GET /dashboard/summary`, `GET /dashboard/search` |
 | `audit` | Append-only log writer + reader | `GET /audit` |
 | `production-request` | Multi-material requests, per-line review, oversight rollup | `POST /production-requests`, `PATCH /:reqId/items/:itemId/review`, `GET /overview` |
 | `stock` | Unit lookup, Add/Deduct/Discard ledger, live levels, **stock ageing**, FIFO | `GET /stock/units/:id`, `POST /stock/transactions`, `GET /stock/levels`, `GET /stock/ageing`, `GET /stock/transactions` |
-| `analytics` | Role-specific dashboards (Admin / Store / Head), **dispatch analytics** (Dispatch + Admin), and the **Company Brain** factory-wide flow (**Admin only**) | `GET /analytics/overview`, `/analytics/store`, `/analytics/my`, `/analytics/dispatch`, `/analytics/flow` |
+| `analytics` | Role-specific dashboards (Admin / Store / Head) | `GET /analytics/overview`, `/analytics/store`, `/analytics/my` |
 | `batch` | Batches as first-class records + **traceability chain** | `POST /batches`, `GET /batches`, `GET /batches/:id/trace` |
 | `production-output` | Output recording + **confirm gate** | `POST /production-outputs`, `POST /:id/confirm` |
 | `finished-goods` | FG minting, FG labels, dispatch | `POST /finished-goods/generate/:outputId`, `GET /by-output/:id/labels.pdf`, `POST /dispatch/scan`, `POST /dispatch/batch` |
 
-| `health` | Liveness probe (**public**, Railway polls it) + storage round-trip probe (**guarded**, Store/Admin) | `GET /health`, `GET /health/storage?deep=1` |
-
-Cross-cutting: `common/` (guards, decorators, `auth/department-scope.ts`, crypto, `storage/`), `prisma/`.
-
-> **Storage errors carry no infrastructure identifiers.** Client-facing messages give a
-> plain-English hint only — never the endpoint host, bucket name or account ID, because those
-> messages reach `OPERATOR` and are written to the append-only audit log. The path-traversal
-> guard is re-thrown untouched: it is a security check, not an outage.
+Cross-cutting: `common/` (guards, decorators, `auth/department-scope.ts`, crypto), `prisma/`.
 
 ## 7. Data model (Prisma) — canonical entities
 
@@ -200,20 +198,6 @@ Cross-cutting: `common/` (guards, decorators, `auth/department-scope.ts`, crypto
 > `quantity = 1` and surfaces the bulk figure so the operator enters the real bag count.
 > This exists because one invoice produced 2600 QR codes from "2300 KG" + "300 KG".
 
-**Receiving (no weighing)**
-- A truckload can be ~2,500 sacks, so receiving is **scan-only** and accepts continuous rapid-fire
-  input. There is no per-unit weighing step in the flow.
-- `Material.balanceKg` is seeded from the **PO pack weight** at registration. A unit whose PO line
-  carries no pack weight cannot be issued until one is set on the line — every unit on that line
-  then inherits it.
-- **`POST /receiving/:uniqueId/weight` still exists**, now purely as a *correction* path for a unit
-  whose real weight differs from the pack weight. It is idempotent on an identical re-send (offline
-  retry), and if stock has already moved on the unit it **shifts** the balance by the delta rather
-  than overwriting it, so a correction never erases recorded consumption.
-  (Until 2026-07-20 this method set `receivedWeight` but never `balanceKg` — every balance in the
-  system had come from a one-time migration backfill. It now maintains the balance itself.)
-- Every scan screen can switch between the **phone camera** and an **external WiFi/USB scanner**.
-
 **Request → issue (Phase 2)**
 1. Head raises a request; each line optionally carries a `batchId`.
 2. Store reviews each line (accept / partial / reject-with-reason); parent status is derived from the line mix.
@@ -257,23 +241,16 @@ camera live → locks on → camera CLOSES → detail/action → confirm
   granted in the session, reopens are silent.
 - **Failed scans keep the camera open** and show the error inline, so the operator retries
   without navigating.
-- Applies to all three scan screens. The manual/USB-scanner field follows the same loop and
-  refocuses automatically after each success.
-- **Scanner mode toggle:** each screen chooses **camera** or **external scanner** explicitly,
-  because the factory uses both and which is in hand varies by station.
+- Applies to Scan & Weigh, Scan & Issue and Dispatch. The manual/USB-scanner field follows
+  the same loop and refocuses automatically after each success.
 
 ## 10. Conventions
 
 - REST, JSON, `kebab` URL segments, `/api` prefix. All write endpoints emit an AuditLog entry.
 - Auth: `Authorization: Bearer <jwt>`. Guards: `JwtAuthGuard` + `RolesGuard`.
-- Tests: invariants get tests with implementation. **261 backend tests** across 28 suites.
+- Tests: invariants get tests with implementation. **169 backend tests** across 16 suites.
 - Frontend calls the backend via `frontend/src/lib/api.ts` (base from `VITE_API_URL`, `/api` in prod).
 - Env: every secret via env var; `.env.example` committed, `.env` ignored.
-- **Design system — "Paint Chip".** Brand red `#EB0102`, yellow `#FEEF03`, violet `#8802C9`; a warm
-  neutral `chip-*` ramp; **severity tokens** (critical / warning / healthy / info) that status colours
-  bind to — never the categorical ramp, or a palette change silently makes "Partial" look like
-  "Rejected". Red is an **accent only**. All 14 measured text/background pairs pass WCAG AA.
-  Animations are GPU-accelerated (transform/opacity) and respect `prefers-reduced-motion`.
 - **Mobile-first where it matters.** Audited at 320/375/390/412/768 px; layout containers carry
   `min-w-0` so a wide table or tab strip scrolls inside itself instead of stretching the page.
   Touch devices get 44px tap targets via `@media(pointer:coarse)`; desktop sizing is unchanged.
@@ -288,22 +265,19 @@ camera live → locks on → camera CLOSES → detail/action → confirm
 | Stock | `STOCK_ADD`, `STOCK_DEDUCT`, `STOCK_DISCARD`, `FIFO_OVERRIDE` |
 | Phase 3 | `BATCH_CREATED`, `OUTPUT_RECORDED`, `OUTPUT_RECORDED_EXTRA`, `OUTPUT_UPDATED`, `OUTPUT_CONFIRMED`, `OUTPUT_DRAFT_DELETED`, `FG_QR_GENERATED`, `FG_DISPATCHED`, `FG_DISPATCHED_BULK` |
 | Users | `USER_SEEDED` |
-| Handover | `SYSTEM_FLUSHED_FOR_HANDOVER` — written once by `prisma/flush.ts`, the **only** permitted exception to I4 |
 
 ## 12. Open / deferred decisions
 
+- **UI/UX overhaul** — three directions (Studio Violet / Signal Dark / Paint Chip) plus five
+  taglines are in `Modern_Colours_Design_Options.pdf`, awaiting the factory owner's pick. The
+  tagline is intended to run as a moving strip on the login window and an in-app bar.
 - **Purchase review gate before QR printing** — client explicitly deferred.
-- **`render.yaml` is a leftover** from an abandoned Render deployment. Production is **Railway**.
-  It is inert but misleading — delete it or mark it dead.
-- **The local `.env` points at the same Neon database as production.** There is no separate dev
-  database, so anything run locally writes to live data.
 - **Low-stock tiers** (`< 5 kg` critical, `< 20 kg` low) and **ageing tiers** (30/60 days) are
   code constants; move to Settings if the client wants them tunable.
 - **Seeded passwords** — the five non-admin logins still use the default `ChangeMe123!`
   (override via `SEED_PHASE2_PASSWORD` / `SEED_PHASE3_PASSWORD`). Change before real go-live.
-- **Frontend has no test runner.** All 261 tests are backend. Adding vitest + testing-library
+- **Frontend has no test runner.** All 169 tests are backend. Adding vitest + testing-library
   would be a deliberate separate task.
 
 ---
-_Last updated: 2026-07-21 — Phases 1–3 live. Includes FIFO, the Paint Chip design system, weight-free
-receiving, the scanner mode toggle, catalogue import, dispatch analytics and the Company Brain._
+_Last updated: 2026-07-20 — Phases 1–3 live; FIFO, client-feedback items, scan-flow UX and mobile responsiveness audit included._

@@ -1,5 +1,11 @@
 # Phase 2 — User Acceptance Test (UAT) Script
 
+> **Document version:** 1.1  
+> **Last updated:** 2026-07-21  
+> **Describes:** Manual UAT script for Phase 2 (requests, approval, stock movement). Still valid.  
+> **Earlier versions:** see [`docs/archive/`](./archive/) · full history in [`CHANGELOG.md`](./CHANGELOG.md)
+
+
 Manual end-to-end test for **Production Requests, Store Approval & Stock Movement**.
 Run against the live deployment (or a local build). Nothing here is destructive to
 Phase 1 data. Tick each ☐ as you go; note any ✗ with what you saw.
@@ -33,7 +39,7 @@ published in this document, so it must not survive into production use.
 Log in as **PU Head**.
 
 - ☐ You land on **Requests** (not the Phase 1 dashboard).
-- ☐ The sidebar shows **only** Requests — no Invoice Upload / Scan & Weigh / Stock / Oversight.
+- ☐ The sidebar shows **only** Requests — no Invoice Upload / Receive Stock / Stock / Oversight.
 - ☐ Click **Raise a material request**. Add **3+ material lines** from the catalogue
   picker, each with a KG amount (e.g. Titanium Dioxide 10, Iron Oxide Red 5, Calcium
   Carbonate 6). Add a note (optional). Submit.
@@ -84,12 +90,13 @@ Log in as **Store** (`admin@…`).
 
 Still as **Store**, open **Scan & Issue**.
 
-Use a **weighed** unit for these (it must have a confirmed weight / balance). Known
-weighed units at time of writing: **MC-000296** (Titanium Dioxide, 24 kg),
+Use a unit that **has a stock balance**. Since 2026-07-20 the balance comes from the
+**PO pack weight** at registration, not from weighing at receiving — so most units have one
+already. Known good units at time of writing: **MC-000296** (Titanium Dioxide, 24 kg),
 **MC-000306** (Calcium Carbonate, 2 kg), **MC-000001** (Titanium Dioxide, 24.8 kg).
 You can also scan the printed QR with the camera.
 
-- ☐ Scan/enter a weighed unit → the unit card shows **material, SKU, PO, live balance**.
+- ☐ Scan/enter a unit that has a balance → the unit card shows **material, SKU, PO, live balance**.
 - ☐ All three actions **Add / Deduct / Discard** are always offered.
 - ☐ **Add** e.g. 5 kg to a department → balance goes **up** by 5; a row appears in the
   unit's **movement history**.
@@ -99,8 +106,9 @@ You can also scan the printed QR with the camera.
   → rejected with "only X kg remain". Balance never goes negative.
 
 **Negative**
-- ☐ Scan a unit that has **not** been weighed (balance null) → blocked with
-  "no confirmed weight yet — weigh it first".
+- ☐ Scan a unit whose PO line carried **no pack weight** (balance null) → blocked with
+  *"has no pack weight from its invoice, so its stock balance is unknown"*. A few units are
+  **deliberately left in this state** so this path stays testable — see [`HANDOVER.md`](./HANDOVER.md).
 - ☐ Add/Deduct with **no department** selected → blocked.
 - ☐ Quantity 0 or negative → blocked.
 
@@ -182,7 +190,10 @@ Do a final loop with three windows open (Store, Admin, PU Head):
 Quickly confirm Phase 2 didn't disturb Phase 1, logged in as **Store**:
 
 - ☐ Invoice Upload → AI extraction → Review & Confirm → QR Labels still work.
-- ☐ **Scan & Weigh** (receiving) still scans and records weights.
+- ☐ **Receiving** still scans. Note it is now **scan-only and rapid-fire** — there is no
+  per-unit weighing step in the flow (the weight endpoint survives only as a *correction* path).
+- ☐ The **scanner mode toggle** switches between the phone camera and an external WiFi/USB
+  scanner on every scan screen.
 - ☐ Master Catalogue and Audit Log open normally.
 - ☐ Operator / Supervisor logins (if used) still see only their Phase 1 screens.
 

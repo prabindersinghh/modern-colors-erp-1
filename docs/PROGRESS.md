@@ -1,5 +1,11 @@
 # Modern Colours — Build Progress (LIVING LOG)
 
+> **Document version:** 3.0  
+> **Last updated:** 2026-07-21  
+> **Describes:** Full build log, 20 June - 21 July 2026, with dates reconstructed from git history.  
+> **Earlier versions:** see [`docs/archive/`](./archive/) · full history in [`CHANGELOG.md`](./CHANGELOG.md)
+
+
 > **Purpose:** Append-only-ish running log so context never breaks between sessions.
 > **After completing any build step, update this file**: what was built, what was tested,
 > what's next. Read this + [`ARCHITECTURE.md`](./ARCHITECTURE.md) at the start of every session.
@@ -325,13 +331,155 @@
   3-role `User.role` list, and the stale duplicate rows in the build table above).
 - **Docs only — no code changed in this pass.**
 
+### 2026-07-20 02:53 — The batch dropdown that "didn't work"
+- Reported as a broken control: the batch dropdown showed **"No batch"** and could not be changed.
+  It was not broken — there were **zero batches in the database**, so there was nothing to select.
+- The real defect was that the UI could not tell three cases apart: *loading*, *legitimately empty*,
+  and *the request failed*. A silent `.catch(() => {})` was swallowing genuine failures and rendering
+  them identically to "empty".
+- Now each state says what it is, and a load failure surfaces instead of masquerading as no data.
+
+### 2026-07-20 04:03 — Paint Chip design system (tokens first, screens second)
+- The owner chose **Option C ("Paint Chip")** from the preview PDF. Before any screen was touched, the
+  system itself was built: brand red `#EB0102`, yellow `#FEEF03`, violet `#8802C9`, a warm neutral
+  `chip-*` ramp, **severity tokens** (critical / warning / healthy / info), 5 elevation layers, and
+  4 easings x 5 durations.
+- Three decisions from the owner, applied throughout: red **dialled back to an accent** (it signals
+  severity, so it cannot also be decoration), a **single tagline** — *"Every colour, accounted for."* —
+  and the Admin hero metric built as a **swappable slot**.
+- Rolled out on three preview screens first for sign-off, not straight across the app.
+
+**Four bugs this surfaced, all pre-existing:**
+- **`STATUS_COLOR` pointed at the categorical ramp**, so the palette change would have turned "Partial"
+  red — visually indistinguishable from "Rejected" on a stock screen. Rebound to the severity tokens.
+- **Inter was never actually loaded.** It had been declared in `tailwind.config` for weeks but never
+  imported; the app had been rendering in `system-ui` the whole time.
+- **A CSS `@import` placed after `@tailwind` is silently dropped.** The entire motion layer vanished
+  with no build error and no warning. Imports moved to the top of the file.
+- **4 WCAG AA contrast failures** (`chip-500` at 4.42:1, healthy at 3.99:1 and 4.23:1) and **13 touch
+  targets under 44 px**. Tokens darkened — all 14 measured pairs now pass; targets fixed via
+  `[@media(pointer:coarse)]` so desktop output is unchanged.
+
+### 2026-07-20 11:45 — Paint Chip rollout across every remaining screen
+- Applied the system app-wide. Animations kept **GPU-accelerated** (transform/opacity only) so the
+  earlier QR/render performance work is not regressed, and `prefers-reduced-motion` is respected.
+- The traced logo collapses into mush below ~32 px, so a **geometric mark** was built for small sizes.
+  The supplied "transparent" logo was not transparent — it carried an opaque grey background
+  (sampled 72, 70, 75); the mark was keyed from the original artwork instead.
+
+### 2026-07-20 13:21 — FG label generation 500 (broken since Phase 3)
+- Generating a finished-goods label roll failed in production with a 500.
+- `buildLabelRoll()` read `payload.materialName`, but **finished-goods payloads carry `productName`** —
+  so the field was `undefined` at render time. An `as never` cast had silenced the type error that
+  would otherwise have caught this at compile time.
+- Fixed with a **discriminated union** over the two payload shapes, so the compiler now rejects the
+  mistake rather than a cast hiding it. Covered by `qr.fg-label.spec.ts`.
+
+### 2026-07-20 15:00 — Weighing removed from receiving; rapid-fire scanning
+- The factory's reality: **a truckload can be ~2,500 sacks**. Weighing each one at receiving was the
+  bottleneck. Balances now come from the **PO weight** instead, and both scan screens accept
+  continuous rapid-fire input.
+- **Flagged before building, not after:** PO weight coverage was measured at **19.7%** — as originally
+  specified, the change would have blocked 4 out of 5 sacks from ever being issued. Work stopped there
+  and the finding went to the owner, who supplied three real supplier invoices confirming the gap was in
+  how pack sizes were written, not in the data being absent. A revised 3-step plan was approved and built.
+- **A latent bug found on the way:** `weigh()` set `receivedWeight` but **never `balanceKg`**. Every
+  balance in the system had come from a one-time migration backfill; nothing had been maintaining it.
+
+### 2026-07-20 15:28 — Scanner mode toggle
+- Every scan screen can now switch between the **phone camera** and an **external WiFi/USB scanner**.
+  The factory has both, and which one is in hand varies by station.
+
+### 2026-07-20 16:05 — Catalogue import: template, validation, partial import
+- Added a **downloadable template**, **AI-assisted validation** that is non-blocking and skippable, an
+  **editable preview**, and **partial import** so a handful of bad rows no longer rejects the whole file.
+  Store-only.
+- Fixed a parser bug where a leading `#` comment row was being read as data.
+
+### 2026-07-20 16:37 - 22:50 — The R2 outage, and two security reviews
+- **The outage.** Invoice upload started failing with an opaque 500. Diagnosed by elimination — database
+  writes fine, non-storage reads fine, *both* storage paths failing — then diagnostics were deployed to
+  get the exact code back: **`AccessDenied` 403**. The R2 API token was missing **Object Read & Write**.
+- **Nothing was lost.** All 22 PO records were reconciled against R2 afterwards. Eight were missing, and
+  all eight were **pre-go-live** (24 Jun - 1 Jul). Zero were lost in the outage — `storage.put()` runs
+  *before* the database insert, so a storage failure leaves no orphaned row.
+- **`.env` had three separate errors:** `STORAGE_DRIVER="disk"`, an empty `R2_ENDPOINT`, and the bucket
+  written as `modern-colours` (British spelling, 403) rather than `modern-colors-storage`.
+- **Security review 1** caught that the health probe had shipped **public** — it leaked the Cloudflare
+  account ID and performed unauthenticated R2 writes. Now behind `JwtAuthGuard` + `RolesGuard`,
+  Store/Admin only.
+- **Security review 2** caught that error messages embedded the endpoint host and bucket name — and that
+  the earlier extraction commit had made it *worse* by writing those identifiers into the **append-only
+  audit log** and exposing them to `OPERATOR`. Fixed at the source: client-facing storage errors now
+  carry a plain-English hint and **no infrastructure identifiers**.
+- The path-traversal guard is deliberately **re-thrown untouched** through the error wrapper — it is a
+  security check, not an outage. An existing test caught the first attempt at wrapping it.
+- **Extraction now degrades to manual entry when storage is unavailable** (invariant I7) — storage being
+  down must never stop the factory receiving goods.
+
+### 2026-07-20 23:32 — Handover preparation
+- Backfilled pack weights, deliberately **leaving 3-5 units blocked** so the "no pack weight" path stays
+  demonstrable at handover rather than being papered over.
+- Built **`prisma/flush.ts`** — guarded by `ALLOW_FLUSH=yes` **and** a typed
+  `--confirm "FLUSH MODERN COLOURS"`. **It has never been run.**
+- Its delete order was wrong on the first pass (`Batch` before `ProductionRequestItem`); it only appeared
+  to work because of `ON DELETE SET NULL`. Reordered, and now **verified by a test**
+  (`handover/flush-plan.spec.ts`) against the live schema, so adding a model that would break the flush
+  fails CI instead of failing on handover day.
+
+### 2026-07-21 00:14 — Dispatch analytics + the Company Brain
+- **Dispatch analytics** from a single endpoint shared by the Dispatch worker's own dashboard and the
+  Admin view — so the two can never disagree about how much left the factory.
+- **Company Brain** (Admin only): a Sankey flow of the whole factory, raw material received to issued to
+  produced to dispatched, with date-range presets and drill-down. It is Admin-only by necessity — the
+  flow crosses every isolation boundary the rest of the system maintains.
+- **Litres and kilograms are never summed**, and `yieldPct` returns **`null`** rather than a
+  confident-looking wrong number when the two sides are in different units. Locked by
+  `dispatch-analytics.spec.ts`.
+- Material received but not yet issued is shown as an explicit **"Still in store"** branch, so the
+  diagram balances instead of silently losing mass.
+- **Graphify was evaluated and rejected** — on inspection it is a Python CLI knowledge-graph tool, not a
+  charting library. Built on recharts' `Sankey` with custom node/link renderers instead.
+
+### 2026-07-21 00:30 — Company Brain as the Oversight landing view
+- Made Company Brain the default tab. The brain/dispatch branches had to move **above** the
+  `if (!data) return <DashboardSkeleton/>` gate — otherwise the new default view sat behind a
+  loading gate for data it does not use.
+
+### 2026-07-21 — Documentation, versioning and changelog
+- Added **version headers** (version / last updated / what it describes / link to earlier versions) to
+  seven docs, created **[`CHANGELOG.md`](./CHANGELOG.md)** covering 20 June - 21 July 2026 with real git
+  timestamps, and **archived** superseded versions under [`archive/`](./archive/) rather than deleting them.
+- Rewrote the README for a **cold start**: all six logins and their scopes, the full invariant table
+  (now I1-I12, previously stopping at I9), deployment reality, and the four gotchas that otherwise get
+  rediscovered painfully.
+- **Docs only — no code changed in this pass.**
+
 ## Open / pending
 
-- **UI/UX overhaul — ON HOLD.** A 5-page preview PDF (3 complete options, each shown on laptop + iPad + phone,
-  plus a tagline page for the moving strip on login and in the app bar) is with the factory owner. **No rebuild
-  has started**; it waits on their choice of option and tagline.
-- **Client click-through verification** still to be done by the client on real hardware: Phase 3 end-to-end,
-  the six feedback items, the scan loop on an actual phone, and label printing on the real label printer.
+_Accurate as of 2026-07-21. Everything above this line is built and deployed._
+
+**Needs real hardware — no test can substitute**
+- **Label printing on the actual label printer.** Geometry is locked at 216 x 108 pt (3 x 1.5 in) and
+  covered by tests, but only a real print proves it feeds correctly on the factory's roll.
+- **A scan on the real WiFi scanner**, and the camera scan loop on an actual phone on the factory floor.
+- **Client click-through** of Phase 3 end-to-end and the six feedback items.
+
+**Before the factory takes over** — see [`HANDOVER.md`](./HANDOVER.md) for the runbook
+- **Change all six default passwords.** `ChangeMe123!` is published in [`PHASE2_UAT.md`](./PHASE2_UAT.md),
+  so it must not survive into real use.
+- **Enter the factory's own Claude API key** in Settings.
+- **Decide whether the Master Catalogue is still demo data** or the factory's real ~500-600 SKUs — this
+  decides whether the flush runs with `--flush-catalogue`.
+- **Run `prisma/flush.ts`.** Built, guarded and test-verified; **never run**. Take a Neon snapshot first.
+
+**Known gaps, deliberately left**
+- **3-5 units remain blocked on pack weight.** Left on purpose so the "no pack weight" path is
+  demonstrable at handover rather than papered over.
+- **`render.yaml` is a leftover** from an abandoned Render deployment. Production is Railway. It is
+  inert, but it misleads — delete it or mark it dead.
+- **The local `.env` points at the same Neon database as production.** There is no separate dev database.
+  Anything run locally writes to live data. This is the single sharpest edge in the project.
 
 ---
 _Update this log after every step. Newest entries at the bottom of the session log._

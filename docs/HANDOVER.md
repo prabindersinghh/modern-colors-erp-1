@@ -1,5 +1,11 @@
 # Handover runbook — Modern Colours
 
+> **Document version:** 1.0  
+> **Last updated:** 2026-07-21  
+> **Describes:** The runbook for handover day, including the database flush.  
+> **Earlier versions:** see [`docs/archive/`](./archive/) · full history in [`CHANGELOG.md`](./CHANGELOG.md)
+
+
 The checklist for the day the system stops being ours and becomes the factory's.
 
 Read it end to end **before** starting. The flush step is the only genuinely

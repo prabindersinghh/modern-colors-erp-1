@@ -21,6 +21,101 @@
 
 ---
 
+> **Document version:** 3.0  
+> **Last updated:** 2026-07-21  
+> **Describes:** Phases 1–3, live in production since 2026-07-03.  
+> **Full history:** [`docs/CHANGELOG.md`](./docs/CHANGELOG.md) · earlier doc versions in [`docs/archive/`](./docs/archive/)
+
+---
+
+## Start here — orientation for a new developer or agent
+
+Read in this order:
+
+| Doc | What it gives you |
+|---|---|
+| This README | The product, the stack, the invariants, how to run it |
+| [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) | The **current** live architecture, all three phases |
+| [`docs/CHANGELOG.md`](./docs/CHANGELOG.md) | What was built and when, reconstructed from git |
+| [`docs/PROGRESS.md`](./docs/PROGRESS.md) | The build log, session by session |
+| [`docs/FIELD_REFERENCE.md`](./docs/FIELD_REFERENCE.md) | Every database column and what it means |
+| [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md) | The live deployment and its hard-won gotchas |
+| [`docs/HANDOVER.md`](./docs/HANDOVER.md) | Handover day, and the database flush |
+| [`docs/archive/`](./docs/archive/) | Superseded doc versions, kept so you can see the system evolve |
+
+**Live since 2026-07-03.** Phases 1, 2 and 3 are complete and in production use.
+
+### The six logins
+
+Roles are enforced **server-side**; the UI only hides what the server already refuses.
+All six are live in the database right now *(verified against production 2026-07-21)*.
+Non-admin seeds default to `ChangeMe123!` — **change every one before real use.**
+
+| Role (enum) | Displayed as | Login | Scope |
+|---|---|---|---|
+| `ADMIN` | **Store** | `admin@moderncolours.local` | Approves requests, issues stock, catalogue, API key, users |
+| `OVERSIGHT` | **Admin** | `oversight@moderncolours.local` | Read-only across all departments, **plus the Company Brain**. Every mutating route rejects it |
+| `PRODUCTION_HEAD` | **PU Head** | `pu@moderncolours.local` | Requests, batches, output — **PU only** |
+| `PRODUCTION_HEAD` | **Enamel Head** | `enamel@moderncolours.local` | Requests, batches, output — **ENAMEL only** |
+| `PRODUCTION_HEAD` | **Powder Head** | `powder@moderncolours.local` | Requests, batches, output — **POWDER only** |
+| `DISPATCH` | **Dispatch** | `dispatch@moderncolours.local` | Finished goods only — no raw stock, no requests, no Phase 1 |
+
+**Note the naming trap:** the role called `ADMIN` is the **Store**, and the role called
+`OVERSIGHT` is what the factory calls **"Admin"**. They are not the same thing and it is easy to
+wire a guard to the wrong one.
+
+**Two more roles exist in code but have no usable account:**
+
+| Role | Reality |
+|---|---|
+| `OPERATOR` | `op1@moderncolours.local` exists but is **deactivated** — it cannot log in. Phase 1 duties (upload, review/confirm, QR labels, receiving scan) are currently done by **Store**. Reactivate it via Users if the factory wants a separate receiving operator. |
+| `SUPERVISOR` | **No account exists.** The role is implemented and guarded (read-only dashboard, records, audit), but nobody has been given it. Create one via Users if needed. |
+
+Department isolation (I10) is derived from the JWT, never the request body — a head
+cannot reach another department's data by editing a request.
+
+The seeds are idempotent and split across three scripts: `prisma/seed.ts` (the admin, from
+`SEED_ADMIN_*` env vars), `prisma/seed-phase2-roles.ts` (oversight + the three heads,
+`SEED_PHASE2_PASSWORD`), and `prisma/seed-phase3-dispatch.ts` (dispatch, `SEED_PHASE3_PASSWORD`).
+
+### Deployment reality
+
+| Piece | Where | Notes |
+|---|---|---|
+| Frontend | **Vercel** — Ambreen's account | Deploy from *that* account; a different one changes the URL and breaks CORS |
+| Backend | **Railway**, Singapore | Built from `backend/Dockerfile`, not Nixpacks |
+| Database | **Neon** PostgreSQL 18.4, Singapore | `DATABASE_URL` pooled for the app, `DIRECT_URL` non-pooled for migrations |
+| File storage | **Cloudflare R2** | Bucket `modern-colors-storage` |
+
+**Auto-deploy on push to `main`** — both ends. No manual step for ordinary changes.
+
+### Four things you would otherwise rediscover painfully
+
+1. **Migrations hang on Neon's pooled endpoint.** PgBouncer has no advisory locks, so
+   `prisma migrate deploy` against `DATABASE_URL` hangs forever rather than failing.
+   Use `DIRECT_URL`.
+2. **Railway healthchecks are IPv6-only.** Binding `0.0.0.0` passes the build and then
+   fails the healthcheck. The app binds dual-stack `::` with an IPv4 fallback.
+3. **Stage environment variables *before* the deploy that reads them.** The app fails
+   fast on missing secrets by design, so a premature deploy crash-loops and looks like a
+   build failure when it is only a missing value.
+4. **The Jio mobile-data incident.** The app worked on office WiFi but appeared broken on
+   Jio mobile data, showing a CORS error — which sent debugging to the wrong place.
+   What actually mattered: `CORS_ORIGIN` must be the **exact** origin with **no trailing
+   slash**; a Vercel *preview* deploy has a different origin and only affects the person
+   on it; and a failed preflight on a flaky connection is indistinguishable from a CORS
+   misconfiguration in the console. The API client now retries transient network
+   failures. **Debug order:** confirm which URL the user is on → hit `/api/health` from
+   *their* device → only then look at `CORS_ORIGIN`.
+
+### Handover
+
+The database is flushed before the factory takes over. `prisma/flush.ts` is built,
+tested and **has never been run** — it needs `ALLOW_FLUSH=yes` *and* a typed confirmation
+phrase. Read [`docs/HANDOVER.md`](./docs/HANDOVER.md) before touching it.
+
+---
+
 ## Overview
 
 Modern Colours receives raw materials (pigments, fillers, binders, solvents) against paper Purchase
@@ -28,8 +123,9 @@ Orders, issues them to production departments, and ships finished paint. This pl
 whole chain — from the supplier's invoice to the drum leaving the gate:
 
 > **Phase 1 — Inward.** Operator uploads a PO → Claude extracts the line items → the operator reviews
-> & confirms → the system mints one QR-coded unit per physical item → each unit is scanned and weighed
-> on arrival until it is _Ready for Production_.
+> & confirms → the system mints one QR-coded unit per physical item → each unit is scanned on arrival
+> until it is _Ready for Production_. Scanning is rapid-fire because a truckload can be ~2,500 sacks;
+> each unit's stock balance comes from the PO's pack weight, not from weighing it.
 >
 > **Phase 2 — Requests & stock.** A department head requests materials → Store accepts, part-accepts or
 > rejects each line → Store scans the drum and issues the actual weighed amount → live stock levels are
@@ -219,19 +315,32 @@ Eight Prisma models back the platform (full schema: [`backend/prisma/schema.pris
 
 ## Non-negotiable invariants
 
-The system is designed around nine guardrails, several backed by automated tests:
+**Break these and you break the factory.** Most are backed by automated tests; the test
+is named where one exists.
 
-| # | Invariant |
-|---|-----------|
-| I1 | No auto-save of AI output — materials persist only after explicit operator confirm |
-| I2 | Claude API key encrypted at rest; never returned in full to the frontend |
-| I3 | QR codes are 1:1 with physical units, not line items |
-| I4 | Audit log is append-only; corrections reference the original |
-| I5 | RBAC enforced server-side on every protected endpoint |
-| I6 | Master Catalogue never gates operations; no-match items are still confirmable |
-| I7 | Claude failure falls back to manual entry — the operator is never blocked |
-| I8 | Unique IDs are sequential and zero-padded (`MC-000001`) |
-| I9 | Scans & weight entries tolerate offline, queue locally, and sync on reconnect |
+| # | Invariant | Enforced where |
+|---|-----------|----------------|
+| I1 | No auto-save of AI output — materials persist only after explicit operator confirm | `purchase-order.service.ts` confirm gate |
+| I2 | Claude API key encrypted at rest (AES-256-GCM); never returned in full | `crypto.service.ts`, `settings.service.ts` |
+| I3 | QR codes are 1:1 with physical units, not line items | `material.service.ts` registration loop |
+| I4 | **Audit log is append-only** — corrections are new rows referencing the original. The *only* permitted exception is `prisma/flush.ts` at handover | `audit.service.ts` has no update/delete |
+| I5 | RBAC enforced **server-side** on every protected endpoint | `RolesGuard` + `phase1-access.spec.ts`, `dispatch-isolation.spec.ts` |
+| I6 | Master Catalogue never gates operations; no-match items are still confirmable | `catalogue.service.ts` match is advisory |
+| I7 | Any extraction failure falls back to manual entry — the operator is never blocked | `extract-degradation.spec.ts` |
+| I8 | Unique IDs are sequential and zero-padded (`MC-000001`, `FG-000001`, separate sequences) | Postgres sequences |
+| I9 | Scans tolerate offline, queue locally, sync on reconnect; re-scans are idempotent | `receiving.service.ts` |
+| I10 | **Department isolation** — a production head's department comes from the JWT, never the request body | `common/auth/department-scope.ts` |
+| I11 | **Stock balance and ledger row are written in ONE DB transaction with the unit row locked `SELECT … FOR UPDATE`.** Balances can never go negative or drift from the ledger | `stock.service.ts`, `stock.service.spec.ts` |
+| I12 | Finished-goods QRs cannot be minted until the production output is **confirmed**; a second generate is refused | `finished-goods.service.ts`, `qr.fg-label.spec.ts` |
+
+### Two more that are not numbered but matter just as much
+
+- **Label geometry is exactly 216 × 108 pt (3 × 1.5 in), one label per page.** The
+  factory's label-roll printer depends on it. Locked by `qr.label-format.spec.ts` and
+  `qr.fg-label.spec.ts` — do not "improve" the layout without reading those.
+- **`ENCRYPTION_KEY` must never change.** It is the only thing that can decrypt the
+  stored Claude API key; if it changes, that key is **unrecoverable** and a database
+  backup will not bring it back. See [`HANDOVER.md`](./docs/HANDOVER.md).
 
 ---
 
@@ -241,12 +350,23 @@ The system is designed around nine guardrails, several backed by automated tests
 |--------|--------------------------|
 | `auth` | `POST /auth/login` · `GET /auth/me` |
 | `users` | `GET/POST/PATCH/DELETE /users` *(Admin)* |
-| `catalogue` | `POST /catalogue/import` *(Admin)* · `GET /catalogue` · `GET /catalogue/match?q=` · `POST /catalogue` *(Admin+Operator)* |
+| `catalogue` | `POST /catalogue/import` *(Admin)* · `GET /catalogue/import/template` · `POST /catalogue/import/preview\|validate\|revalidate\|rows` · `GET /catalogue` · `GET /catalogue/match?q=` · `POST /catalogue` *(Admin+Operator)* |
 | `settings` | `GET/PUT/DELETE /settings/api-key` *(Admin)* |
+| `purchase-order` | `POST /purchase-orders` · `POST /:id/extract` · `POST /:id/confirm` *(the I1 gate)* |
+| `material` | `GET /materials` · `GET /purchase-orders/:poId/units` · `.../labels.pdf\|zip\|csv` |
+| `receiving` | `POST /receiving/scan` · `POST /receiving/:uniqueId/weight` *(correction path only)* |
+| `stock` | `GET /stock/units/:id` · `POST /stock/transactions` · `GET /stock/levels` · `GET /stock/ageing` · `GET /stock/transactions` |
+| `production-request` | `POST /production-requests` · `PATCH /:reqId/items/:itemId/review` *(Store)* · `GET /overview` |
+| `batch` | `POST /batches` · `GET /batches` · `GET /batches/:id/trace` |
+| `production-output` | `POST /production-outputs` · `POST /:id/confirm` *(hard gate)* |
+| `finished-goods` | `POST /finished-goods/generate/:outputId` · `GET /by-output/:id/labels.pdf` · `POST /dispatch/scan` · `POST /dispatch/batch` |
+| `analytics` | `GET /analytics/overview\|store\|my` · `GET /analytics/dispatch` *(Dispatch+Admin)* · `GET /analytics/flow` *(**Admin only** — the Company Brain)* |
+| `dashboard` | `GET /dashboard/summary` · `GET /dashboard/search` |
 | `audit` | `GET /audit` *(Admin/Supervisor)* |
+| `health` | `GET /health` *(public — Railway polls it)* · `GET /health/storage?deep=1` *(Store/Admin)* |
 
-_(purchase-order, material, qr, receiving, and dashboard endpoints are added as those modules land — see the
-roadmap below.)_
+Every write endpoint emits an append-only `AuditLog` entry (I4). Roles above are the
+**server-side** guard, not a UI convention.
 
 ---
 
@@ -283,7 +403,7 @@ The Vite dev server proxies `/api` to the backend (same-origin — no CORS), so 
 
 ### Testing the camera on a phone
 
-Scan & Weigh (QR) and PO Upload (document photo) use the device camera, which browsers only allow on a
+Receive Stock (QR) and PO Upload (document photo) use the device camera, which browsers only allow on a
 **secure context (HTTPS)**. To test from a phone on the same Wi‑Fi:
 
 ```bash
@@ -322,27 +442,60 @@ camera; for PO photos, fill the frame with the document and hold steady for a sh
 
 ## Testing
 
-Automated tests focus on the non-negotiable invariants:
-
-- `roles.guard.spec.ts` — server-side RBAC (I5)
-- `crypto.service.spec.ts` — AES-256-GCM round-trip, unique IV, GCM tamper-detection, masking (I2)
-- `match.util.spec.ts` — catalogue matching exact/similar/none, never-throws (I6)
+**261 tests across 28 suites, all passing** (verified 2026-07-21).
 
 ```bash
 cd backend && npm test
 ```
 
+Tests exist to pin the invariants, so the suite is the fastest way to learn what must not
+change. The ones worth reading first:
+
+| Spec | Pins |
+|---|---|
+| `roles.guard.spec.ts`, `phase1-access.spec.ts`, `dispatch-isolation.spec.ts` | Server-side RBAC and role isolation (I5) |
+| `department-scope.spec.ts` | A head cannot reach another department's data (I10) |
+| `stock.service.spec.ts` | Row-locked balance + ledger in one transaction; no negative stock (I11) |
+| `qr.label-format.spec.ts`, `qr.fg-label.spec.ts` | **Label geometry at exactly 216 x 108 pt** — the factory's printer depends on it |
+| `crypto.service.spec.ts` | AES-256-GCM round-trip, unique IV, tamper detection, masking (I2) |
+| `extract-degradation.spec.ts` | Extraction falls back to manual when Claude *or* storage is down (I7) |
+| `dispatch-analytics.spec.ts` | Litres and kg are never summed; yield is `null` across units |
+| `flush-plan.spec.ts` | The handover flush's delete order is FK-safe against the live schema |
+
+> **There is no frontend test runner.** All 261 tests are backend. Adding vitest +
+> testing-library would be a deliberate separate task.
+
 ---
 
 ## Scope & roadmap
 
-**Phase 1 (this repository):** master catalogue, settings/API-key, PO upload, AI extraction, operator
-review/confirm, per-unit registration + QR, scan + manual weight, status lifecycle, dashboard, roles, audit.
+All three phases are **built and live**. This section used to describe Phase 1 as the whole
+repository and Phase 2 as out of scope; that has not been true since 2026-07-03.
 
-**Explicitly out of scope (Phase 2):** production work orders & scheduling, production consumption tracking
-(Initial − Final weighing), live weighing-machine hardware integration, inventory forecasting, and
-worker-facing task views. The earlier prototype that targeted this scope is preserved on the
-`phase2-draft` branch and is **not** wired into the Phase 1 application.
+**Phase 1 — material inward.** Master catalogue, settings/API-key, PO upload, AI extraction,
+operator review/confirm, per-unit registration + QR, receiving scan, status lifecycle,
+dashboard, roles, audit.
+
+**Phase 2 — requests, issuing & stock.** Multi-material production requests, per-line Store
+review (accept / partial / reject), QR-verified issuing, the append-only movement ledger, live
+stock levels, department isolation, and the Oversight dashboard. Plus **FIFO** — soft, never
+blocking, with a `FIFO_OVERRIDE` audit entry when the operator proceeds anyway.
+
+**Phase 3 — finished goods & dispatch.** Batches as first-class records, production output with
+a confirm gate, FG minting with per-drum QRs, dispatch scanning, and the full traceability chain
+from a dispatched drum back to the supplier invoice.
+
+**Since Phase 3:** the Paint Chip design system, weight-free rapid-fire receiving, the scanner
+mode toggle, catalogue import with template + AI validation + partial import, dispatch analytics,
+and the **Company Brain** factory-wide flow view.
+
+**Still genuinely out of scope:** production scheduling, live weighing-machine hardware
+integration, inventory forecasting, and worker-facing task views. The earlier prototype that
+targeted some of this is preserved on the `phase2-draft` branch and is **not** wired in.
+
+**What is left** is verification on real hardware (label printer, WiFi scanner, phone camera on
+the floor) and the handover flush — see [`docs/PROGRESS.md`](./docs/PROGRESS.md) and
+[`docs/HANDOVER.md`](./docs/HANDOVER.md).
 
 ---
 

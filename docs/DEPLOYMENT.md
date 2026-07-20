@@ -1,5 +1,11 @@
 # Deployment Guide — Modern Colours (managed cloud)
 
+> **Document version:** 2.0  
+> **Last updated:** 2026-07-21  
+> **Describes:** The live managed-cloud deployment: Vercel + Railway + Neon + Cloudflare R2.  
+> **Earlier versions:** see [`docs/archive/`](./archive/) · full history in [`CHANGELOG.md`](./CHANGELOG.md)
+
+
 > **For an on-premise factory handoff, use [`SELF-HOSTING.md`](./SELF-HOSTING.md)** — everything on one
 > server the client owns (local PostgreSQL + local disk storage, no cloud accounts).
 > This file describes the **managed-cloud** setup, which is what is **currently live**.
