@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { derivePackWeight } from './derive-pack-weight';
 import { ConfigService } from '@nestjs/config';
 import Anthropic from '@anthropic-ai/sdk';
 import { SettingsService } from '../settings/settings.service';
@@ -10,6 +11,10 @@ export interface ExtractedLineItem {
   quantity: number; // number of PHYSICAL packages (one QR each) — NOT bulk Kg/Ltr
   unit: string | null; // package type (Bag/Drum/Can) or measure unit if truly bulk
   weight: number | null; // PO-stated weight of ONE package (kg), if determinable
+  // How `weight` was obtained: straight from the model, or recovered deterministically
+  // from a packing note / description. Surfaced at Review & Confirm and in the audit
+  // trail so a derived figure is always distinguishable from a stated one.
+  weightSource?: 'extracted' | 'packing-note' | 'pack-size' | 'description' | 'total-over-count' | null;
   batchNumber: string | null;
   // When the line was BULK (unit KG/LTR) and we could not derive a real package count,
   // quantity is forced to 1 and the bulk total is surfaced here so the operator knows
@@ -107,14 +112,19 @@ const EXTRACT_TOOL = {
             weight: {
               type: ['number', 'null'],
               description:
-                'The PO-stated weight of ONE package in kilograms, if determinable (e.g. "4 Drums x 25 Kgs" → 25; "Pack Size 25 Kg / Bag" → 25). If only a total is given, use null.',
+                'The weight of ONE package in kilograms. This drives the opening stock balance for each unit, so extract it whenever the document allows. Look in ALL of these places, in order: (1) a packing note under the description — "Packing: 4 Drums x 25 Kgs" → 25, "5 Bags x 10 Kgs" → 10; (2) a pack-size column — "Pack Size 25 Kg 1 BAG" → 25; (3) the description text itself — "TEGO DISPERS 673 (25KGS)" → 25, "AEROSIL 200 (10KGS)" → 10, "...-25KG" → 25; (4) total weight divided by package count when BOTH are unambiguous — "100.000 Kgs" over "4 Drums" → 25. Convert grams to kg (500 GM → 0.5). For a litre-based pack, give the litres figure. Only use null when the document truly states no per-package size anywhere.',
+            },
+            packingNote: {
+              type: ['string', 'null'],
+              description:
+                'The RAW packing/pack-size text for this line, copied verbatim if present — e.g. "Packing: 4 Drums x 25 Kgs", "Pack Size 25 Kg 1 BAG". Copy it even if you also filled in weight; it is used to double-check the per-package size. Null if the line has no such text.',
             },
             batchNumber: {
               type: ['string', 'null'],
               description: 'Batch / lot number if explicitly present, else null.',
             },
           },
-          required: ['materialName', 'quantity'],
+          required: ['materialName', 'quantity', 'weight'],
         },
       },
     },
@@ -130,7 +140,11 @@ Map each material line carefully — these are DIFFERENT columns and must not be
 - sku = a supplier item/product code ONLY if a dedicated code column exists; otherwise null.
 - quantity = the number of physical packages (bags/drums/cans) that each need a QR label.
 - unit = the package word (Bag, Drum, Can, Carton). Bulk measures (KG/LTR) only if no packaging.
-- weight = weight of ONE package in kg, if the document states it; else null.
+- weight = weight of ONE package in kg. ALWAYS look for this — it becomes the unit's opening
+  stock balance, so a missing weight blocks that material from being issued to production.
+  Check the packing note ("Packing: 4 Drums x 25 Kgs"), the pack-size column ("Pack Size 25 Kg
+  1 BAG"), and the description text itself ("TEGO DISPERS 673 (25KGS)", "...-25KG"). If the line
+  gives a total weight AND an unambiguous package count, divide (100 Kgs / 4 Drums = 25).
 
 CRITICAL RULE — never confuse total weight with package count. If a line's quantity column is expressed in KG / KGS / LTR / MT / GM (a weight or volume), that number is the TOTAL amount of material, NOT the number of bags. In that case set quantity to 1 and unit to the measure (e.g. "KG"); the operator will enter the real bag/drum count. Only use a number as quantity when it is an actual count of packages (e.g. "80 BAG", "4 Drums").
 
@@ -139,6 +153,11 @@ Worked examples from real invoices:
 2) Row "POLYESTER RESIN (7000NY) 25KG | HSN 39079990 | Pack Size 25 Kg 1 BAG | Qty 80 BAG" → hsnCode "39079990", quantity 80, unit "Bag", weight 25.
 3) Row "CHINA CLAY POWDER | HSN 25070029 | Qty 300.000 KG" with no package count → hsnCode "25070029", quantity 1, unit "KG", weight null (operator will set the real bag count). Do NOT output quantity 300 here.
 4) Row "CARB-10 B | HSN 25174100 | 2300.000 KG" → materialName "CARB-10 B", hsnCode "25174100", sku null, quantity 1, unit "KG", weight null. NEVER output quantity 2300 — that is 2300 kg of bulk material, not 2300 bags.
+5) Row "AEROSIL 200 (10KGS) | HSN 28112200 | 50.000 Kgs" with a note "Packing: 5 Bags x 10 Kgs" → quantity 5, unit "Bag", weight 10. The weight appears TWICE here (in the packing note and in the description) — never return null for a line like this.
+6) Row "ANCAMINE K 54 (200KGS) | 200.000 Kgs" with a note "Packing: 1 Drum x 200 Kgs" → quantity 1, unit "Drum", weight 200.
+
+The "weight" field is REQUIRED in your output for every line. Emit a number whenever the
+document supports one; emit null ONLY when no per-package size appears anywhere on the line.
 
 Use null for anything not present. Call the record_purchase_order tool with the structured result.`;
 
@@ -236,13 +255,34 @@ export class AiExtractionService {
         const quantity = bulk ? 1 : validQty ?? 1;
         const bulkWeightKg = bulk && validQty && validQty > 1 ? validQty : null;
 
+        const materialName = String(o.materialName ?? '').trim();
+        const extractedWeight = Number.isFinite(weight) && weight > 0 ? weight : null;
+
+        // WEIGHT FALLBACK. The per-package weight now seeds each unit's opening stock
+        // balance, so a null here means that sack cannot be issued until someone fixes
+        // it. Real invoices state the pack size in places the model often misses — a
+        // "Packing: 4 Drums x 25 Kgs" note, or the size inside the description
+        // ("AEROSIL 200 (10KGS)"). Recover those deterministically. We never override a
+        // weight the model DID produce, and anything ambiguous stays null so the
+        // operator confirms it once per line at Review & Confirm.
+        const derived =
+          extractedWeight == null
+            ? derivePackWeight({
+                materialName,
+                packingNote: this.str(o.packingNote),
+                quantity,
+                totalKg: bulkWeightKg,
+              })
+            : null;
+
         return {
-          materialName: String(o.materialName ?? '').trim(),
+          materialName,
           hsnCode,
           sku,
           quantity,
           unit,
-          weight: Number.isFinite(weight) && weight > 0 ? weight : null,
+          weight: extractedWeight ?? derived?.weight ?? null,
+          weightSource: (extractedWeight != null ? 'extracted' : derived?.source ?? null) as ExtractedLineItem['weightSource'],
           batchNumber: this.str(o.batchNumber),
           bulkWeightKg,
         };

@@ -1,8 +1,10 @@
 import {
+  Body,
   Controller,
   Get,
   NotFoundException,
   Param,
+  Post,
   Query,
   StreamableFile,
   UseGuards,
@@ -13,6 +15,8 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { MaterialService } from './material.service';
 import { QrService, QrPayload, LabelInput } from '../qr/qr.service';
+import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
+import { SetPackWeightDto } from './dto/set-pack-weight.dto';
 
 /**
  * Raw-material units, QR images and label sheets. These are Phase 1 + oversight data:
@@ -44,6 +48,44 @@ export class MaterialController {
       page: page ? Number(page) : undefined,
       pageSize: pageSize ? Number(pageSize) : undefined,
     });
+  }
+
+  /**
+   * Units that arrived with no usable weight and are therefore BLOCKED from being
+   * issued to production.
+   *
+   * Receiving no longer weighs each sack — a unit's opening balance comes from the PO's
+   * per-package weight. When a document genuinely states no pack size (a bulk invoice
+   * like "2,300 KG"), the unit still registers and still scans, but has a null balance
+   * and cannot move. This is the queue that makes those visible so they get fixed,
+   * rather than being discovered later at the issue desk.
+   *
+   * Placed BEFORE 'materials/:id' — Nest matches routes in declaration order, and
+   * 'needs-weight' would otherwise be captured as an :id.
+   */
+  @Get('materials/needs-weight')
+  needsWeight() {
+    return this.materials.needsWeight();
+  }
+
+  /**
+   * Set the per-package weight for one PO line, fixing every un-moved unit on it at
+   * once. This is the operator's repair action from the needs-weight queue — ONE entry
+   * per line rather than per sack.
+   */
+  @Post('purchase-orders/:poId/pack-weight')
+  @Roles(Role.ADMIN, Role.OPERATOR)
+  setPackWeight(
+    @Param('poId') poId: string,
+    @Body() dto: SetPackWeightDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.materials.setLineWeight(
+      poId,
+      { sku: dto.sku ?? null, materialName: dto.materialName },
+      dto.weightKg,
+      user.id,
+    );
   }
 
   @Get('materials/:id')

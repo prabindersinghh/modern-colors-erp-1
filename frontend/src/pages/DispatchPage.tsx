@@ -7,8 +7,7 @@ import {
 import { api, ApiError } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import type { DispatchHistory, DispatchReady, FinishedGood } from '@/types/api'
-import { ScanPanel } from '@/components/scan/ScanPanel'
-import { useScanFlow } from '@/components/scan/useScanFlow'
+import { RapidScanPanel, type RapidScanResult } from '@/components/scan/RapidScanPanel'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { AnimatedNumber } from '@/components/ui/animated-number'
@@ -35,11 +34,11 @@ export function DispatchPage() {
   const { user } = useAuth()
   const [ready, setReady] = useState<DispatchReady | null>(null)
   const [history, setHistory] = useState<DispatchHistory | null>(null)
-  const [last, setLast] = useState<FinishedGood | null>(null)
   const [busy, setBusy] = useState(false)
   const [bulkTarget, setBulkTarget] = useState<DispatchReady['batches'][number] | null>(null)
   // UPI-style loop: a dispatch scan is a single action, so scan → success → camera.
-  const flow = useScanFlow()
+  const [count, setCount] = useState(0)
+  const [recent, setRecent] = useState<RapidScanResult[]>([])
 
   const load = useCallback(async () => {
     const [r, h] = await Promise.all([
@@ -51,27 +50,48 @@ export function DispatchPage() {
   }, [])
   useEffect(() => void load(), [load])
 
-  const scan = async (raw: string) => {
+  const push = (r: RapidScanResult) => {
+    setRecent((prev) => [r, ...prev].slice(0, 12))
+    return r
+  }
+
+  /**
+   * Scan to dispatch. NO weight or quantity is entered here and none is needed: the
+   * production head already recorded size/volume per package when the batch output was
+   * confirmed, so each FG unit carries its own figures. The dispatch worker only
+   * identifies the drum going out.
+   */
+  const scan = async (raw: string): Promise<RapidScanResult> => {
     const id = extractUniqueId(raw)
-    if (!id || busy) return
-    setBusy(true)
+    if (!id) return push({ ok: false, title: 'Empty scan' })
+
+    // Wrong-prefix guard: a raw-material label at dispatch is a real mistake.
+    if (/^MC-/i.test(id)) {
+      return push({
+        ok: false,
+        title: 'Raw-material label',
+        detail: `${id} is an inward unit, not finished goods.`,
+      })
+    }
+
     try {
       const unit = await api.post<FinishedGood>('/finished-goods/dispatch/scan', {
         uniqueId: id,
         device: DEVICE,
       })
-      setLast(unit)
-      // Brief confirmation, then the camera reopens automatically for the next unit.
-      flow.finish(`${unit.uniqueId} dispatched · ${unit.productName}`)
-      await load()
-    } catch (err) {
-      toast({
-        variant: 'destructive',
-        title: 'Not dispatched',
-        description: err instanceof ApiError ? err.message : 'Please try again.',
+      setCount((c) => c + 1)
+      void load()
+      return push({
+        ok: true,
+        title: `${unit.uniqueId} dispatched`,
+        detail: `${unit.productName}${unit.sizePerPackage ? ` · ${unit.sizePerPackage} ${unit.sizeUnit ?? ''}`.trimEnd() : ''}`,
       })
-    } finally {
-      setBusy(false)
+    } catch (err) {
+      return push({
+        ok: false,
+        title: 'Not dispatched',
+        detail: err instanceof ApiError ? err.message : 'Please try again.',
+      })
     }
   }
 
@@ -118,15 +138,16 @@ export function DispatchPage() {
         </Card>
       </div>
 
-      {/* Scanner — camera is mounted only while scanning; a success flash replaces it
-          for ~2s after each dispatch, then it reopens automatically. */}
-      <ScanPanel
-        flow={flow}
-        title="Scan a finished-goods QR"
-        hint="Point the rear camera at an FG label."
+      {/* Rapid-fire dispatch: scan → brief confirmation → straight back to ready.
+          No weight or quantity is entered — the FG unit already carries its figures
+          from batch confirmation. Works with the WiFi scanner or the phone camera. */}
+      <RapidScanPanel
+        title="Scan to dispatch"
+        hint="Scan each drum in turn — no typing."
         placeholder="FG-000001"
-        successSub={last ? `${last.productName} · batch ${last.batch?.batchNumber}` : undefined}
-        onScan={(raw) => scan(raw)}
+        onScan={scan}
+        sessionCount={count}
+        recent={recent}
       />
 
       {/* Ready for dispatch, grouped by batch */}

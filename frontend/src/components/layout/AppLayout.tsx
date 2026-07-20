@@ -23,7 +23,7 @@ const pageTitles: Record<string, { title: string; subtitle?: string }> = {
   '/purchase-orders': { title: 'Invoice Upload', subtitle: 'Upload an invoice for AI extraction' },
   '/review': { title: 'Review & Confirm', subtitle: 'Verify and correct extracted materials before saving' },
   '/labels': { title: 'QR Labels', subtitle: 'Generate and print QR labels per physical unit' },
-  '/receiving': { title: 'Scan & Weigh', subtitle: 'Scan units on arrival and confirm receiving weight' },
+  '/receiving': { title: 'Receive Stock', subtitle: 'Scan each sack on arrival — no weighing' },
   '/catalogue': { title: 'Master Catalogue', subtitle: 'Factory raw-material SKU reference' },
   '/audit': { title: 'Audit Log', subtitle: 'Immutable record of every change' },
   '/settings': { title: 'Settings', subtitle: 'Claude API key and system configuration' },

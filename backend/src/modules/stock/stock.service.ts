@@ -48,7 +48,7 @@ export class StockService {
     if (!unit) throw new NotFoundException(`No unit with ID ${uniqueId}`);
     if (unit.balanceKg == null) {
       throw new ConflictException(
-        `Unit ${uniqueId} has no confirmed weight yet — weigh it before any stock movement.`,
+        `Unit ${uniqueId} has no pack weight from its invoice, so its stock balance is unknown. Set the pack weight for this material on the purchase order, then it can be issued.`,
       );
     }
     const fifo = await this.fifoContextFor(unit);
@@ -396,7 +396,7 @@ export class StockService {
       if (!row) throw new NotFoundException(`No unit with ID ${dto.uniqueId}`);
       if (row.balanceKg == null) {
         throw new ConflictException(
-          `Unit ${dto.uniqueId} has no confirmed weight yet — weigh it before any stock movement.`,
+          `Unit ${dto.uniqueId} has no pack weight from its invoice, so its stock balance is unknown. Set the pack weight for this material on the purchase order, then it can be issued.`,
         );
       }
 

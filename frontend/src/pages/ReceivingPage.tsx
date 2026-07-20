@@ -1,16 +1,12 @@
-import { useEffect, useState, useCallback } from 'react'
-import { Scale, CheckCircle2, WifiOff, CloudUpload, RotateCcw, ChevronLeft } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import { WifiOff, CloudUpload, PackageCheck } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
 import type { Material } from '@/types/api'
 import { enqueue, pending, flush } from '@/lib/offlineQueue'
-import { ScanPanel } from '@/components/scan/ScanPanel'
-import { useScanFlow } from '@/components/scan/useScanFlow'
-
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { RapidScanPanel, type RapidScanResult } from '@/components/scan/RapidScanPanel'
+import { Card, CardContent } from '@/components/ui/card'
+import { SeverityAlert } from '@/components/ui/severity'
+import { AnimatedNumber } from '@/components/ui/animated-number'
 import { toast } from '@/hooks/useToast'
 
 const DEVICE = 'web-client'
@@ -26,13 +22,29 @@ function extractUniqueId(text: string): string {
   return text.trim()
 }
 
+interface ScanResponse {
+  material: Material
+  alreadyScanned: boolean
+  /** Server flag: this unit has no pack weight, so it is blocked from being issued. */
+  needsWeight?: boolean
+}
+
+/**
+ * Receiving — rapid-fire scanning, no weighing.
+ *
+ * A truckload can be ~2,500 sacks. Typing a weight per sack made receiving take days,
+ * so weighing was removed here entirely: a unit's opening stock balance now comes from
+ * the PO's per-package weight, applied when the unit is registered. Scanning is the
+ * only action on the floor.
+ *
+ * Weighing still happens where the exact figure genuinely matters — Store → Production
+ * issue, which is untouched.
+ */
 export function ReceivingPage() {
-  const [unit, setUnit] = useState<Material | null>(null)
-  const [weight, setWeight] = useState('')
-  const [busy, setBusy] = useState(false)
   const [queued, setQueued] = useState(0)
-  // UPI-style loop: camera → weigh → save → 2s success → camera.
-  const flow = useScanFlow()
+  const [count, setCount] = useState(0)
+  const [recent, setRecent] = useState<RapidScanResult[]>([])
+  const [blocked, setBlocked] = useState(0)
 
   const refreshQueue = useCallback(async () => setQueued((await pending()).length), [])
 
@@ -40,7 +52,7 @@ export function ReceivingPage() {
     refreshQueue()
     const sync = async () => {
       const n = await flush()
-      if (n > 0) toast({ title: `Synced ${n} queued action${n > 1 ? 's' : ''}` })
+      if (n > 0) toast({ title: `Synced ${n} queued scan${n > 1 ? 's' : ''}` })
       refreshQueue()
     }
     void sync()
@@ -48,180 +60,134 @@ export function ReceivingPage() {
     return () => window.removeEventListener('online', sync)
   }, [refreshQueue])
 
-  const scan = async (rawId: string) => {
-    const id = rawId.trim()
-    if (!id) return
-    setBusy(true)
+  const push = (r: RapidScanResult) => {
+    setRecent((prev) => [r, ...prev].slice(0, 12))
+    return r
+  }
+
+  const handleScan = async (raw: string): Promise<RapidScanResult> => {
+    const id = extractUniqueId(raw)
+    if (!id) return push({ ok: false, title: 'Empty scan' })
+
+    // Wrong-prefix guard: a finished-goods label scanned at receiving is a real mistake
+    // worth naming, rather than a generic "unknown unit".
+    if (/^FG-/i.test(id)) {
+      return push({
+        ok: false,
+        title: 'Finished-goods label',
+        detail: `${id} belongs at Dispatch, not receiving.`,
+      })
+    }
+
     try {
-      const res = await api.post<{ material: Material; alreadyScanned: boolean }>('/receiving/scan', {
+      const res = await api.post<ScanResponse>('/receiving/scan', {
         uniqueId: id,
         device: DEVICE,
       })
-      setUnit(res.material)
-      setWeight(res.material.receivedWeight != null ? String(res.material.receivedWeight) : '')
-      flow.openDetail() // close the camera; the weigh screen takes over
-      toast({
-        title: res.alreadyScanned ? 'Already scanned' : 'Scanned',
-        description: `${res.material.uniqueId} — ${res.material.materialName}`,
+      const m = res.material
+      const kg = m.balanceKg != null ? `${m.balanceKg} kg` : 'no weight'
+
+      if (res.alreadyScanned) {
+        return push({
+          ok: true,
+          title: `${m.uniqueId} already received`,
+          detail: `${m.materialName} · ${kg}`,
+        })
+      }
+
+      setCount((c) => c + 1)
+      if (res.needsWeight) setBlocked((b) => b + 1)
+
+      return push({
+        ok: true,
+        title: `${m.uniqueId} received`,
+        detail: `${m.materialName} · ${kg}`,
+        warning: res.needsWeight
+          ? 'No pack weight on the invoice — this unit cannot be issued until the pack weight is set on its PO.'
+          : undefined,
       })
     } catch (err) {
-      if (err instanceof TypeError) {
-        await enqueue({ kind: 'scan', uniqueId: id, device: DEVICE, clientTime: new Date().toISOString() })
-        await refreshQueue()
-        toast({ title: 'Offline — scan queued', description: `${id} will sync when online.` })
-      } else if (err instanceof ApiError && err.status === 404) {
-        toast({ variant: 'destructive', title: 'Unknown unit', description: `No unit with ID ${id}.` })
-      } else {
-        toast({ variant: 'destructive', title: 'Scan failed', description: err instanceof ApiError ? err.message : '' })
-      }
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  /** Return to the camera (Back / scan next). */
-  const backToScan = () => {
-    flow.backToScan()
-    setUnit(null)
-    setWeight('')
-  }
-
-  const weigh = async () => {
-    if (!unit) return
-    const w = Number(weight)
-    if (!(w > 0)) {
-      toast({ variant: 'destructive', title: 'Enter a valid weight' })
-      return
-    }
-    setBusy(true)
-    try {
-      await api.post<{ material: Material }>(
-        `/receiving/${encodeURIComponent(unit.uniqueId)}/weight`,
-        { weight: w, device: DEVICE },
-      )
-      // Brief confirmation, then the camera reopens automatically for the next unit.
-      flow.finish(`${unit.uniqueId} weighed ${w} kg · ready for production`)
-      setUnit(null)
-      setWeight('')
-    } catch (err) {
+      // Offline: queue and keep the line moving. The operator must not have to stop
+      // scanning a truckload because the factory WiFi dropped.
       if (err instanceof TypeError) {
         await enqueue({
-          kind: 'weight',
-          uniqueId: unit.uniqueId,
-          weight: w,
+          kind: 'scan',
+          uniqueId: id,
           device: DEVICE,
           clientTime: new Date().toISOString(),
         })
         await refreshQueue()
-        toast({ title: 'Offline — weight queued', description: 'Will sync when online.' })
-      } else {
-        toast({ variant: 'destructive', title: 'Could not save weight', description: err instanceof ApiError ? err.message : '' })
+        setCount((c) => c + 1)
+        return push({
+          ok: true,
+          title: `${id} queued`,
+          detail: 'Offline — will sync automatically.',
+        })
       }
-    } finally {
-      setBusy(false)
+      if (err instanceof ApiError && err.status === 404) {
+        return push({ ok: false, title: 'Unknown unit', detail: `No unit with ID ${id}.` })
+      }
+      return push({
+        ok: false,
+        title: 'Scan failed',
+        detail: err instanceof ApiError ? err.message : 'Please try again.',
+      })
     }
   }
 
   return (
-    <div className="mx-auto max-w-xl space-y-4">
+    <div className="mx-auto max-w-2xl space-y-4">
       {queued > 0 && (
-        <div className="flex items-center gap-2 rounded-md border border-warning-border bg-warning-surface px-3 py-2 text-sm text-warning-foreground">
-          <WifiOff className="h-4 w-4" />
-          {queued} action{queued > 1 ? 's' : ''} queued offline.
-          <Button
-            size="sm"
-            variant="ghost"
-            className="ml-auto h-7 gap-1"
-            onClick={async () => {
-              await flush()
-              await refreshQueue()
-            }}
-          >
-            <CloudUpload className="h-4 w-4" /> Sync now
-          </Button>
-        </div>
-      )}
-
-      {/* PRIMARY: live camera QR scanning — mounted only while scanning, so the camera
-          is genuinely released once a unit is picked up. */}
-      {!unit && (
-        <ScanPanel
-          flow={flow}
-          title="Scan unit QR code"
-          hint="Point the rear camera at a unit's QR code."
-          placeholder="MC-000001"
-          successSub="Ready for the next unit"
-          onScan={(raw) => scan(extractUniqueId(raw))}
+        <SeverityAlert
+          severity="warning"
+          title={`${queued} scan${queued > 1 ? 's' : ''} waiting to sync`}
+          detail="They will upload automatically when the connection returns."
         />
       )}
 
-      {unit && (
-        <Card>
-          <CardHeader className="pb-3">
-            {/* Back returns to the camera — wrong unit or re-scan. */}
-            <button
-              type="button"
-              onClick={backToScan}
-              className="tactile mb-2 -ml-1 inline-flex min-h-11 w-fit items-center gap-1 rounded-md px-2 py-1 text-sm font-medium text-chip-500 hover:text-chip-900"
-            >
-              <ChevronLeft className="h-4 w-4" /> Back to scan
-            </button>
-            <CardTitle className="flex items-center justify-between text-base">
-              <span className="font-mono">{unit.uniqueId}</span>
-              <Badge
-                variant={unit.status === 'READY_FOR_PRODUCTION' ? 'healthy' : 'secondary'}
-                className="shrink-0 whitespace-nowrap"
-              >
-                {unit.status.replace(/_/g, ' ')}
-              </Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="text-sm">
-              <div className="text-title-3 text-chip-900">{unit.materialName}</div>
-              <div className="text-muted-foreground">
-                {unit.sku ?? '—'} · {unit.supplier ?? '—'}
+      {blocked > 0 && (
+        <SeverityAlert
+          severity="warning"
+          title={`${blocked} unit${blocked > 1 ? 's' : ''} received without a pack weight`}
+          detail="Received, but blocked from being issued to production until the pack weight is set on their purchase order."
+        />
+      )}
+
+      <RapidScanPanel
+        title="Scan to receive"
+        hint="Scan each sack in turn — no typing, no weighing."
+        placeholder="MC-000001"
+        onScan={handleScan}
+        sessionCount={count}
+        recent={recent}
+      />
+
+      <Card>
+        <CardContent className="flex items-center justify-between gap-4 p-4">
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-9 w-9 items-center justify-center rounded-md bg-healthy-surface text-healthy">
+              <PackageCheck className="h-4 w-4" />
+            </span>
+            <div>
+              <div className="text-label uppercase text-chip-500">Received this session</div>
+              <div className="text-metric text-chip-900">
+                <AnimatedNumber value={count} />
               </div>
             </div>
-
-            {unit.status === 'READY_FOR_PRODUCTION' ? (
-              <div className="space-y-3">
-                <div className="chip-edge flex items-center gap-2 rounded-lg border border-healthy-border bg-healthy-surface py-2.5 pl-4 pr-3 text-sm font-medium text-healthy [--chip-edge-color:hsl(var(--healthy))]">
-                  <CheckCircle2 className="h-4 w-4 shrink-0" />
-                  Weighed {unit.receivedWeight} — Ready for Production.
-                </div>
-                <Button variant="outline" className="w-full gap-1.5" onClick={backToScan}>
-                  <RotateCcw className="h-4 w-4" /> Scan next unit
-                </Button>
-              </div>
+          </div>
+          <div className="flex items-center gap-1.5 text-xs text-chip-500">
+            {queued > 0 ? (
+              <>
+                <WifiOff className="h-3.5 w-3.5" /> {queued} queued
+              </>
             ) : (
-              <div className="space-y-1.5">
-                <Label htmlFor="w" className="flex items-center gap-1.5">
-                  <Scale className="h-4 w-4" /> Confirmed receiving weight
-                </Label>
-                <div className="flex gap-2">
-                  <Input
-                    id="w"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    inputMode="decimal"
-                    placeholder="e.g. 24.8"
-                    value={weight}
-                    onChange={(e) => setWeight(e.target.value)}
-                  />
-                  <Button onClick={weigh} disabled={busy}>
-                    Save weight
-                  </Button>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Saving the weight marks the unit Ready for Production automatically.
-                </p>
-              </div>
+              <>
+                <CloudUpload className="h-3.5 w-3.5" /> All synced
+              </>
             )}
-          </CardContent>
-        </Card>
-      )}
+          </div>
+        </CardContent>
+      </Card>
     </div>
   )
 }

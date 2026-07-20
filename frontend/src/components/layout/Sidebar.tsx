@@ -61,7 +61,7 @@ const navItems: { to: string; label: string; icon: typeof LayoutDashboard; roles
   { to: '/purchase-orders', label: 'Invoice Upload', icon: FileUp, roles: PHASE1_ROLES },
   { to: '/review', label: 'Review & Confirm', icon: ClipboardCheck, roles: PHASE1_ROLES },
   { to: '/labels', label: 'QR Labels', icon: QrCode, roles: PHASE1_ROLES },
-  { to: '/receiving', label: 'Scan & Weigh', icon: ScanLine, roles: PHASE1_ROLES },
+  { to: '/receiving', label: 'Receive Stock', icon: ScanLine, roles: PHASE1_ROLES },
   { to: '/catalogue', label: 'Master Catalogue', icon: BookMarked, roles: PHASE1_ROLES },
   { to: '/audit', label: 'Audit Log', icon: ScrollText, roles: ['ADMIN', 'SUPERVISOR'] },
   { to: '/settings', label: 'Settings', icon: SettingsIcon, roles: ['ADMIN'] },

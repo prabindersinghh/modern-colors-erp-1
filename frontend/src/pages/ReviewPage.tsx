@@ -196,6 +196,10 @@ function ReviewOne({ poId }: { poId: string }) {
   if (!po) return <p className="text-sm text-muted-foreground">Loading…</p>
 
   const totalUnits = (po.lineItems ?? []).reduce((n, li) => n + li.quantity, 0)
+  // Lines with no per-package weight: their units will be blocked from issue.
+  const noWeightLineItems = (po.lineItems ?? []).filter((li) => !(li.weight != null && li.weight > 0))
+  const noWeightLines = noWeightLineItems.length
+  const noWeightUnits = noWeightLineItems.reduce((n, li) => n + li.quantity, 0)
   const editable = po.status === 'AI_EXTRACTED'
   const hasDocument = Boolean(po.fileName)
   const largeCount = totalUnits > 300
@@ -240,6 +244,21 @@ function ReviewOne({ poId }: { poId: string }) {
                 <span className="font-semibold">{bulkLineCount} line{bulkLineCount === 1 ? '' : 's'}</span> came in
                 as a bulk weight (KG/LTR), so the bag count isn't known yet — each is set to <span className="font-semibold">1</span>.
                 Enter the real number of physical bags/drums for those lines before registering.
+              </span>
+            </p>
+          )}
+
+          {noWeightUnits > 0 && editable && (
+            <p className="flex items-start gap-2 rounded-md border border-warning-border bg-warning-surface p-2.5 text-xs text-warning-foreground">
+              <span className="mt-px font-semibold">⚠</span>
+              <span>
+                <span className="font-semibold">
+                  {noWeightLines} line{noWeightLines === 1 ? '' : 's'} ({noWeightUnits} unit
+                  {noWeightUnits === 1 ? '' : 's'})
+                </span>{' '}
+                have no weight per unit. Receiving no longer weighs each sack, so this figure sets
+                each unit&apos;s opening stock. Those units will receive and scan normally but
+                cannot be issued to production until it is set — enter it once per line below.
               </span>
             </p>
           )}
@@ -406,6 +425,11 @@ function LineCard({
 
   const m = MATCH[item.matchType]
   const flagged = needsBagCount({ unit: v.unit, quantity: Number(v.quantity) || 1 })
+  // Receiving no longer weighs each sack — this per-package weight becomes every unit's
+  // opening stock balance. Without it the units register and scan fine but CANNOT be
+  // issued to production, so a blank here is worth flagging at review time rather than
+  // discovering at the issue desk.
+  const missingWeight = !(Number(v.weight) > 0)
 
   // Read-only (already registered / not editable).
   if (!editable) {
@@ -485,7 +509,15 @@ function LineCard({
           <Input value={v.unit} onChange={set('unit')} placeholder="Bag / Drum" className="h-9" />
         </Field>
         <Field label="Weight/unit (kg)" className="sm:col-span-4">
-          <Input type="number" min={0} step="any" value={v.weight} onChange={set('weight')} placeholder="e.g. 25" className="h-9" />
+          <Input
+            type="number"
+            min={0}
+            step="any"
+            value={v.weight}
+            onChange={set('weight')}
+            placeholder="e.g. 25"
+            className={`h-9 ${missingWeight ? 'border-warning bg-warning-surface' : ''}`}
+          />
         </Field>
       </div>
 
@@ -493,6 +525,25 @@ function LineCard({
         <p className="mt-2 text-xs text-warning-foreground">
           This line was read as a bulk weight. Set <span className="font-medium">Qty</span> to the number of physical
           bags/drums (and the per-bag weight if known).
+        </p>
+      )}
+
+      {missingWeight && (
+        <p className="mt-2 rounded-md border border-warning-border bg-warning-surface px-2.5 py-2 text-xs text-warning-foreground">
+          <span className="font-semibold">Weight/unit is needed for stock.</span> It becomes each
+          unit&apos;s opening balance. Without it these {Number(v.quantity) || 1} unit
+          {(Number(v.quantity) || 1) === 1 ? '' : 's'} will still receive and scan, but cannot be
+          issued to production. Enter it once here — it applies to every unit on this line.
+        </p>
+      )}
+
+      {!missingWeight && Number(v.quantity) > 0 && (
+        <p className="mt-2 text-xs text-chip-500">
+          Opening stock:{' '}
+          <span className="font-medium text-chip-800">
+            {Number(v.quantity)} x {Number(v.weight)} kg ={' '}
+            {round(Number(v.quantity) * Number(v.weight))} kg
+          </span>
         </p>
       )}
 

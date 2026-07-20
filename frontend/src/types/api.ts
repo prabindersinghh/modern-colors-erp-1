@@ -91,8 +91,15 @@ export interface Material {
   unit: string | null
   weight: number | null
   status: MaterialStatus
+  /** Manual receiving weight. Historical only — receiving no longer weighs. */
   receivedWeight: number | null
   weighedAt: string | null
+  /**
+   * Live remaining stock for this unit, seeded at registration from the PO's
+   * per-package `weight`. NULL means the invoice stated no pack size, so the unit is
+   * blocked from being issued until an operator sets it on the PO.
+   */
+  balanceKg: number | null
   createdAt: string
   qrCode?: { imageRef: string | null } | null
   po?: { poNumber: string | null }
