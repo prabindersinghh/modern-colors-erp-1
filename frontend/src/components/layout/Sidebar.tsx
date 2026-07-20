@@ -100,9 +100,12 @@ export function Sidebar({ open = false, onNavigate }: { open?: boolean; onNaviga
               cn(
                 // `group` + the ::before rail below give the active item a brand-red
                 // paint-chip edge rather than a flat highlight.
+                // 44px minimum on touch devices (gloved hands on the factory floor);
+                // pointer devices keep the compact 40px rhythm.
                 'group relative flex items-center gap-3 overflow-hidden rounded-md px-3 py-2.5 text-sm font-medium',
+                '[@media(pointer:coarse)]:min-h-11',
                 'transition-colors duration-fast ease-out',
-                'before:absolute before:inset-y-1 before:left-0 before:w-1 before:rounded-r-full before:bg-primary',
+                'before:absolute before:inset-y-1 before:left-0 before:w-1 before:rounded-r-full before:bg-accent-brand',
                 'before:origin-left before:scale-x-0 before:transition-transform before:duration-base before:ease-spring',
                 isActive
                   ? 'bg-sidebar-accent text-sidebar-accent-foreground before:scale-x-100'
@@ -115,7 +118,7 @@ export function Sidebar({ open = false, onNavigate }: { open?: boolean; onNaviga
                 <Icon
                   className={cn(
                     'h-4 w-4 shrink-0 transition-colors duration-fast',
-                    isActive ? 'text-primary' : 'text-sidebar-foreground/50 group-hover:text-sidebar-foreground/80'
+                    isActive ? 'text-accent-brand' : 'text-sidebar-foreground/50 group-hover:text-sidebar-foreground/80'
                   )}
                 />
                 {label}

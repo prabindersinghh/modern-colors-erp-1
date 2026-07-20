@@ -7,7 +7,7 @@ import { useAuth } from '@/lib/auth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Badge } from '@/components/ui/badge'
+import { Badge, type BadgeProps } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import {
   Table,
@@ -22,11 +22,14 @@ import { ErrorBoundary } from '@/components/common/ErrorBoundary'
 import { DocumentCamera } from '@/components/scan/DocumentCamera'
 import { toast } from '@/hooks/useToast'
 
-const STATUS_STYLE: Record<POStatus, { label: string; variant?: 'default' | 'secondary' | 'outline' }> = {
+// Document lifecycle mapped onto the severity language: "needs review" is the
+// only state that asks the operator to do something, so it is the only one that
+// carries an attention colour. The rest are neutral or complete.
+const STATUS_STYLE: Record<POStatus, { label: string; variant: BadgeProps['variant'] }> = {
   PO_UPLOADED: { label: 'Uploaded', variant: 'secondary' },
-  AI_EXTRACTED: { label: 'Needs review', variant: 'outline' },
-  OPERATOR_VERIFIED: { label: 'Verified', variant: 'default' },
-  REGISTERED: { label: 'Registered', variant: 'default' },
+  AI_EXTRACTED: { label: 'Needs review', variant: 'warning' },
+  OPERATOR_VERIFIED: { label: 'Verified', variant: 'info' },
+  REGISTERED: { label: 'Registered', variant: 'healthy' },
 }
 
 type Mode = 'document' | 'manual'
@@ -168,7 +171,7 @@ export function PurchaseOrdersPage() {
       )}
 
       <div>
-        <h2 className="mb-2 text-sm font-semibold">Recent invoices</h2>
+        <h2 className="mb-2 text-title-3 text-chip-800">Recent invoices</h2>
         {pos.length === 0 ? (
           <EmptyState icon={FileText} title="No invoices yet" />
         ) : (

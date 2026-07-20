@@ -42,14 +42,14 @@ export function DashboardCard({
             <TrendIcon
               className={cn(
                 'h-3 w-3',
-                trend === 'up' && 'text-success',
+                trend === 'up' && 'text-healthy',
                 trend === 'down' && 'text-destructive'
               )}
             />
             {change !== undefined && (
               <span
                 className={cn(
-                  trend === 'up' && 'text-success',
+                  trend === 'up' && 'text-healthy',
                   trend === 'down' && 'text-destructive'
                 )}
               >

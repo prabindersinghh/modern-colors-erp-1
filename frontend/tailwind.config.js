@@ -30,6 +30,13 @@ export default {
           DEFAULT: 'hsl(var(--accent))',
           foreground: 'hsl(var(--accent-foreground))',
         },
+        // The brand accent (red). Separate from `primary` (warm ink) so ordinary
+        // actions are calm and red stays meaningful, and separate from
+        // `critical` so "branded" never reads as "broken".
+        'accent-brand': {
+          DEFAULT: 'hsl(var(--accent-brand))',
+          foreground: 'hsl(var(--accent-brand-foreground))',
+        },
         popover: {
           DEFAULT: 'hsl(var(--popover))',
           foreground: 'hsl(var(--popover-foreground))',

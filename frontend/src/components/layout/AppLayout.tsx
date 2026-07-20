@@ -3,10 +3,23 @@ import { Outlet, useLocation } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { Navbar } from './Navbar'
 
-// Phase 1 page titles. Keep in sync with Sidebar nav + App routes.
+// Page titles + subtitles for every screen across all three phases.
+// Keep in sync with Sidebar nav + App routes.
 const pageTitles: Record<string, { title: string; subtitle?: string }> = {
+  // Role dashboards
   '/': { title: 'Dashboard', subtitle: "Today's invoices, materials received, pending scans/weighing" },
+  '/oversight': { title: 'Factory oversight', subtitle: 'Every department, read-only' },
+  '/store': { title: 'Store dashboard', subtitle: 'Requests to action, stock health and today’s movement' },
+  '/my': { title: 'My department', subtitle: 'Your requests, batches and consumption' },
+  // Phase 2 — requests & stock
   '/requests': { title: 'Requests', subtitle: 'Raise and track per-material production requests' },
+  '/stock': { title: 'Scan & Issue', subtitle: 'Scan a unit to add, deduct or discard stock' },
+  '/stock-levels': { title: 'Stock Levels', subtitle: 'Live balances, ageing and the movement ledger' },
+  // Phase 3 — finished goods
+  '/batches': { title: 'Batches', subtitle: 'Thread raw materials through to finished goods' },
+  '/production-output': { title: 'Production Output', subtitle: 'Record what a batch produced, then confirm it' },
+  '/dispatch': { title: 'Dispatch', subtitle: 'Scan finished goods out of the factory' },
+  // Phase 1 — inward
   '/purchase-orders': { title: 'Invoice Upload', subtitle: 'Upload an invoice for AI extraction' },
   '/review': { title: 'Review & Confirm', subtitle: 'Verify and correct extracted materials before saving' },
   '/labels': { title: 'QR Labels', subtitle: 'Generate and print QR labels per physical unit' },

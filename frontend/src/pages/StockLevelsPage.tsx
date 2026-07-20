@@ -10,14 +10,15 @@ import type {
   StockTxnType,
 } from '@/types/api'
 import { Input } from '@/components/ui/input'
+import { AnimatedNumber } from '@/components/ui/animated-number'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { EmptyState } from '@/components/common/EmptyState'
 
 const TYPE_CLS: Record<StockTxnType, string> = {
-  ADD: 'text-success',
-  DEDUCT: 'text-blue-600',
+  ADD: 'text-healthy',
+  DEDUCT: 'text-info',
   DISCARD: 'text-destructive',
 }
 const DEPARTMENTS: Department[] = ['PU', 'ENAMEL', 'POWDER']
@@ -133,7 +134,20 @@ function LevelsTab() {
                       </TableCell>
                       <TableCell className="font-medium">{m.materialName}</TableCell>
                       <TableCell className="font-mono text-xs">{m.sku ?? '—'}</TableCell>
-                      <TableCell className="whitespace-nowrap text-right font-medium">{m.totalBalanceKg} kg</TableCell>
+                      <TableCell className="whitespace-nowrap text-right">
+                        {/* Depleted stock is the single most actionable thing on this
+                            screen, so it carries the severity colour rather than
+                            reading as an ordinary number. */}
+                        <span
+                          className={
+                            m.totalBalanceKg <= 0
+                              ? 'font-bold text-critical'
+                              : 'font-semibold text-chip-900'
+                          }
+                        >
+                          {m.totalBalanceKg} kg
+                        </span>
+                      </TableCell>
                       <TableCell className="text-right">{m.unitCount}</TableCell>
                     </TableRow>
                     {open &&
@@ -288,18 +302,23 @@ function BucketCard({
   active: boolean
   onClick: () => void
 }) {
+  // Maps the three FIFO ageing buckets onto the severity language so a bucket
+  // means the same thing here as an alert does anywhere else in the product.
   const styles = {
-    fresh: 'border-success/30 bg-success/5 text-success',
-    amber: 'border-warning/40 bg-warning/10 text-warning',
-    red: 'border-destructive/40 bg-destructive/10 text-destructive',
+    fresh: 'border-healthy-border bg-healthy-surface text-healthy [--chip-edge-color:hsl(var(--healthy))]',
+    amber: 'border-warning-border bg-warning-surface text-warning-foreground [--chip-edge-color:hsl(var(--warning))]',
+    red: 'border-critical-border bg-critical-surface text-critical [--chip-edge-color:hsl(var(--critical))]',
   }[tone]
   return (
     <button
       onClick={onClick}
-      className={`rounded-lg border p-3 text-left transition-all ${styles} ${active ? 'ring-2 ring-offset-1' : 'opacity-90 hover:opacity-100'}`}
+      aria-pressed={active}
+      className={`chip-edge tactile-lift rounded-lg border py-3 pl-4 pr-3 text-left ${styles} ${active ? 'ring-2 ring-offset-1' : 'opacity-90 hover:opacity-100'}`}
     >
-      <div className="text-xs font-medium">{label}</div>
-      <div className="mt-1 text-2xl font-semibold">{b.totalKg} kg</div>
+      <div className="text-label uppercase">{label}</div>
+      <div className="mt-1.5 text-metric">
+        <AnimatedNumber value={b.totalKg} /> <span className="text-sm font-medium opacity-70">kg</span>
+      </div>
       <div className="text-xs opacity-80">{b.unitCount} unit{b.unitCount === 1 ? '' : 's'}</div>
     </button>
   )

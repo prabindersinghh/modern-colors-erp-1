@@ -14,6 +14,7 @@ import { api } from '@/lib/api'
 import type { StoreAnalytics } from '@/types/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { AnimatedNumber } from '@/components/ui/animated-number'
 import { EmptyState } from '@/components/common/EmptyState'
 import { MovementTrend, CategoryBars } from '@/components/charts/Charts'
 import { WindowToggle } from '@/components/charts/WindowToggle'
@@ -42,35 +43,43 @@ export function StoreDashboardPage() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-lg font-semibold">Store dashboard</h1>
+        {/* Title lives in the Navbar (see AppLayout pageTitles) — no duplicate h1. */}
+        <div className="flex-1" />
         <div className="flex items-center gap-3">
           <WindowToggle days={days} onChange={setDays} />
           <div className="flex gap-2 text-sm">
-            <Link to="/requests" className="flex items-center gap-1 text-primary hover:underline">
+            <Link to="/requests" className="tactile flex items-center gap-1 font-medium text-chip-600 hover:text-accent-brand">
               <ClipboardList className="h-4 w-4" /> Inbox
             </Link>
-            <Link to="/stock" className="flex items-center gap-1 text-primary hover:underline">
+            <Link to="/stock" className="tactile flex items-center gap-1 font-medium text-chip-600 hover:text-accent-brand">
               <PackageSearch className="h-4 w-4" /> Scan
             </Link>
           </div>
         </div>
       </div>
 
-      {/* Action-now banner: pending request queue */}
+      {/* Action-now banner: pending request queue.
+          The Store's hero is deliberately NOT stock — their job is the review
+          queue, so the number they should see first is what is waiting on them.
+          (The owner's stock-level hero lives on the Oversight dashboard.) */}
       {data.queue.pendingLines > 0 ? (
-        <Link
-          to="/requests"
-          className="flex items-center justify-between rounded-lg border border-primary/40 bg-primary/5 px-4 py-3 transition-colors hover:bg-primary/10"
-        >
-          <span className="flex items-center gap-2 text-sm font-medium">
-            <Inbox className="h-4 w-4 text-primary" />
-            {data.queue.pendingLines} line{data.queue.pendingLines === 1 ? '' : 's'} awaiting your review
-            <span className="text-muted-foreground">across {data.queue.openRequests} open request{data.queue.openRequests === 1 ? '' : 's'}</span>
-          </span>
-          <Button size="sm">Review now</Button>
+        <Link to="/requests" className="block">
+          <div className="chip-edge tactile-lift flex flex-wrap items-center justify-between gap-3 rounded-lg border border-accent-brand/30 bg-accent-brand/[0.05] py-3 pl-4 pr-4 [--chip-edge-color:hsl(var(--accent-brand))]">
+            <span className="flex items-center gap-2.5 text-sm font-medium text-chip-800">
+              <Inbox className="h-4 w-4 shrink-0 text-accent-brand" />
+              <span className="text-title-3 text-chip-900">
+                <AnimatedNumber value={data.queue.pendingLines} />
+              </span>
+              line{data.queue.pendingLines === 1 ? '' : 's'} awaiting your review
+              <span className="text-chip-500">
+                across {data.queue.openRequests} open request{data.queue.openRequests === 1 ? '' : 's'}
+              </span>
+            </span>
+            <Button size="sm">Review now</Button>
+          </div>
         </Link>
       ) : (
-        <div className="flex items-center gap-2 rounded-lg border border-success/30 bg-success/10 px-4 py-2.5 text-sm text-success">
+        <div className="flex items-center gap-2 rounded-lg border border-healthy/30 bg-healthy/10 px-4 py-2.5 text-sm text-healthy">
           <Inbox className="h-4 w-4" /> No requests waiting — inbox is clear.
         </div>
       )}
@@ -79,7 +88,7 @@ export function StoreDashboardPage() {
       {provisional > 0 && (
         <Link
           to="/catalogue"
-          className="flex items-center justify-between rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-2.5 text-sm text-amber-700 transition-colors hover:bg-amber-500/20"
+          className="flex items-center justify-between rounded-lg border border-warning-border bg-warning-surface px-4 py-2.5 text-sm text-warning-foreground transition-colors hover:bg-warning-surface"
         >
           <span className="flex items-center gap-2 font-medium">
             <AlertTriangle className="h-4 w-4" />
@@ -94,7 +103,7 @@ export function StoreDashboardPage() {
       <AgeingStockPanel ageing={data.ageing} />
 
       {/* KPIs */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="stagger grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Kpi label="In-hand stock" value={`${data.snapshot.grandTotalKg} kg`} sub={`${data.snapshot.unitCount} units · ${data.snapshot.materialCount} materials`} tone="primary" />
         <Kpi label="Added today" value={`${data.totals.today.ADD} kg`} sub={`${data.totals.window.ADD} kg in ${data.windowDays}d`} tone="success" />
         <Kpi label="Issued today" value={`${data.totals.today.DEDUCT} kg`} sub={`${data.totals.window.DEDUCT} kg in ${data.windowDays}d`} tone="info" />
@@ -122,7 +131,7 @@ export function StoreDashboardPage() {
               <ul className="divide-y text-sm">
                 {data.recentIssues.map((m) => (
                   <li key={m.id} className="flex items-center gap-2 py-1.5">
-                    <MinusCircle className="h-4 w-4 shrink-0 text-blue-600" />
+                    <MinusCircle className="h-4 w-4 shrink-0 text-info" />
                     <span className="min-w-0 flex-1 truncate">
                       <span className="font-medium">{m.quantityKg} kg</span>{' · '}
                       <span className="font-mono text-xs">{m.material?.uniqueId ?? '—'}</span>

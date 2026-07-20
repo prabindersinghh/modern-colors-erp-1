@@ -28,17 +28,28 @@ function RegisteredPoPicker() {
     return <EmptyState icon={QrCode} title="No registered invoices" description="Confirm an invoice to generate QR labels." />
   return (
     <div className="space-y-2">
-      <p className="text-sm text-muted-foreground">Registered invoices:</p>
-      {pos.map((p) => (
-        <Link
-          key={p.id}
-          to={`/labels?poId=${p.id}`}
-          className="flex items-center justify-between rounded-md border p-3 text-sm hover:bg-muted/50"
-        >
-          <span className="font-medium">{p.poNumber ?? p.fileName ?? p.id.slice(0, 8)}</span>
-          <span className="text-muted-foreground">{p._count?.materials ?? 0} units</span>
-        </Link>
-      ))}
+      <p className="text-sm text-chip-500">
+        Pick a registered invoice to generate and print its labels.
+      </p>
+      <div className="stagger space-y-2">
+        {pos.map((p) => (
+          <Link
+            key={p.id}
+            to={`/labels?poId=${p.id}`}
+            className="chip-edge tactile-lift group flex items-center gap-3 rounded-lg border bg-card py-3 pl-4 pr-3 text-sm shadow-elev-1 [--chip-edge-color:hsl(var(--accent-brand))]"
+          >
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-chip-100 text-chip-500 transition-colors duration-fast group-hover:bg-accent-brand/10 group-hover:text-accent-brand">
+              <QrCode className="h-4 w-4" />
+            </span>
+            <span className="min-w-0 flex-1 truncate font-semibold text-chip-900">
+              {p.poNumber ?? p.fileName ?? p.id.slice(0, 8)}
+            </span>
+            <span className="shrink-0 rounded-full bg-chip-100 px-2.5 py-1 text-xs font-semibold text-chip-600">
+              {p._count?.materials ?? 0} units
+            </span>
+          </Link>
+        ))}
+      </div>
     </div>
   )
 }

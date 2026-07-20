@@ -223,7 +223,7 @@ export function CameraQrScanner({ onResult, paused = false, autoStart = true }: 
             <span className="relative flex h-20 w-20 items-center justify-center">
               <span
                 aria-hidden="true"
-                className="animate-breathe absolute inset-0 rounded-full border-2 border-primary/70"
+                className="animate-breathe absolute inset-0 rounded-full border-2 border-accent-brand/70"
               />
               <Camera className="h-9 w-9" />
             </span>

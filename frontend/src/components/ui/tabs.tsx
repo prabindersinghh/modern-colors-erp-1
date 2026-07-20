@@ -13,7 +13,7 @@ const TabsList = React.forwardRef<
     className={cn(
       // max-w-full + horizontal scroll so a wide tab set can never force the PAGE to
       // scroll on narrow phones. Desktop is unchanged: inline-flex never reaches the cap.
-      'inline-flex h-9 max-w-full items-center justify-center overflow-x-auto rounded-md bg-muted p-1 text-muted-foreground',
+      'inline-flex h-10 max-w-full items-center justify-center overflow-x-auto rounded-lg bg-chip-100 p-1 text-chip-500 [@media(pointer:coarse)]:h-[3.25rem]',
       'scrollbar-thin [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
       className
     )}
@@ -30,7 +30,7 @@ const TabsTrigger = React.forwardRef<
     ref={ref}
     className={cn(
       // shrink-0 keeps each tab legible; the list scrolls instead of squashing them.
-      'inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-sm px-3 py-1 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm',
+      'tactile inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-md px-3.5 py-1.5 text-sm font-medium ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 hover:text-chip-700 data-[state=active]:bg-card data-[state=active]:text-chip-900 data-[state=active]:shadow-elev-1 [@media(pointer:coarse)]:min-h-11',
       className
     )}
     {...props}

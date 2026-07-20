@@ -61,7 +61,7 @@ export function ScanPanel({
     <Card>
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-title-3">
-          <span className="flex h-7 w-7 items-center justify-center rounded-md bg-primary/10 text-primary">
+          <span className="flex h-7 w-7 items-center justify-center rounded-md bg-accent-brand/10 text-accent-brand">
             <ScanLine className="h-4 w-4" />
           </span>
           {title}

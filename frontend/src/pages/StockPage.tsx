@@ -49,8 +49,8 @@ const TYPE_META: Record<
   StockTxnType,
   { label: string; icon: typeof PlusCircle; cls: string; verb: string }
 > = {
-  ADD: { label: 'Add', icon: PlusCircle, cls: 'text-success', verb: 'into stock' },
-  DEDUCT: { label: 'Deduct', icon: MinusCircle, cls: 'text-blue-600', verb: 'out for a department' },
+  ADD: { label: 'Add', icon: PlusCircle, cls: 'text-healthy', verb: 'into stock' },
+  DEDUCT: { label: 'Deduct', icon: MinusCircle, cls: 'text-info', verb: 'out for a department' },
   DISCARD: { label: 'Discard', icon: Trash2, cls: 'text-destructive', verb: 'wasted / damaged' },
 }
 
@@ -268,7 +268,7 @@ export function StockPage() {
   return (
     <div className="mx-auto max-w-xl space-y-4">
       {issue && (
-        <Card className="border-blue-500/40">
+        <Card className="border-info-border">
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center justify-between text-base">
               <span className="flex items-center gap-2">
@@ -322,7 +322,7 @@ export function StockPage() {
             <button
               type="button"
               onClick={reset}
-              className="mb-2 -ml-1 inline-flex w-fit items-center gap-1 rounded-md px-1 py-1 text-sm text-muted-foreground hover:text-foreground"
+              className="tactile mb-2 -ml-1 inline-flex min-h-11 w-fit items-center gap-1 rounded-md px-2 py-1 text-sm font-medium text-chip-500 hover:text-chip-900"
             >
               <ChevronLeft className="h-4 w-4" /> Back to scan
             </button>
@@ -353,12 +353,12 @@ export function StockPage() {
             {/* FIFO soft warning — older stock of the same material still in stock. Never
                 blocks; the operator can proceed. */}
             {unit.fifo && !unit.fifo.isOldest && unit.fifo.recommended && (
-              <div className="rounded-lg border-2 border-amber-500/60 bg-amber-500/10 p-3">
+              <div className="rounded-lg border-2 border-warning-border bg-warning-surface p-3">
                 <div className="flex items-start gap-2">
-                  <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+                  <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-brand-amber" />
                   <div className="text-sm">
-                    <div className="font-semibold text-amber-700">Older stock available</div>
-                    <div className="text-amber-700/90">
+                    <div className="font-semibold text-warning-foreground">Older stock available</div>
+                    <div className="text-warning-foreground/90">
                       <span className="font-mono font-medium">{unit.fifo.recommended.uniqueId}</span> (received{' '}
                       {unit.fifo.recommended.arrivedAt
                         ? new Date(unit.fifo.recommended.arrivedAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
@@ -367,7 +367,7 @@ export function StockPage() {
                       longer. Consider using it first.
                       {unit.fifo.olderUnits.length > 1 ? ` (+${unit.fifo.olderUnits.length - 1} more older)` : ''}
                     </div>
-                    <div className="mt-1 text-xs text-amber-700/70">You can still proceed with this unit if needed.</div>
+                    <div className="mt-1 text-xs text-warning-foreground/70">You can still proceed with this unit if needed.</div>
                   </div>
                 </div>
               </div>
@@ -540,7 +540,7 @@ function IssueReviewDialog({
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4">
       <div className="max-h-[92vh] w-full overflow-y-auto rounded-t-2xl bg-background p-5 shadow-xl sm:max-w-md sm:rounded-2xl">
-        <h2 className="text-lg font-semibold">Confirm {meta.label.toLowerCase()}</h2>
+        <h2 className="text-title-2 text-chip-900">Confirm {meta.label.toLowerCase()}</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           Check the details below. Nothing is deducted until you confirm.
         </p>
@@ -572,7 +572,7 @@ function IssueReviewDialog({
 
         {/* Flag when the actual amount differs from what was approved (allowed). */}
         {differsFromApproved && (
-          <p className="mt-3 flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-2.5 text-xs text-amber-700">
+          <p className="mt-3 flex items-start gap-2 rounded-md border border-warning-border bg-warning-surface p-2.5 text-xs text-warning-foreground">
             <AlertTriangle className="mt-px h-4 w-4 shrink-0" />
             <span>
               This differs from the {remainingBefore} kg remaining on the approved line
@@ -583,7 +583,7 @@ function IssueReviewDialog({
 
         {/* FIFO advisory carried into the review so it can't be missed. */}
         {type !== 'ADD' && unit.fifo && !unit.fifo.isOldest && unit.fifo.recommended && (
-          <p className="mt-3 flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-2.5 text-xs text-amber-700">
+          <p className="mt-3 flex items-start gap-2 rounded-md border border-warning-border bg-warning-surface p-2.5 text-xs text-warning-foreground">
             <AlertTriangle className="mt-px h-4 w-4 shrink-0" />
             <span>
               Older stock available — <b>{unit.fifo.recommended.uniqueId}</b> (

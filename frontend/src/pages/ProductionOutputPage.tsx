@@ -84,7 +84,8 @@ export function ProductionOutputPage() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-lg font-semibold">Production output</h1>
+        {/* Title lives in the Navbar (see AppLayout pageTitles) — no duplicate h1. */}
+        <div className="flex-1" />
         <Button onClick={() => setShowForm((s) => !s)} className="gap-1.5">
           <Plus className="h-4 w-4" /> Record output
         </Button>
@@ -107,7 +108,7 @@ export function ProductionOutputPage() {
           description="Record what you produced for a batch, review it, then confirm to generate finished-goods QR codes."
         />
       ) : (
-        <div className="space-y-3">
+        <div className="stagger space-y-3">
           {outputs.map((o) => (
             <Card key={o.id}>
               <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0 pb-2">
@@ -116,9 +117,9 @@ export function ProductionOutputPage() {
                     <span className="font-medium">{o.productName}</span>
                     <Badge variant="outline">Batch {o.batch?.batchNumber}</Badge>
                     {o.confirmed ? (
-                      <Badge className="bg-success text-success-foreground hover:bg-success">Confirmed</Badge>
+                      <Badge className="bg-healthy text-success-foreground hover:bg-healthy">Confirmed</Badge>
                     ) : (
-                      <Badge className="bg-amber-500 text-white hover:bg-amber-500">Draft — needs review</Badge>
+                      <Badge className="bg-warning text-white hover:bg-warning">Draft — needs review</Badge>
                     )}
                   </div>
                   <div className="mt-1 text-xs text-muted-foreground">
@@ -133,7 +134,7 @@ export function ProductionOutputPage() {
               </CardHeader>
               <CardContent className="space-y-3">
                 {!o.confirmed && (
-                  <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-2.5 text-xs text-amber-700">
+                  <div className="flex items-start gap-2 rounded-md border border-warning-border bg-warning-surface p-2.5 text-xs text-warning-foreground">
                     <AlertTriangle className="mt-px h-4 w-4 shrink-0" />
                     <span>
                       Review the details above. Nothing is final and no QR codes can be printed until you
@@ -159,7 +160,7 @@ export function ProductionOutputPage() {
                     </Button>
                   )}
                   {o.fgGeneratedAt && (
-                    <span className="flex items-center gap-1.5 rounded-md bg-success/10 px-3 py-1.5 text-sm text-success">
+                    <span className="flex items-center gap-1.5 rounded-md bg-healthy/10 px-3 py-1.5 text-sm text-healthy">
                       <PackageCheck className="h-4 w-4" /> {o._count?.finishedGoods ?? o.packageCount} FG units created
                     </span>
                   )}
@@ -317,7 +318,7 @@ function OutputForm({ batches, onSaved }: { batches: Batch[]; onSaved: () => voi
         </div>
 
         {selected?.locked && (
-          <p className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-2.5 text-xs text-amber-700">
+          <p className="flex items-start gap-2 rounded-md border border-warning-border bg-warning-surface p-2.5 text-xs text-warning-foreground">
             <AlertTriangle className="mt-px h-4 w-4 shrink-0" />
             Batch {selected.batchNumber} is already confirmed. This will be recorded as an
             <b> additional</b> output for that batch.

@@ -25,7 +25,7 @@ export function FilterPanel({ fields, onClear, className }: FilterPanelProps) {
           <button
             type="button"
             onClick={onClear}
-            className="text-xs text-primary hover:underline"
+            className="text-xs font-medium text-chip-600 hover:text-accent-brand"
           >
             Clear all
           </button>

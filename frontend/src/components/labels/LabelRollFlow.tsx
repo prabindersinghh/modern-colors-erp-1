@@ -142,7 +142,7 @@ export function LabelRollFlow({
       )}
 
       {stage === 'ready' && (
-        <p className="mb-3 flex items-center gap-1.5 text-xs text-success">
+        <p className="mb-3 flex items-center gap-1.5 text-xs text-healthy">
           <CheckCircle2 className="h-4 w-4" />
           {unitCount} label{unitCount === 1 ? '' : 's'} ready — save the file or print it now.
         </p>
@@ -190,7 +190,7 @@ function Step({
       <span
         className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-semibold ${
           done
-            ? 'bg-success text-success-foreground'
+            ? 'bg-healthy text-success-foreground'
             : active
               ? 'bg-primary text-primary-foreground'
               : 'bg-muted text-muted-foreground'

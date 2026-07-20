@@ -104,13 +104,22 @@ export function LogoLockup({
   )
 }
 
+/** The company tagline. Single source of truth — used by the strip, the login
+ *  screen and the browser title. */
+export const TAGLINE = 'Every colour, accounted for.'
+
 /**
- * The tagline strip — a slow, continuous scroll of brand phrases.
+ * The tagline strip — a slow, continuous scroll of the company tagline.
  *
  * Chosen in the design doc as the product's signature motion: it runs on the
- * login screen and along a slim bar in the app. Duplicated content plus a
- * translateX loop gives a seamless marquee with no JS and no layout thrash.
- * Pauses entirely under prefers-reduced-motion (handled in motion.css).
+ * login screen and along a slim bar in the app. One phrase, repeated — not a
+ * rotation of several. A cycling strip reads as a marketing banner and pulls
+ * attention from the work; a single line repeating becomes texture, which is
+ * the intent.
+ *
+ * The repeated copies plus a translateX loop give a seamless marquee with no JS
+ * and no layout thrash. Frozen entirely under prefers-reduced-motion
+ * (see styles/motion.css).
  */
 export function TaglineStrip({
   className,
@@ -119,31 +128,24 @@ export function TaglineStrip({
   className?: string
   tone?: 'ink' | 'light'
 }) {
-  const phrases = [
-    'Every colour, accounted for.',
-    'From gate to batch, fully traced.',
-    'Raw materials, under control.',
-    'Scan it. Track it. Trust it.',
-  ]
-  // Rendered twice so the second copy is entering as the first leaves.
-  const run = [...phrases, ...phrases]
+  // Four copies with a wide gap: enough to span an ultrawide viewport without
+  // the phrase repeating so densely it reads as a wall of text, and an even
+  // count so translating by exactly -50% lands copy 3 where copy 1 began.
+  const run = Array.from({ length: 4 })
 
   return (
-    <div
-      className={cn('relative overflow-hidden', className)}
-      aria-hidden="true"
-    >
-      <div className="flex w-max animate-[mc-marquee_38s_linear_infinite] items-center gap-10 whitespace-nowrap will-change-transform">
-        {run.map((p, i) => (
+    <div className={cn('relative overflow-hidden', className)} aria-hidden="true">
+      <div className="flex w-max animate-[mc-marquee_60s_linear_infinite] items-center gap-[22vw] whitespace-nowrap will-change-transform">
+        {run.map((_, i) => (
           <span
             key={i}
             className={cn(
               'flex items-center gap-3 text-xs font-medium tracking-wide',
-              tone === 'light' ? 'text-white/70' : 'text-chip-500'
+              tone === 'light' ? 'text-white/60' : 'text-chip-500'
             )}
           >
-            <LogoMark className="h-3 w-3 opacity-80" />
-            {p}
+            <LogoMark className="h-3 w-3 opacity-70" />
+            {TAGLINE}
           </span>
         ))}
       </div>

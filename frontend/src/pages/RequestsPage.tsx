@@ -19,14 +19,15 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { EmptyState } from '@/components/common/EmptyState'
+import { AnimatedNumber } from '@/components/ui/animated-number'
 import { toast } from '@/hooks/useToast'
 
 export const STATUS_STYLE: Record<RequestStatus, { label: string; cls: string }> = {
-  PENDING: { label: 'Pending', cls: 'bg-amber-500/15 text-amber-600 border-amber-500/30' },
-  IN_PROGRESS: { label: 'In progress', cls: 'bg-indigo-500/15 text-indigo-600 border-indigo-500/30' },
-  APPROVED: { label: 'Approved', cls: 'bg-success/15 text-success border-success/30' },
-  PARTIAL: { label: 'Partial', cls: 'bg-blue-500/15 text-blue-600 border-blue-500/30' },
-  REJECTED: { label: 'Rejected', cls: 'bg-destructive/15 text-destructive border-destructive/30' },
+  PENDING: { label: 'Pending', cls: 'bg-warning-surface text-warning-foreground border-warning-border' },
+  IN_PROGRESS: { label: 'In progress', cls: 'bg-brand-violet/10 text-brand-violet border-brand-violet/25' },
+  APPROVED: { label: 'Approved', cls: 'bg-healthy-surface text-healthy border-healthy-border' },
+  PARTIAL: { label: 'Partial', cls: 'bg-info-surface text-info border-info-border' },
+  REJECTED: { label: 'Rejected', cls: 'bg-critical-surface text-critical border-critical-border' },
 }
 
 export function StatusBadge({ status }: { status: RequestStatus }) {
@@ -72,7 +73,7 @@ export function RequestsPage() {
       {isHead && <NewRequestForm onCreated={load} />}
 
       {summary && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+        <div className="stagger grid grid-cols-2 gap-3 sm:grid-cols-5">
           <Stat label="Pending" value={summary.requests.byStatus.PENDING} />
           <Stat label="In progress" value={summary.requests.byStatus.IN_PROGRESS} />
           <Stat label="Approved" value={summary.requests.byStatus.APPROVED} />
@@ -82,7 +83,7 @@ export function RequestsPage() {
       )}
 
       <div>
-        <h2 className="mb-2 text-sm font-semibold">
+        <h2 className="mb-2 text-title-3 text-chip-800">
           {isHead ? 'My requests' : isStore ? 'Requests inbox' : 'All requests'}
         </h2>
         {requests.length === 0 ? (
@@ -92,7 +93,7 @@ export function RequestsPage() {
             description={isHead ? 'Raise a material request above.' : 'No production requests have been raised.'}
           />
         ) : (
-          <div className="space-y-3">
+          <div className="stagger space-y-3">
             {requests.map((r) => (
               <RequestCard
                 key={r.id}
@@ -110,10 +111,12 @@ export function RequestsPage() {
 
 function Stat({ label, value }: { label: string; value: number }) {
   return (
-    <Card>
+    <Card className="tactile-lift">
       <CardContent className="p-4">
-        <div className="text-2xl font-semibold">{value}</div>
-        <div className="text-xs text-muted-foreground">{label}</div>
+        <div className="text-metric text-chip-900">
+          <AnimatedNumber value={value} />
+        </div>
+        <div className="mt-1 text-label uppercase text-chip-500">{label}</div>
       </CardContent>
     </Card>
   )
@@ -200,7 +203,7 @@ function RequestCard({
                           </Link>
                         </Button>
                       ) : it.status === 'APPROVED' || it.status === 'PARTIAL' ? (
-                        <span className="text-xs text-success">fulfilled</span>
+                        <span className="text-xs text-healthy">fulfilled</span>
                       ) : (
                         <span className="text-xs text-muted-foreground">decided</span>
                       )}
@@ -447,7 +450,7 @@ function NewRequestForm({ onCreated }: { onCreated: () => void }) {
                   </Button>
                 </div>
                 {lineBatch?.locked && (
-                  <p className="pl-6 text-xs text-amber-700">
+                  <p className="pl-6 text-xs text-warning-foreground">
                     ⚠ Batch {lineBatch.batchNumber} is already confirmed. Material issued now is still traced
                     to it — use this only for a genuine top-up or correction.
                   </p>

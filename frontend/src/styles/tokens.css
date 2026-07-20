@@ -29,20 +29,24 @@
     --brand-violet: 279 98% 40%;   /* #8802C9 — the third petal, used for accents/charts */
     --brand-amber: 38 95% 50%;     /* warm amber — the readable partner to logo yellow */
 
-    /* Paint-chip neutrals. Not grey-blue: warmed very slightly toward red so
-       white space feels like paper stock rather than a screen. */
-    --paper: 30 25% 99%;           /* app canvas */
-    --chip-50: 30 20% 97%;
-    --chip-100: 28 18% 94%;
-    --chip-200: 26 15% 88%;
-    --chip-300: 24 12% 79%;
-    --chip-400: 22 10% 62%;
-    --chip-500: 22 9% 47%;
-    --chip-600: 22 11% 36%;
-    --chip-700: 22 14% 26%;
-    --chip-800: 22 18% 17%;
-    --chip-900: 24 24% 11%;
-    --chip-950: 24 30% 7%;
+    /* Paint-chip neutrals — the working surfaces.
+       Warmed toward red so white space reads as paper stock rather than screen
+       grey. Saturation is deliberately a touch higher than the first pass: with
+       red demoted to an accent, the chrome itself now carries the brand warmth,
+       which is what keeps the product feeling like Modern Colours on screens
+       where no red is visible at all. */
+    --paper: 32 40% 98.5%;         /* app canvas */
+    --chip-50: 32 34% 97%;
+    --chip-100: 30 28% 94%;
+    --chip-200: 28 22% 88%;
+    --chip-300: 26 17% 79%;
+    --chip-400: 24 13% 62%;
+    --chip-500: 24 12% 41%;
+    --chip-600: 24 13% 35%;
+    --chip-700: 24 16% 25%;
+    --chip-800: 24 20% 16%;
+    --chip-900: 26 26% 11%;
+    --chip-950: 26 32% 7%;
 
     /* -------------------------------------------------------------------
        2. SEMANTIC SURFACES
@@ -54,8 +58,20 @@
     --popover: 0 0% 100%;
     --popover-foreground: var(--chip-900);
 
-    --primary: var(--brand-red);
-    --primary-foreground: 0 0% 100%;
+    /* PRIMARY = deep warm ink, not brand red.
+       Red is the brand's shout; using it for every default button made ordinary
+       actions look like alarms and collided with the critical severity level.
+       Primary is now a near-black warm ink (still unmistakably warm, not a cold
+       grey), and red is reserved for: the logo, the active-nav rail, focus
+       rings, key accents, and genuine danger. */
+    --primary: 24 22% 14%;
+    --primary-foreground: 32 34% 97%;
+
+    /* The brand accent, for deliberate emphasis — active states, highlights,
+       chart series, the paint-chip edge. Distinct from --critical so "branded"
+       never reads as "broken". */
+    --accent-brand: var(--brand-red);
+    --accent-brand-foreground: 0 0% 100%;
 
     --secondary: var(--chip-100);
     --secondary-foreground: var(--chip-800);
@@ -95,7 +111,7 @@
     --warning-surface: 42 96% 95%;
     --warning-border: 40 90% 82%;
 
-    --healthy: 152 62% 34%;         /* all good — confirmed, dispatched, in stock */
+    --healthy: 152 66% 27%;         /* all good — confirmed, dispatched, in stock */
     --healthy-foreground: 0 0% 100%;
     --healthy-surface: 150 60% 96%;
     --healthy-border: 150 45% 84%;

@@ -180,8 +180,8 @@ export function CataloguePage() {
             }}
             className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors ${
               provisionalOnly
-                ? 'border-amber-500 bg-amber-500 text-white'
-                : 'border-amber-500/40 bg-amber-500/10 text-amber-700 hover:bg-amber-500/20'
+                ? 'border-warning bg-warning text-white'
+                : 'border-warning-border bg-warning-surface text-warning-foreground hover:bg-warning-surface'
             }`}
           >
             <AlertTriangle className="h-3.5 w-3.5" />
@@ -212,7 +212,7 @@ export function CataloguePage() {
             </TableHeader>
             <TableBody>
               {items.map((it) => (
-                <TableRow key={it.id} className={isProvisional(it.sku) ? 'bg-amber-500/5' : ''}>
+                <TableRow key={it.id} className={isProvisional(it.sku) ? 'bg-warning-surface' : ''}>
                   <TableCell className="font-medium">{it.materialName}</TableCell>
                   <TableCell>
                     <SkuCell item={it} canEdit={canEdit} onSaved={refresh} />
@@ -255,11 +255,11 @@ function ImportPreviewModal({
     <Modal open onOpenChange={(o) => !o && onCancel()} title="Review import">
       <div className="space-y-3">
         <div className="flex flex-wrap gap-4 text-sm">
-          <span className="inline-flex items-center gap-1 text-success">
+          <span className="inline-flex items-center gap-1 text-healthy">
             <CheckCircle2 className="h-4 w-4" /> {preview.validRows} valid
           </span>
           {preview.invalidRows > 0 && (
-            <span className="inline-flex items-center gap-1 text-amber-600">
+            <span className="inline-flex items-center gap-1 text-brand-amber">
               <AlertTriangle className="h-4 w-4" /> {preview.invalidRows} will be skipped
             </span>
           )}
@@ -284,7 +284,7 @@ function ImportPreviewModal({
             </TableHeader>
             <TableBody>
               {preview.rows.slice(0, 200).map((r) => (
-                <TableRow key={r.row} className={r.valid ? '' : 'bg-amber-500/5'}>
+                <TableRow key={r.row} className={r.valid ? '' : 'bg-warning-surface'}>
                   <TableCell className="text-xs text-muted-foreground">{r.row}</TableCell>
                   <TableCell className="font-medium">{r.materialName ?? <span className="text-muted-foreground">—</span>}</TableCell>
                   <TableCell className="font-mono text-xs">{r.sku ?? '—'}</TableCell>
@@ -293,9 +293,9 @@ function ImportPreviewModal({
                   <TableCell className="text-xs">{r.unit ?? '—'}</TableCell>
                   <TableCell className="text-xs">
                     {r.valid ? (
-                      <span className="text-success">OK</span>
+                      <span className="text-healthy">OK</span>
                     ) : (
-                      <span className="text-amber-600">{r.error}</span>
+                      <span className="text-brand-amber">{r.error}</span>
                     )}
                   </TableCell>
                 </TableRow>
@@ -367,16 +367,16 @@ function SkuCell({ item, canEdit, onSaved }: { item: CatalogueItem; canEdit: boo
 
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      <span className={`font-mono text-xs ${provisional ? 'text-amber-700' : ''}`}>{item.sku}</span>
+      <span className={`font-mono text-xs ${provisional ? 'text-warning-foreground' : ''}`}>{item.sku}</span>
       {provisional && (
-        <span className="rounded border border-amber-500/40 bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+        <span className="rounded border border-warning-border bg-warning-surface px-1.5 py-0.5 text-[10px] font-medium text-warning-foreground">
           Provisional — SKU pending
         </span>
       )}
       {canEdit && (
         <button
           onClick={() => { setValue(provisional ? '' : item.sku); setEditing(true) }}
-          className="text-[11px] text-primary hover:underline"
+          className="text-[11px] font-medium text-chip-600 hover:text-accent-brand"
         >
           {provisional ? 'Set real SKU' : 'Edit'}
         </button>

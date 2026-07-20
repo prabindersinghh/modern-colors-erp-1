@@ -125,7 +125,7 @@ export function ReceivingPage() {
   return (
     <div className="mx-auto max-w-xl space-y-4">
       {queued > 0 && (
-        <div className="flex items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700">
+        <div className="flex items-center gap-2 rounded-md border border-warning-border bg-warning-surface px-3 py-2 text-sm text-warning-foreground">
           <WifiOff className="h-4 w-4" />
           {queued} action{queued > 1 ? 's' : ''} queued offline.
           <Button
@@ -162,20 +162,23 @@ export function ReceivingPage() {
             <button
               type="button"
               onClick={backToScan}
-              className="mb-2 -ml-1 inline-flex w-fit items-center gap-1 rounded-md px-1 py-1 text-sm text-muted-foreground hover:text-foreground"
+              className="tactile mb-2 -ml-1 inline-flex min-h-11 w-fit items-center gap-1 rounded-md px-2 py-1 text-sm font-medium text-chip-500 hover:text-chip-900"
             >
               <ChevronLeft className="h-4 w-4" /> Back to scan
             </button>
             <CardTitle className="flex items-center justify-between text-base">
               <span className="font-mono">{unit.uniqueId}</span>
-              <Badge variant={unit.status === 'READY_FOR_PRODUCTION' ? 'default' : 'outline'}>
+              <Badge
+                variant={unit.status === 'READY_FOR_PRODUCTION' ? 'healthy' : 'secondary'}
+                className="shrink-0 whitespace-nowrap"
+              >
                 {unit.status.replace(/_/g, ' ')}
               </Badge>
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="text-sm">
-              <div className="font-medium">{unit.materialName}</div>
+              <div className="text-title-3 text-chip-900">{unit.materialName}</div>
               <div className="text-muted-foreground">
                 {unit.sku ?? '—'} · {unit.supplier ?? '—'}
               </div>
@@ -183,8 +186,8 @@ export function ReceivingPage() {
 
             {unit.status === 'READY_FOR_PRODUCTION' ? (
               <div className="space-y-3">
-                <div className="flex items-center gap-2 rounded-md bg-success/10 px-3 py-2 text-sm text-success">
-                  <CheckCircle2 className="h-4 w-4" />
+                <div className="chip-edge flex items-center gap-2 rounded-lg border border-healthy-border bg-healthy-surface py-2.5 pl-4 pr-3 text-sm font-medium text-healthy [--chip-edge-color:hsl(var(--healthy))]">
+                  <CheckCircle2 className="h-4 w-4 shrink-0" />
                   Weighed {unit.receivedWeight} — Ready for Production.
                 </div>
                 <Button variant="outline" className="w-full gap-1.5" onClick={backToScan}>

@@ -4,7 +4,7 @@ import { api, ApiError } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { LogoMark, TaglineStrip } from '@/components/brand/Logo'
+import { LogoMark, TaglineStrip, TAGLINE } from '@/components/brand/Logo'
 import { SeverityAlert } from '@/components/ui/severity'
 
 export function LoginPage() {
@@ -49,9 +49,7 @@ export function LoginPage() {
           <div className="mb-7 flex flex-col items-center text-center animate-fade-up">
             <LogoMark className="h-16 w-16" animate />
             <h1 className="mt-4 text-title-2 text-chip-900">Modern Colours</h1>
-            <p className="mt-1.5 text-sm text-chip-500">
-              Every colour, accounted for.
-            </p>
+            <p className="mt-1.5 text-sm text-chip-500">{TAGLINE}</p>
           </div>
 
           <div

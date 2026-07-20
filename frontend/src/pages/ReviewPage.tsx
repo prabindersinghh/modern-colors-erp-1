@@ -10,12 +10,13 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ConfirmationDialog } from '@/components/common/ConfirmationDialog'
 import { EmptyState } from '@/components/common/EmptyState'
+import { ExtractionProgress } from '@/components/common/ExtractionProgress'
 import { toast } from '@/hooks/useToast'
 
 const MATCH: Record<MatchType, { label: string; cls: string }> = {
-  EXACT: { label: 'Exact', cls: 'bg-success/15 text-success border-success/30' },
-  SIMILAR: { label: 'Similar', cls: 'bg-amber-500/15 text-amber-600 border-amber-500/30' },
-  NONE: { label: 'No match', cls: 'bg-muted text-muted-foreground' },
+  EXACT: { label: 'Exact', cls: 'bg-healthy-surface text-healthy border-healthy-border' },
+  SIMILAR: { label: 'Similar', cls: 'bg-warning-surface text-warning-foreground border-warning-border' },
+  NONE: { label: 'No match', cls: 'bg-chip-100 text-chip-500 border-chip-200' },
 }
 
 // Bulk measures — a line with one of these units is a WEIGHT/VOLUME total, so its
@@ -61,20 +62,29 @@ function ReviewPicker() {
     return <EmptyState icon={ClipboardCheck} title="Nothing to review" description="Upload an invoice to begin." />
   return (
     <div className="space-y-2">
-      <p className="text-sm text-muted-foreground">Invoices awaiting review:</p>
-      {pos.map((p) => (
-        <Link
-          key={p.id}
-          to={`/review/${p.id}`}
-          className="flex items-center justify-between rounded-md border p-3 text-sm hover:bg-muted/50"
-        >
-          <span>
-            <span className="font-medium">{p.poNumber ?? p.fileName ?? p.id.slice(0, 8)}</span>
-            <span className="ml-2 text-muted-foreground">{p.supplier ?? ''}</span>
-          </span>
-          <Badge variant="outline">{p.status === 'AI_EXTRACTED' ? 'Needs review' : 'Uploaded'}</Badge>
-        </Link>
-      ))}
+      <p className="text-sm text-chip-500">Invoices awaiting review:</p>
+      <div className="stagger space-y-2">
+        {pos.map((p) => (
+          <Link
+            key={p.id}
+            to={`/review/${p.id}`}
+            className="chip-edge tactile-lift group flex items-center gap-3 rounded-lg border bg-card py-3 pl-4 pr-3 text-sm shadow-elev-1 [--chip-edge-color:hsl(var(--accent-brand))]"
+          >
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-chip-100 text-chip-500 transition-colors duration-fast group-hover:bg-accent-brand/10 group-hover:text-accent-brand">
+              <FileText className="h-4 w-4" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate font-semibold text-chip-900">
+                {p.poNumber ?? p.fileName ?? p.id.slice(0, 8)}
+              </span>
+              {p.supplier && <span className="block truncate text-xs text-chip-500">{p.supplier}</span>}
+            </span>
+            <Badge variant={p.status === 'AI_EXTRACTED' ? 'warning' : 'secondary'} className="shrink-0">
+              {p.status === 'AI_EXTRACTED' ? 'Needs review' : 'Uploaded'}
+            </Badge>
+          </Link>
+        ))}
+      </div>
     </div>
   )
 }
@@ -207,19 +217,24 @@ function ReviewOne({ poId }: { poId: string }) {
         </CardContent>
       </Card>
 
-      {po.status === 'PO_UPLOADED' && (
-        <div className="flex flex-wrap gap-2">
-          <Button onClick={runExtract} disabled={busy} className="gap-1.5">
-            <Sparkles className="h-4 w-4" /> {busy ? 'Extracting…' : 'Run AI extraction'}
-          </Button>
-          <ManualEntry poId={poId} onSaved={load} />
-        </div>
-      )}
+      {po.status === 'PO_UPLOADED' &&
+        (busy ? (
+          // Extraction takes several seconds; a disabled button reading
+          // "Extracting…" makes that feel broken, so narrate the wait instead.
+          <ExtractionProgress />
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={runExtract} className="gap-1.5">
+              <Sparkles className="h-4 w-4" /> Run AI extraction
+            </Button>
+            <ManualEntry poId={poId} onSaved={load} />
+          </div>
+        ))}
 
       {(po.status === 'AI_EXTRACTED' || po.lineItems?.length) ? (
         <div className="space-y-3">
           {bulkLineCount > 0 && editable && (
-            <p className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-2.5 text-xs text-amber-700">
+            <p className="flex items-start gap-2 rounded-md border border-warning-border bg-warning-surface p-2.5 text-xs text-warning-foreground">
               <span className="mt-px font-semibold">⚠</span>
               <span>
                 <span className="font-semibold">{bulkLineCount} line{bulkLineCount === 1 ? '' : 's'}</span> came in
@@ -405,7 +420,7 @@ function LineCard({
         </div>
         {/* Prominent unit count generated for this line (display-only). */}
         <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-          <span className="text-lg font-semibold text-primary">{item.quantity}</span>
+          <span className="text-title-2 text-chip-900 text-primary">{item.quantity}</span>
           <span className="text-sm text-muted-foreground">{unitLabel(item.unit, item.quantity)} · QR-coded</span>
           {item.weight != null && (
             <span className="text-sm text-muted-foreground">
@@ -423,13 +438,13 @@ function LineCard({
   }
 
   return (
-    <div className={`rounded-md border p-3 ${flagged ? 'border-amber-500/50 bg-amber-500/5' : ''}`}>
+    <div className={`rounded-md border p-3 ${flagged ? 'border-warning-border bg-warning-surface' : ''}`}>
       <div className="mb-2 flex items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs text-muted-foreground">{index + 1}.</span>
           <span className={`rounded border px-2 py-0.5 text-xs ${m.cls}`}>{m.label}</span>
           {flagged && (
-            <span className="rounded border border-amber-500/40 bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700">
+            <span className="rounded border border-warning-border bg-warning-surface px-2 py-0.5 text-xs font-medium text-warning-foreground">
               Enter bag count
             </span>
           )}
@@ -464,7 +479,7 @@ function LineCard({
           <Input value={v.sku} onChange={set('sku')} placeholder="item code" className="h-9 font-mono" />
         </Field>
         <Field label="Qty (bags/drums)" className="sm:col-span-4">
-          <Input type="number" min={1} value={v.quantity} onChange={set('quantity')} className={`h-9 ${flagged ? 'border-amber-500' : ''}`} />
+          <Input type="number" min={1} value={v.quantity} onChange={set('quantity')} className={`h-9 ${flagged ? 'border-warning' : ''}`} />
         </Field>
         <Field label="Unit" className="sm:col-span-4">
           <Input value={v.unit} onChange={set('unit')} placeholder="Bag / Drum" className="h-9" />
@@ -475,7 +490,7 @@ function LineCard({
       </div>
 
       {flagged && (
-        <p className="mt-2 text-xs text-amber-700">
+        <p className="mt-2 text-xs text-warning-foreground">
           This line was read as a bulk weight. Set <span className="font-medium">Qty</span> to the number of physical
           bags/drums (and the per-bag weight if known).
         </p>

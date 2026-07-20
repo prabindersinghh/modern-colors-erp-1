@@ -11,6 +11,7 @@ import { ScanPanel } from '@/components/scan/ScanPanel'
 import { useScanFlow } from '@/components/scan/useScanFlow'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { AnimatedNumber } from '@/components/ui/animated-number'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { EmptyState } from '@/components/common/EmptyState'
 import { ConfirmationDialog } from '@/components/common/ConfirmationDialog'
@@ -98,17 +99,21 @@ export function DispatchPage() {
   return (
     <div className="mx-auto max-w-xl space-y-4">
       {/* Today's tally */}
-      <div className="grid grid-cols-2 gap-3">
-        <Card>
+      <div className="stagger grid grid-cols-2 gap-3">
+        <Card className="chip-edge tactile-lift pl-1 [--chip-edge-color:hsl(var(--healthy))]">
           <CardContent className="p-4">
-            <div className="text-xs text-muted-foreground">Dispatched today</div>
-            <div className="mt-1 text-2xl font-semibold text-success">{history?.todayCount ?? 0}</div>
+            <div className="text-label uppercase text-chip-500">Dispatched today</div>
+            <div className="mt-1.5 text-metric text-healthy">
+              <AnimatedNumber value={history?.todayCount ?? 0} />
+            </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="chip-edge tactile-lift pl-1 [--chip-edge-color:hsl(var(--info))]">
           <CardContent className="p-4">
-            <div className="text-xs text-muted-foreground">Awaiting dispatch</div>
-            <div className="mt-1 text-2xl font-semibold text-primary">{history?.totalPending ?? 0}</div>
+            <div className="text-label uppercase text-chip-500">Awaiting dispatch</div>
+            <div className="mt-1.5 text-metric text-info">
+              <AnimatedNumber value={history?.totalPending ?? 0} />
+            </div>
           </CardContent>
         </Card>
       </div>

@@ -13,8 +13,8 @@ import { Modal } from '@/components/common/Modal'
 import { toast } from '@/hooks/useToast'
 
 export const BATCH_STATUS: Record<BatchStatus, { label: string; cls: string }> = {
-  OPEN: { label: 'Open', cls: 'bg-success/15 text-success border-success/30' },
-  OUTPUT_RECORDED: { label: 'Output recorded', cls: 'bg-amber-500/15 text-amber-600 border-amber-500/30' },
+  OPEN: { label: 'Open', cls: 'bg-healthy/15 text-healthy border-healthy/30' },
+  OUTPUT_RECORDED: { label: 'Output recorded', cls: 'bg-warning-surface text-brand-amber border-warning-border' },
   CONFIRMED: { label: 'Confirmed', cls: 'bg-primary/15 text-primary border-primary/30' },
   CLOSED: { label: 'Closed', cls: 'bg-muted text-muted-foreground' },
 }
@@ -46,7 +46,8 @@ export function BatchesPage() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-lg font-semibold">Batches</h1>
+        {/* Title lives in the Navbar (see AppLayout pageTitles) — no duplicate h1. */}
+        <div className="flex-1" />
         <div className="flex items-center gap-2">
           <Input
             className="h-9 w-44"
@@ -99,7 +100,7 @@ export function BatchesPage() {
                     <b className="text-foreground">{b.totals.issuedKg} kg</b> issued
                   </span>
                   {b._count?.finishedGoods ? (
-                    <span className="text-success">
+                    <span className="text-healthy">
                       <b>{b._count.finishedGoods}</b> FG units
                     </span>
                   ) : null}
@@ -140,7 +141,7 @@ function NewBatchModal({ onClose, onCreated }: { onClose: () => void; onCreated:
 
   return (
     <Modal open onOpenChange={(v) => !v && onClose()} title="Start a new batch">
-      <div className="space-y-3">
+      <div className="stagger space-y-3">
         <div className="space-y-1.5">
           <Label>Batch number *</Label>
           <Input value={batchNumber} onChange={(e) => setBatchNumber(e.target.value)} placeholder="e.g. B-001" autoFocus />
@@ -188,7 +189,7 @@ function TraceModal({ batchId, onClose }: { batchId: string; onClose: () => void
           {/* WHAT WENT IN */}
           <section>
             <h3 className="mb-2 flex items-center gap-1.5 text-sm font-semibold">
-              <FlaskConical className="h-4 w-4 text-blue-600" /> Raw materials in
+              <FlaskConical className="h-4 w-4 text-info" /> Raw materials in
               <span className="font-normal text-muted-foreground">
                 · {trace.in.totalIssuedKg} kg across {trace.in.requestCount} request
                 {trace.in.requestCount === 1 ? '' : 's'}
@@ -237,7 +238,7 @@ function TraceModal({ batchId, onClose }: { batchId: string; onClose: () => void
           {/* WHAT CAME OUT */}
           <section>
             <h3 className="mb-2 flex items-center gap-1.5 text-sm font-semibold">
-              <PackageCheck className="h-4 w-4 text-success" /> Finished goods out
+              <PackageCheck className="h-4 w-4 text-healthy" /> Finished goods out
               <span className="font-normal text-muted-foreground">
                 · {trace.out.fgTotal} unit{trace.out.fgTotal === 1 ? '' : 's'} ({trace.out.fgDispatched} dispatched)
               </span>
@@ -254,9 +255,9 @@ function TraceModal({ batchId, onClose }: { batchId: string; onClose: () => void
                         {o.packageCount} × {o.sizePerPackage} {o.sizeUnit}
                       </span>
                       {o.confirmed ? (
-                        <Badge className="ml-auto bg-success text-success-foreground hover:bg-success">Confirmed</Badge>
+                        <Badge className="ml-auto bg-healthy text-success-foreground hover:bg-healthy">Confirmed</Badge>
                       ) : (
-                        <Badge className="ml-auto bg-amber-500 text-white hover:bg-amber-500">Draft</Badge>
+                        <Badge className="ml-auto bg-warning text-white hover:bg-warning">Draft</Badge>
                       )}
                     </div>
                     {o.finishedGoods.length > 0 && (
@@ -266,7 +267,7 @@ function TraceModal({ batchId, onClose }: { batchId: string; onClose: () => void
                             key={f.id}
                             className={`rounded border px-1.5 py-0.5 font-mono text-[10px] ${
                               f.status === 'DISPATCHED'
-                                ? 'border-success/30 bg-success/10 text-success'
+                                ? 'border-healthy/30 bg-healthy/10 text-healthy'
                                 : 'border-muted bg-muted/40 text-muted-foreground'
                             }`}
                             title={f.status === 'DISPATCHED' ? `Dispatched ${f.dispatchedAt?.slice(0, 10)}` : 'Awaiting dispatch'}
@@ -281,7 +282,7 @@ function TraceModal({ batchId, onClose }: { batchId: string; onClose: () => void
               </ul>
             )}
             {trace.out.fgDispatched > 0 && (
-              <p className="mt-2 flex items-center gap-1.5 text-xs text-success">
+              <p className="mt-2 flex items-center gap-1.5 text-xs text-healthy">
                 <Truck className="h-3.5 w-3.5" /> {trace.out.fgDispatched} of {trace.out.fgTotal} units dispatched
               </p>
             )}

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ClipboardList, TrendingDown, PackageCheck } from 'lucide-react'
 import { api } from '@/lib/api'
+import { useAuth } from '@/lib/auth'
 import type { MyAnalytics, RequestStatus } from '@/types/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -16,6 +17,7 @@ const STATUSES: RequestStatus[] = ['PENDING', 'IN_PROGRESS', 'APPROVED', 'PARTIA
 const DEPT_LABEL: Record<string, string> = { PU: 'PU', ENAMEL: 'Enamel', POWDER: 'Powder' }
 
 export function HeadDashboardPage() {
+  const { user } = useAuth()
   const [days, setDays] = useState(30)
   const [data, setData] = useState<MyAnalytics | null>(null)
   const [error, setError] = useState(false)
@@ -37,19 +39,27 @@ export function HeadDashboardPage() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-lg font-semibold">
-          {DEPT_LABEL[data.department] ?? data.department} department
-        </h1>
+        {/* Title lives in the Navbar (see AppLayout pageTitles). The department
+            badge stays, because the navbar title is generic ("My department")
+            and which department this is happens to be the most important
+            context on the screen. */}
+        <div className="flex flex-1 items-center gap-2">
+          {user?.department && (
+            <span className="rounded-full bg-accent-brand/10 px-2.5 py-1 text-label uppercase text-accent-brand">
+              {DEPT_LABEL[user.department]}
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-3">
           <WindowToggle days={days} onChange={setDays} />
-          <Link to="/requests" className="flex items-center gap-1 text-sm text-primary hover:underline">
+          <Link to="/requests" className="tactile flex items-center gap-1 text-sm font-medium text-chip-600 hover:text-accent-brand">
             <ClipboardList className="h-4 w-4" /> My requests
           </Link>
         </div>
       </div>
 
       {/* KPIs */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="stagger grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Kpi label="Total requests" value={String(totalReqs)} sub={`${data.requestsByStatus.PENDING} pending · ${data.requestsByStatus.IN_PROGRESS} in progress`} tone="primary" />
         <Kpi label="Requested" value={`${f.requestedKg} kg`} sub="across all my lines" tone="info" />
         <Kpi label="Approved" value={`${f.approvedKg} kg`} sub={`${approvedPct}% of requested`} tone="success" />
@@ -65,7 +75,7 @@ export function HeadDashboardPage() {
         </CardHeader>
         <CardContent className="space-y-3">
           <ProgressRow label="Approved vs requested" pct={approvedPct} value={`${f.approvedKg} / ${f.requestedKg} kg`} tone="bg-primary" />
-          <ProgressRow label="Issued vs requested" pct={issuedPct} value={`${f.issuedKg} / ${f.requestedKg} kg`} tone="bg-success" />
+          <ProgressRow label="Issued vs requested" pct={issuedPct} value={`${f.issuedKg} / ${f.requestedKg} kg`} tone="bg-healthy" />
         </CardContent>
       </Card>
 
