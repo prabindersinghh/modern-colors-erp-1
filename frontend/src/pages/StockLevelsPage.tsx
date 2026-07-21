@@ -17,6 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { EmptyState } from '@/components/common/EmptyState'
 import { formatUnitTotals } from '@/lib/units'
+import { cn } from '@/lib/utils'
 
 const TYPE_CLS: Record<StockTxnType, string> = {
   ADD: 'text-healthy',
@@ -150,6 +151,32 @@ function LevelsTab() {
                         >
                           {m.totalBalanceKg} {m.stockUnit}
                         </span>
+                        {/* Fullness vs the Admin-set max (or min). Only shown when
+                            thresholds exist — never a percentage of nothing. */}
+                        {m.pct != null && (
+                          <div className="mt-1 flex items-center justify-end gap-1.5">
+                            <div
+                              className="h-1.5 w-16 overflow-hidden rounded-full bg-chip-100"
+                              role="progressbar"
+                              aria-valuenow={Math.min(100, m.pct)}
+                              aria-valuemin={0}
+                              aria-valuemax={100}
+                            >
+                              <div
+                                className={cn(
+                                  'h-full rounded-full',
+                                  m.minLevel != null && m.totalBalanceKg < m.minLevel
+                                    ? 'bg-critical'
+                                    : m.pct < 40
+                                      ? 'bg-warning'
+                                      : 'bg-healthy',
+                                )}
+                                style={{ width: `${Math.min(100, m.pct)}%` }}
+                              />
+                            </div>
+                            <span className="text-[10px] tabular text-chip-500">{m.pct}%</span>
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell className="text-right">{m.unitCount}</TableCell>
                     </TableRow>

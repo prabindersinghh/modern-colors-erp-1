@@ -13,12 +13,15 @@ import { AuthUser } from '../../common/decorators/current-user.decorator';
 import { assertDepartmentAccess, departmentFilter } from '../../common/auth/department-scope';
 
 // Own sequence, separate from material_unique_seq — FG IDs never collide with MC- IDs.
-const FG_SEQ = 'finished_good_unique_seq';
+export const FG_SEQ = 'finished_good_unique_seq';
 
 /** Finished-goods IDs are FG-prefixed so they can never be mistaken for raw units (MC-). */
 export const FG_PREFIX = 'FG-';
 export function isFinishedGoodId(id: string): boolean {
   return id.trim().toUpperCase().startsWith(FG_PREFIX);
+}
+export function formatFgId(n: number | bigint): string {
+  return `${FG_PREFIX}${String(n).padStart(6, '0')}`;
 }
 
 const fgInclude = {
@@ -26,6 +29,9 @@ const fgInclude = {
   output: { select: { id: true, productName: true, productionDate: true, shade: true, productSku: true } },
   dispatchedBy: { select: { id: true, name: true } },
   qrCode: { select: { payload: true, imageRef: true } },
+  // Refurbishment lineage — a returned drum's old and new identities stay linked.
+  refurbishedFrom: { select: { uniqueId: true } },
+  refurbishedInto: { select: { uniqueId: true, status: true } },
 } satisfies Prisma.FinishedGoodInclude;
 
 @Injectable()
@@ -41,7 +47,14 @@ export class FinishedGoodsService implements OnModuleInit {
   }
 
   private formatId(n: number | bigint): string {
-    return `${FG_PREFIX}${String(n).padStart(6, '0')}`;
+    return formatFgId(n);
+  }
+
+  /** Single-unit label PDF (3×1.5in) — reprints and refurbished-unit stickers. */
+  async unitLabel(user: AuthUser, uniqueId: string): Promise<Buffer> {
+    const fg = await this.findByUniqueId(user, uniqueId);
+    if (!fg.qrCode?.payload) throw new NotFoundException(`No QR payload stored for ${uniqueId}`);
+    return this.qr.buildLabelRoll([{ payload: fg.qrCode.payload as unknown as FgQrPayload }]);
   }
 
   /**

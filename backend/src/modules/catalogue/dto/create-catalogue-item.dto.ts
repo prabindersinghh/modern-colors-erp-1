@@ -1,4 +1,4 @@
-import { IsOptional, IsString, MinLength } from 'class-validator';
+import { IsNumber, IsOptional, IsString, Min, MinLength } from 'class-validator';
 
 export class CreateCatalogueItemDto {
   @IsString()
@@ -26,4 +26,16 @@ export class CreateCatalogueItemDto {
   @IsOptional()
   @IsString()
   standardPackaging?: string;
+
+  // Admin-set stock thresholds, in the material's OWN unit (kg or L). They drive the
+  // stock-percentage display and low-stock alerts. null clears a threshold.
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  minLevel?: number | null;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  maxLevel?: number | null;
 }

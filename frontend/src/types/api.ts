@@ -48,6 +48,8 @@ export interface CatalogueItem {
   category: string | null
   unit: string | null
   standardPackaging: string | null
+  minLevel?: number | null
+  maxLevel?: number | null
   active: boolean
 }
 
@@ -237,6 +239,10 @@ export interface StockLevelMaterial {
   stockUnit: string
   totalBalanceKg: number
   unitCount: number
+  /** Admin-set thresholds (catalogue) and fullness %; null when not configured. */
+  minLevel: number | null
+  maxLevel: number | null
+  pct: number | null
   // Oldest-first (FIFO order), each with received date + age + ageing level.
   units: {
     uniqueId: string
@@ -286,6 +292,8 @@ export interface StockAlert {
   stockUnit: string
   totalKg: number
   unitCount: number
+  /** The Admin-set minimum that triggered this alert (null = built-in default). */
+  minLevel?: number | null
   level: StockAlertLevel
 }
 export interface LowStock {
@@ -404,7 +412,7 @@ export interface Overview {
 
 // ── Phase 3: Batches, Finished Goods & Dispatch ──
 export type BatchStatus = 'OPEN' | 'OUTPUT_RECORDED' | 'CONFIRMED' | 'CLOSED'
-export type FgStatus = 'GENERATED' | 'READY' | 'DISPATCHED'
+export type FgStatus = 'GENERATED' | 'READY' | 'DISPATCHED' | 'SCRAPPED' | 'REFURBISHED'
 
 export interface Batch {
   id: string
@@ -415,6 +423,8 @@ export interface Batch {
   createdAt: string
   createdBy?: { id: string; name: string }
   locked: boolean
+  /** Dispatch visibility for the head: of this batch's FG units, how many shipped. */
+  fg?: { total: number; dispatched: number; awaiting: number; scrapped: number; refurbished: number; pct: number }
   totals: {
     lineCount: number
     requestCount: number
@@ -445,6 +455,8 @@ export interface ProductionOutput {
   recordedBy?: { id: string; name: string }
   confirmedBy?: { id: string; name: string } | null
   _count?: { finishedGoods: number }
+  /** Dispatch status of this output's FG units — null until QRs are generated. */
+  fgStats?: { total: number; dispatched: number; awaiting: number; scrapped: number; refurbished: number; pct: number } | null
 }
 
 export interface FinishedGood {
@@ -461,6 +473,14 @@ export interface FinishedGood {
   output?: { id: string; productName: string; productionDate: string; shade: string | null }
   dispatchedBy?: { id: string; name: string } | null
   qrCode?: { payload: unknown; imageRef: string | null }
+  // Returns
+  returnedAt?: string | null
+  returnNote?: string | null
+  returnedBy?: { id: string; name: string } | null
+  /** Set on a refurbished unit: the original identity it replaced. */
+  refurbishedFrom?: { uniqueId: string } | null
+  /** Set on a returned original that was refurbished: its replacement. */
+  refurbishedInto?: { uniqueId: string; status: FgStatus } | null
 }
 
 export interface DispatchReady {
@@ -471,6 +491,10 @@ export interface DispatchReady {
     department: string
     productName: string
     pending: number
+    dispatched: number
+    total: number
+    /** 0-100 — how much of the batch has already shipped. */
+    pct: number
     units: FinishedGood[]
   }[]
 }
@@ -555,6 +579,39 @@ export interface DispatchAnalytics {
   series: { date: string; units: number }[]
   byDepartment: { department: Department; units: number }[]
   batches: { fullyDispatched: number; partiallyDispatched: number; notStarted: number }
+  /** How long finished goods sit before dispatch (amber ≥7d, red ≥14d). */
+  fgAgeing: {
+    thresholds: { amberDays: number; redDays: number }
+    fresh: { units: number }
+    amber: { units: number; volume: { litres: number; kg: number } }
+    red: { units: number; volume: { litres: number; kg: number } }
+    oldest: {
+      uniqueId: string
+      productName: string
+      batchNumber: string | null
+      department: Department | null
+      size: string
+      ageDays: number
+      level: 'FRESH' | 'AMBER' | 'RED'
+    }[]
+  }
+  /** Every dispatched good in the window, batch-wise. */
+  dispatchedByBatch: {
+    batchId: string
+    batchNumber: string
+    department: Department
+    productName: string
+    units: number
+    litres: number
+    kg: number
+    lastDispatchedAt: string | null
+  }[]
+  /** Per-product rollup of dispatched goods in the window. */
+  dispatchedByProduct: { productName: string; units: number; litres: number; kg: number }[]
+  returns: {
+    window: { scrapped: number; refurbished: number }
+    allTime: { scrapped: number; refurbished: number }
+  }
   recent: {
     uniqueId: string
     productName: string

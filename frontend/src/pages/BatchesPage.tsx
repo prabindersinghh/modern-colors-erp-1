@@ -106,6 +106,29 @@ export function BatchesPage() {
                     </span>
                   ) : null}
                 </div>
+                {/* Dispatch status of this batch's finished goods — the head can see at
+                    a glance how much has actually shipped. */}
+                {b.fg && b.fg.total > 0 && (
+                  <div>
+                    <div className="flex justify-between text-xs text-chip-500">
+                      <span>
+                        <b className="text-chip-800">{b.fg.dispatched}</b> of {b.fg.total} dispatched
+                        {b.fg.scrapped > 0 ? ` · ${b.fg.scrapped} scrapped` : ''}
+                        {b.fg.refurbished > 0 ? ` · ${b.fg.refurbished} refurbished` : ''}
+                      </span>
+                      <span className="font-semibold text-chip-800">{b.fg.pct}%</span>
+                    </div>
+                    <div
+                      className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-chip-100"
+                      role="progressbar"
+                      aria-valuenow={b.fg.pct}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                    >
+                      <div className="h-full rounded-full bg-healthy" style={{ width: `${b.fg.pct}%` }} />
+                    </div>
+                  </div>
+                )}
                 <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setTraceId(b.id)}>
                   <ArrowRight className="h-4 w-4" /> View traceability
                 </Button>

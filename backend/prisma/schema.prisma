@@ -62,6 +62,8 @@ enum FgStatus {
   GENERATED // QR minted, sticker printable
   READY // labelled / stored, awaiting dispatch
   DISPATCHED // scanned out by the Dispatch role
+  SCRAPPED // returned and written off — permanently out of inventory
+  REFURBISHED // returned and replaced by a NEW FG unit (see refurbishedFrom)
 }
 
 // PO-level lifecycle (the document). See ARCHITECTURE.md §6 status note.
@@ -121,6 +123,7 @@ model User {
   recordedOutputs  ProductionOutput[] @relation("OutputRecordedBy")
   confirmedOutputs ProductionOutput[] @relation("OutputConfirmedBy")
   dispatchedGoods  FinishedGood[]     @relation("FgDispatchedBy")
+  returnedGoods    FinishedGood[]     @relation("FgReturnedBy")
 
   @@index([role])
 }
@@ -135,6 +138,10 @@ model MasterCatalogueItem {
   category          String?
   unit              String?
   standardPackaging String?
+  // Admin-set stock thresholds, in the material's OWN unit (kg or L). Drive the
+  // stock-percentage display and low-stock alerts. NULL = not set (built-in defaults).
+  minLevel          Float?
+  maxLevel          Float?
   metadata          Json?
   active            Boolean  @default(true)
   createdAt         DateTime @default(now())
@@ -467,6 +474,17 @@ model FinishedGood {
   dispatchedById String?
   dispatchedBy   User?     @relation("FgDispatchedBy", fields: [dispatchedById], references: [id])
   dispatchNote   String?
+
+  // Returns (additive). A returned unit ends as SCRAPPED, or REFURBISHED — in which
+  // case a NEW unit is minted with `refurbishedFrom` pointing back here, and the SAME
+  // batch/output, so it traces to its real origin and never looks newly produced.
+  returnedAt        DateTime?
+  returnNote        String?
+  returnedById      String?
+  returnedBy        User?          @relation("FgReturnedBy", fields: [returnedById], references: [id])
+  refurbishedFromId String?        @unique
+  refurbishedFrom   FinishedGood?  @relation("FgRefurbLineage", fields: [refurbishedFromId], references: [id])
+  refurbishedInto   FinishedGood?  @relation("FgRefurbLineage")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

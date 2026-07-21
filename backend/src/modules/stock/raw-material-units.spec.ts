@@ -23,7 +23,10 @@ describe('deriveStockUnit — litres vs kilograms from the PO line unit', () => 
 
 describe('StockService.levels — totals are split by unit, never mixed', () => {
   const build = (materials: Array<Record<string, unknown>>) => {
-    const prisma = { material: { findMany: jest.fn().mockResolvedValue(materials) } } as never;
+    const prisma = {
+      material: { findMany: jest.fn().mockResolvedValue(materials) },
+      masterCatalogueItem: { findMany: jest.fn().mockResolvedValue([]) },
+    } as never;
     return new StockService(prisma, {} as never);
   };
 

@@ -177,6 +177,14 @@ export class CatalogueService {
       }
     }
 
+    // Min/max stock thresholds: max must stay above min, including against the value
+    // that is NOT being changed in this request.
+    const nextMin = dto.minLevel !== undefined ? dto.minLevel : before.minLevel;
+    const nextMax = dto.maxLevel !== undefined ? dto.maxLevel : before.maxLevel;
+    if (nextMin != null && nextMax != null && nextMax <= nextMin) {
+      throw new ConflictException('Maximum stock level must be greater than the minimum.');
+    }
+
     const item = await this.prisma.masterCatalogueItem.update({
       where: { id },
       data: {
@@ -187,6 +195,9 @@ export class CatalogueService {
         unit: dto.unit?.trim(),
         standardPackaging: dto.standardPackaging?.trim(),
         active: dto.active,
+        // undefined = leave unchanged; null = clear the threshold.
+        minLevel: dto.minLevel,
+        maxLevel: dto.maxLevel,
       },
     });
 

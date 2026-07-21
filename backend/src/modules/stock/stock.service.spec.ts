@@ -345,7 +345,10 @@ describe('StockService.createTransaction', () => {
 
 describe('StockService.levels (aggregation)', () => {
   function serviceWithUnits(units: any[]) {
-    const prisma: any = { material: { findMany: async () => units } };
+    const prisma: any = {
+      material: { findMany: async () => units },
+      masterCatalogueItem: { findMany: async () => [] },
+    };
     return new StockService(prisma, { log: async () => undefined } as any);
   }
 

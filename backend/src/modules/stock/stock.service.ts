@@ -25,6 +25,22 @@ const unitSelect = {
   po: { select: { poNumber: true, supplier: true } },
 } satisfies Prisma.MaterialSelect;
 
+/**
+ * Fullness of a material's stock against its Admin-set thresholds, as a percentage.
+ * Reference: maxLevel (capacity) when set, else minLevel (reorder point — may exceed
+ * 100%). Null when neither is set — the UI then shows no percentage at all rather
+ * than a number with no meaning.
+ */
+export function stockPercent(
+  total: number,
+  minLevel: number | null,
+  maxLevel: number | null,
+): number | null {
+  const ref = maxLevel ?? minLevel;
+  if (ref == null || ref <= 0) return null;
+  return Math.round((total / ref) * 100);
+}
+
 /** Same material? Compare by SKU when both have one, else by normalized name. */
 function sameMaterial(
   a: { sku: string | null; materialName: string },
@@ -252,9 +268,25 @@ export class StockService {
     // Sort each material's units OLDEST-FIRST (FIFO order) so the pick order is obvious.
     for (const g of groups.values()) g.units = fifoSort(g.units);
 
-    const materials = [...groups.values()].sort((a, b) =>
-      a.materialName.localeCompare(b.materialName),
-    );
+    // Admin-set min/max thresholds (catalogue, matched by SKU) → fullness percentage.
+    // Materials without a catalogue match or thresholds simply show no percentage.
+    const skus = [...groups.values()].map((g) => g.sku).filter((s): s is string => !!s);
+    const cat = skus.length
+      ? await this.prisma.masterCatalogueItem.findMany({
+          where: { sku: { in: skus } },
+          select: { sku: true, minLevel: true, maxLevel: true },
+        })
+      : [];
+    const catBySku = new Map(cat.map((c) => [c.sku.toLowerCase(), c]));
+
+    const materials = [...groups.values()]
+      .map((g) => {
+        const c = g.sku ? catBySku.get(g.sku.toLowerCase()) : undefined;
+        const minLevel = c?.minLevel ?? null;
+        const maxLevel = c?.maxLevel ?? null;
+        return { ...g, minLevel, maxLevel, pct: stockPercent(g.totalBalanceKg, minLevel, maxLevel) };
+      })
+      .sort((a, b) => a.materialName.localeCompare(b.materialName));
 
     // Factory-wide totals are split BY UNIT — kilograms and litres are never added into
     // one number (the same rule the dispatch analytics enforce).

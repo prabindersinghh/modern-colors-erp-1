@@ -61,9 +61,11 @@ export class DispatchAnalyticsService {
       byDeptRows,
       recent,
       batchRows,
+      returnsWindow,
+      returnsAllTime,
     ] = await Promise.all([
       // Units dispatched inside the window, with the timestamps needed for the
-      // "how long did it sit?" figure.
+      // "how long did it sit?" figure, and batch/product for the breakdowns.
       this.prisma.finishedGood.findMany({
         where: { status: FgStatus.DISPATCHED, dispatchedAt: { gte: since }, ...batchWhere },
         select: {
@@ -72,7 +74,8 @@ export class DispatchAnalyticsService {
           createdAt: true,
           sizePerPackage: true,
           sizeUnit: true,
-          batch: { select: { department: true } },
+          productName: true,
+          batch: { select: { id: true, batchNumber: true, department: true } },
         },
       }),
 
@@ -82,10 +85,12 @@ export class DispatchAnalyticsService {
         where: { status: { in: [FgStatus.GENERATED, FgStatus.READY] }, ...batchWhere },
         select: {
           id: true,
+          uniqueId: true,
           createdAt: true,
           sizePerPackage: true,
           sizeUnit: true,
-          batch: { select: { department: true } },
+          productName: true,
+          batch: { select: { batchNumber: true, department: true } },
         },
       }),
 
@@ -124,6 +129,22 @@ export class DispatchAnalyticsService {
           department: true,
           finishedGoods: { select: { status: true } },
         },
+      }),
+
+      // Returns — window and all-time, split by outcome.
+      this.prisma.finishedGood.groupBy({
+        by: ['status'],
+        where: {
+          status: { in: [FgStatus.SCRAPPED, FgStatus.REFURBISHED] },
+          returnedAt: { gte: since },
+          ...batchWhere,
+        },
+        _count: { _all: true },
+      }),
+      this.prisma.finishedGood.groupBy({
+        by: ['status'],
+        where: { status: { in: [FgStatus.SCRAPPED, FgStatus.REFURBISHED] }, ...batchWhere },
+        _count: { _all: true },
       }),
     ]);
 
@@ -189,6 +210,93 @@ export class DispatchAnalyticsService {
       ? Math.floor((Date.now() - oldestReady.getTime()) / 864e5)
       : null;
 
+    // ---- FG ageing — how long finished goods sit before dispatch ----------
+    // Mirrors the raw-material ageing idea with FG-appropriate thresholds:
+    // amber ≥ 7 days waiting, red ≥ 14 (paint should not sit for a month).
+    const FG_AMBER = 7;
+    const FG_RED = 14;
+    const aged = readyUnits.map((u) => ({
+      ...u,
+      ageDays: Math.floor((Date.now() - u.createdAt.getTime()) / 864e5),
+    }));
+    const fgAgeing = {
+      thresholds: { amberDays: FG_AMBER, redDays: FG_RED },
+      fresh: { units: aged.filter((u) => u.ageDays < FG_AMBER).length },
+      amber: {
+        units: aged.filter((u) => u.ageDays >= FG_AMBER && u.ageDays < FG_RED).length,
+        volume: volume(aged.filter((u) => u.ageDays >= FG_AMBER && u.ageDays < FG_RED)),
+      },
+      red: {
+        units: aged.filter((u) => u.ageDays >= FG_RED).length,
+        volume: volume(aged.filter((u) => u.ageDays >= FG_RED)),
+      },
+      oldest: aged
+        .sort((a, b) => b.ageDays - a.ageDays)
+        .slice(0, 8)
+        .map((u) => ({
+          uniqueId: u.uniqueId,
+          productName: u.productName,
+          batchNumber: u.batch?.batchNumber ?? null,
+          department: u.batch?.department ?? null,
+          size: `${u.sizePerPackage} ${u.sizeUnit}`,
+          ageDays: u.ageDays,
+          level: u.ageDays >= FG_RED ? 'RED' : u.ageDays >= FG_AMBER ? 'AMBER' : 'FRESH',
+        })),
+    };
+
+    // ---- Every dispatched good, batch-wise (window) ------------------------
+    const byBatchMap = new Map<
+      string,
+      { batchId: string; batchNumber: string; department: string; productName: string; units: number; litres: number; kg: number; lastDispatchedAt: Date | null }
+    >();
+    for (const f of dispatchedInWindow) {
+      const b = f.batch;
+      if (!b) continue;
+      const g = byBatchMap.get(b.id) ?? {
+        batchId: b.id,
+        batchNumber: b.batchNumber,
+        department: b.department,
+        productName: f.productName,
+        units: 0,
+        litres: 0,
+        kg: 0,
+        lastDispatchedAt: null,
+      };
+      g.units += 1;
+      if ((f.sizeUnit ?? '').toUpperCase().startsWith('L')) g.litres = Number((g.litres + f.sizePerPackage).toFixed(3));
+      else g.kg = Number((g.kg + f.sizePerPackage).toFixed(3));
+      if (f.dispatchedAt && (!g.lastDispatchedAt || f.dispatchedAt > g.lastDispatchedAt)) g.lastDispatchedAt = f.dispatchedAt;
+      byBatchMap.set(b.id, g);
+    }
+    const dispatchedByBatch = [...byBatchMap.values()].sort(
+      (a, b) => (b.lastDispatchedAt?.getTime() ?? 0) - (a.lastDispatchedAt?.getTime() ?? 0),
+    );
+
+    // ---- Per-finished-good (product) rollup (window) -----------------------
+    const byProductMap = new Map<string, { productName: string; units: number; litres: number; kg: number }>();
+    for (const f of dispatchedInWindow) {
+      const g = byProductMap.get(f.productName) ?? { productName: f.productName, units: 0, litres: 0, kg: 0 };
+      g.units += 1;
+      if ((f.sizeUnit ?? '').toUpperCase().startsWith('L')) g.litres = Number((g.litres + f.sizePerPackage).toFixed(3));
+      else g.kg = Number((g.kg + f.sizePerPackage).toFixed(3));
+      byProductMap.set(f.productName, g);
+    }
+    const dispatchedByProduct = [...byProductMap.values()].sort((a, b) => b.units - a.units);
+
+    // ---- Returns ----------------------------------------------------------
+    const rN = (rows: { status: FgStatus; _count: { _all: number } }[], s: FgStatus) =>
+      rows.find((r) => r.status === s)?._count._all ?? 0;
+    const returns = {
+      window: {
+        scrapped: rN(returnsWindow, FgStatus.SCRAPPED),
+        refurbished: rN(returnsWindow, FgStatus.REFURBISHED),
+      },
+      allTime: {
+        scrapped: rN(returnsAllTime, FgStatus.SCRAPPED),
+        refurbished: rN(returnsAllTime, FgStatus.REFURBISHED),
+      },
+    };
+
     return {
       windowDays: days,
       department: department ?? null,
@@ -207,6 +315,10 @@ export class DispatchAnalyticsService {
       series,
       byDepartment,
       batches: { fullyDispatched, partiallyDispatched, notStarted },
+      fgAgeing,
+      dispatchedByBatch,
+      dispatchedByProduct,
+      returns,
       recent: recent.map((r) => ({
         uniqueId: r.uniqueId,
         productName: r.productName,

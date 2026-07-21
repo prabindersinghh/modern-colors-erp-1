@@ -132,8 +132,31 @@ export class BatchService {
       distinct: ['requestId'],
     });
 
+    // Dispatch visibility for the head: of this batch's FG units, how many shipped.
+    const fgCounts = await this.prisma.finishedGood.groupBy({
+      by: ['status'],
+      where: { batchId: batch.id },
+      _count: { _all: true },
+    });
+    const fgN = (s: string) => fgCounts.find((c) => c.status === s)?._count._all ?? 0;
+    const fgDispatched = fgN('DISPATCHED');
+    const fgAwaiting = fgN('GENERATED') + fgN('READY');
+
     return {
       ...batch,
+      // Dispatch visibility for the head — active units only; scrapped/refurbished
+      // originals are excluded from both sides of the progress figure.
+      fg: {
+        total: fgDispatched + fgAwaiting,
+        dispatched: fgDispatched,
+        awaiting: fgAwaiting,
+        scrapped: fgN('SCRAPPED'),
+        refurbished: fgN('REFURBISHED'),
+        pct:
+          fgDispatched + fgAwaiting > 0
+            ? Math.round((fgDispatched / (fgDispatched + fgAwaiting)) * 100)
+            : 0,
+      },
       totals: {
         lineCount: lineByUnit.reduce((s, r) => s + r._count._all, 0),
         requestCount: reqs.length,

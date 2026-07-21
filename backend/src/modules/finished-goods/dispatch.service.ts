@@ -42,7 +42,17 @@ export class DispatchService {
     // Group by batch so the dispatcher can ship a whole pallet at once.
     const byBatch = new Map<
       string,
-      { batchId: string; batchNumber: string; department: string; productName: string; pending: number; units: typeof units }
+      {
+        batchId: string
+        batchNumber: string
+        department: string
+        productName: string
+        pending: number
+        dispatched: number
+        total: number
+        pct: number
+        units: typeof units
+      }
     >();
     for (const u of units) {
       const g = byBatch.get(u.batchId) ?? {
@@ -51,11 +61,34 @@ export class DispatchService {
         department: u.batch.department,
         productName: u.productName,
         pending: 0,
+        dispatched: 0,
+        total: 0,
+        pct: 0,
         units: [] as typeof units,
       };
       g.pending += 1;
       g.units.push(u);
       byBatch.set(u.batchId, g);
+    }
+
+    // Per-batch progress: dispatched vs total, so Dispatch can stop mid-batch and
+    // resume knowing exactly where they left off. Scrapped/refurbished originals are
+    // excluded from both sides — they are no longer part of what this batch ships.
+    if (byBatch.size > 0) {
+      const counts = await this.prisma.finishedGood.groupBy({
+        by: ['batchId', 'status'],
+        where: { batchId: { in: [...byBatch.keys()] } },
+        _count: { _all: true },
+      });
+      for (const c of counts) {
+        const g = byBatch.get(c.batchId);
+        if (!g) continue;
+        if (c.status === FgStatus.DISPATCHED) g.dispatched += c._count._all;
+      }
+      for (const g of byBatch.values()) {
+        g.total = g.dispatched + g.pending;
+        g.pct = g.total > 0 ? Math.round((g.dispatched / g.total) * 100) : 0;
+      }
     }
     return { total: units.length, batches: [...byBatch.values()] };
   }

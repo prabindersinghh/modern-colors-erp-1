@@ -16,7 +16,9 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
 import { FinishedGoodsService } from './finished-goods.service';
 import { DispatchService } from './dispatch.service';
+import { ReturnsService } from './returns.service';
 import { DispatchScanDto, DispatchBatchDto } from './dto/dispatch.dto';
+import { ReturnDto } from './dto/return.dto';
 
 @Controller('finished-goods')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -24,6 +26,7 @@ export class FinishedGoodsController {
   constructor(
     private readonly fg: FinishedGoodsService,
     private readonly dispatch: DispatchService,
+    private readonly returns: ReturnsService,
   ) {}
 
   // ── Generation (production head only; Store/Admin may read) ──
@@ -103,5 +106,43 @@ export class FinishedGoodsController {
   @Roles(Role.DISPATCH)
   bulk(@CurrentUser() user: AuthUser, @Body() dto: DispatchBatchDto) {
     return this.dispatch.dispatchBatch(user, dto.batchId, dto.note);
+  }
+
+  // ── Returns (DISPATCH acts; Admin may read) — see ReturnsService for the rules ──
+
+  @Get('returns/history')
+  @Roles(Role.DISPATCH, Role.ADMIN, Role.OVERSIGHT)
+  returnsHistory() {
+    return this.returns.history();
+  }
+
+  /** Returned unit → written off, permanently out of inventory. Reason required. */
+  @Post('returns/scrap')
+  @Roles(Role.DISPATCH)
+  scrapReturn(@CurrentUser() user: AuthUser, @Body() dto: ReturnDto) {
+    return this.returns.scrap(user, dto.uniqueId, dto.note, dto.device);
+  }
+
+  /** Returned unit → back into sellable stock as a NEW FG unit with its own QR. */
+  @Post('returns/refurbish')
+  @Roles(Role.DISPATCH)
+  refurbishReturn(@CurrentUser() user: AuthUser, @Body() dto: ReturnDto) {
+    return this.returns.refurbish(user, dto.uniqueId, dto.note, dto.device);
+  }
+
+  /** Single-unit label PDF — reprints and refurbished-unit stickers. */
+  @Get('unit/:uniqueId/label.pdf')
+  @Roles(Role.DISPATCH, Role.PRODUCTION_HEAD, Role.ADMIN)
+  @Header('Content-Type', 'application/pdf')
+  async unitLabel(
+    @CurrentUser() user: AuthUser,
+    @Param('uniqueId') uniqueId: string,
+  ): Promise<StreamableFile> {
+    const pdf = await this.fg.unitLabel(user, uniqueId);
+    const safe = uniqueId.replace(/[^a-zA-Z0-9_-]/g, '');
+    return new StreamableFile(pdf, {
+      type: 'application/pdf',
+      disposition: `inline; filename="fg-label-${safe}.pdf"`,
+    });
   }
 }

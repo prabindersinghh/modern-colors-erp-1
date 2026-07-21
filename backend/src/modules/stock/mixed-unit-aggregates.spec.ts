@@ -44,7 +44,13 @@ describe('stock levels with mixed-unit stock', () => {
     { uniqueId: 'MC-3', materialName: 'Solvent ABC', sku: 'SOLV', status: 'READY_FOR_PRODUCTION', balanceKg: LITRES, stockUnit: 'L', arrivedAt: new Date('2026-05-01') }, // old → RED bucket
   ];
   const svc = () =>
-    new StockService({ material: { findMany: jest.fn().mockResolvedValue(materials) } } as never, {} as never);
+    new StockService(
+      {
+        material: { findMany: jest.fn().mockResolvedValue(materials) },
+        masterCatalogueItem: { findMany: jest.fn().mockResolvedValue([]) },
+      } as never,
+      {} as never,
+    );
 
   it('levels: totals are split by unit and contain no blended figure', async () => {
     const out = await svc().levels({});

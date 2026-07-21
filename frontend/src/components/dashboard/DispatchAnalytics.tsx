@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Truck, PackageCheck, Clock, Timer } from 'lucide-react'
+import { Truck, PackageCheck, Clock, Timer, Undo2, Layers } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { DispatchAnalytics as Data } from '@/types/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -146,6 +146,155 @@ export function DispatchAnalytics({ compact = false }: { compact?: boolean }) {
             <Empty>No batches have produced finished goods yet.</Empty>
           )}
         </ChartCard>
+      </div>
+
+      {/* Returns — scrapped vs refurbished. Zero is a healthy, visible number. */}
+      <div className="stagger grid gap-3 sm:grid-cols-2">
+        <Kpi
+          label="Scrapped returns"
+          value={data.returns.window.scrapped}
+          sub={`${data.returns.allTime.scrapped} all time · written off permanently`}
+          icon={Undo2}
+          tone={data.returns.window.scrapped > 0 ? 'critical' : 'healthy'}
+        />
+        <Kpi
+          label="Refurbished returns"
+          value={data.returns.window.refurbished}
+          sub={`${data.returns.allTime.refurbished} all time · back in sellable stock as new units`}
+          icon={Undo2}
+          tone={data.returns.window.refurbished > 0 ? 'amber' : 'healthy'}
+        />
+      </div>
+
+      {/* FG ageing — how long finished paint sits before it ships. */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-1.5 text-title-3">
+            <Clock className="h-4 w-4 text-chip-400" /> Finished-goods ageing
+            <span className="text-xs font-normal text-chip-500">
+              waiting ≥{data.fgAgeing.thresholds.amberDays}d flags amber · ≥{data.fgAgeing.thresholds.redDays}d red
+            </span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid grid-cols-3 gap-2 text-center">
+            <div className="rounded-lg border border-healthy-border bg-healthy-surface p-2.5">
+              <div className="text-metric text-healthy">{data.fgAgeing.fresh.units}</div>
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-healthy">Fresh</div>
+            </div>
+            <div className="rounded-lg border border-warning-border bg-warning-surface p-2.5">
+              <div className="text-metric text-warning-foreground">{data.fgAgeing.amber.units}</div>
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-warning-foreground">
+                {data.fgAgeing.thresholds.amberDays}d+
+              </div>
+            </div>
+            <div className="rounded-lg border border-critical-border bg-critical-surface p-2.5">
+              <div className="text-metric text-critical">{data.fgAgeing.red.units}</div>
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-critical">
+                {data.fgAgeing.thresholds.redDays}d+
+              </div>
+            </div>
+          </div>
+          {data.fgAgeing.oldest.filter((u) => u.level !== 'FRESH').length > 0 && (
+            <ul className="divide-y text-sm">
+              {data.fgAgeing.oldest
+                .filter((u) => u.level !== 'FRESH')
+                .map((u) => (
+                  <li key={u.uniqueId} className="flex items-center gap-2 py-1.5">
+                    <span
+                      className={cn('h-2 w-2 shrink-0 rounded-full', u.level === 'RED' ? 'bg-critical' : 'bg-warning')}
+                      aria-hidden="true"
+                    />
+                    <span className="font-mono text-xs text-chip-600">{u.uniqueId}</span>
+                    <span className="min-w-0 flex-1 truncate">{u.productName}</span>
+                    <span className="shrink-0 text-xs text-chip-500">{u.size}</span>
+                    <span
+                      className={cn(
+                        'shrink-0 text-xs font-semibold',
+                        u.level === 'RED' ? 'text-critical' : 'text-brand-amber',
+                      )}
+                    >
+                      {u.ageDays}d
+                    </span>
+                  </li>
+                ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Every dispatched good, batch-wise (window). Litres and kg stay apart. */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-1.5 text-title-3">
+              <Layers className="h-4 w-4 text-chip-400" /> Dispatched by batch
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {data.dispatchedByBatch.length === 0 ? (
+              <p className="text-sm text-chip-500">Nothing dispatched in this window.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-left text-label uppercase text-chip-500">
+                      <th className="pb-2">Batch</th>
+                      <th className="pb-2 text-right">Units</th>
+                      <th className="pb-2 text-right">Volume</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.dispatchedByBatch.map((b) => (
+                      <tr key={b.batchId} className="border-b last:border-0">
+                        <td className="py-2">
+                          <div className="font-medium">{b.batchNumber}</div>
+                          <div className="text-xs text-chip-500">
+                            {b.productName} · {b.department}
+                          </div>
+                        </td>
+                        <td className="py-2 text-right tabular">{b.units}</td>
+                        <td className="py-2 text-right tabular text-xs">
+                          {[b.litres > 0 ? `${b.litres.toLocaleString('en-IN')} L` : null, b.kg > 0 ? `${b.kg.toLocaleString('en-IN')} kg` : null]
+                            .filter(Boolean)
+                            .join(' · ') || '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Per-product rollup (window). */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-1.5 text-title-3">
+              <PackageCheck className="h-4 w-4 text-chip-400" /> Dispatched by product
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {data.dispatchedByProduct.length === 0 ? (
+              <p className="text-sm text-chip-500">Nothing dispatched in this window.</p>
+            ) : (
+              <ul className="divide-y text-sm">
+                {data.dispatchedByProduct.map((p) => (
+                  <li key={p.productName} className="flex items-center gap-2 py-1.5">
+                    <span className="min-w-0 flex-1 truncate font-medium">{p.productName}</span>
+                    <span className="shrink-0 text-xs text-chip-500">{p.units} unit{p.units === 1 ? '' : 's'}</span>
+                    <span className="shrink-0 text-xs tabular text-chip-700">
+                      {[p.litres > 0 ? `${p.litres.toLocaleString('en-IN')} L` : null, p.kg > 0 ? `${p.kg.toLocaleString('en-IN')} kg` : null]
+                        .filter(Boolean)
+                        .join(' · ') || '—'}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
       {/* Recent activity */}

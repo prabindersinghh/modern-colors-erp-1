@@ -85,11 +85,42 @@ export class ProductionOutputService {
       ...(params.batchId ? { batchId: params.batchId } : {}),
       ...(params.confirmed !== undefined ? { confirmed: params.confirmed } : {}),
     };
-    return this.prisma.productionOutput.findMany({
+    const outputs = await this.prisma.productionOutput.findMany({
       where,
       include: outputInclude,
       orderBy: { createdAt: 'desc' },
       take: 100,
+    });
+
+    // Dispatch visibility for the head: how many of THIS output's FG units have left
+    // the factory vs still sitting. Department scoping is already applied by `where`;
+    // the stats only cover outputs the caller may see.
+    const withFg = outputs.filter((o) => o.fgGeneratedAt);
+    if (withFg.length === 0) return outputs.map((o) => ({ ...o, fgStats: null }));
+    const counts = await this.prisma.finishedGood.groupBy({
+      by: ['outputId', 'status'],
+      where: { outputId: { in: withFg.map((o) => o.id) } },
+      _count: { _all: true },
+    });
+    return outputs.map((o) => {
+      if (!o.fgGeneratedAt) return { ...o, fgStats: null };
+      const mine = counts.filter((c) => c.outputId === o.id);
+      const n = (s: string) => mine.find((c) => c.status === s)?._count._all ?? 0;
+      const dispatched = n('DISPATCHED');
+      const scrapped = n('SCRAPPED');
+      const refurbished = n('REFURBISHED');
+      const awaiting = n('GENERATED') + n('READY');
+      return {
+        ...o,
+        fgStats: {
+          total: dispatched + awaiting, // active units; scrapped/refurb originals excluded
+          dispatched,
+          awaiting,
+          scrapped,
+          refurbished,
+          pct: dispatched + awaiting > 0 ? Math.round((dispatched / (dispatched + awaiting)) * 100) : 0,
+        },
+      };
     });
   }
 

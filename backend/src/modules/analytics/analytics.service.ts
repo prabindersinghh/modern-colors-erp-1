@@ -78,8 +78,7 @@ export class AnalyticsService {
       select: { materialName: true, sku: true, balanceKg: true, stockUnit: true },
     });
     // Each alert is a SINGLE material, so its total is one unit — never a cross-unit
-    // blend. `stockUnit` labels it. (The low/critical tiers are numeric thresholds
-    // applied per material regardless of unit — see analytics.constants.)
+    // blend. `stockUnit` labels it.
     const groups = new Map<string, { materialName: string; sku: string | null; stockUnit: string; totalKg: number; unitCount: number }>();
     for (const u of units) {
       const key = u.sku?.trim().toLowerCase() || u.materialName.trim().toLowerCase();
@@ -88,12 +87,37 @@ export class AnalyticsService {
       g.unitCount += 1;
       groups.set(key, g);
     }
+
+    // Admin-set per-material minimums (catalogue) take precedence over the built-in
+    // defaults: LOW below the minimum, CRITICAL below half of it. Materials without a
+    // configured minimum keep today's LOW_STOCK constants — nothing regresses.
+    const skus = [...groups.values()].map((g) => g.sku).filter((s): s is string => !!s);
+    const cat = skus.length
+      ? await this.prisma.masterCatalogueItem.findMany({
+          where: { sku: { in: skus }, minLevel: { not: null } },
+          select: { sku: true, minLevel: true },
+        })
+      : [];
+    const minBySku = new Map(cat.map((c) => [c.sku.toLowerCase(), c.minLevel!]));
+
     const alerts = [...groups.values()]
-      .filter((g) => g.totalKg < LOW_STOCK.LOW_KG)
-      .map((g) => ({
-        ...g,
-        level: (g.totalKg < LOW_STOCK.CRITICAL_KG ? 'CRITICAL' : 'LOW') as StockAlertLevel,
-      }))
+      .map((g) => {
+        const min = g.sku ? (minBySku.get(g.sku.toLowerCase()) ?? null) : null;
+        const level: StockAlertLevel | null =
+          min != null
+            ? g.totalKg < min / 2
+              ? 'CRITICAL'
+              : g.totalKg < min
+                ? 'LOW'
+                : null
+            : g.totalKg < LOW_STOCK.CRITICAL_KG
+              ? 'CRITICAL'
+              : g.totalKg < LOW_STOCK.LOW_KG
+                ? 'LOW'
+                : null;
+        return level ? { ...g, minLevel: min, level } : null;
+      })
+      .filter((a): a is NonNullable<typeof a> => a !== null)
       .sort((a, b) => a.totalKg - b.totalKg);
     return {
       thresholds: { criticalKg: LOW_STOCK.CRITICAL_KG, lowKg: LOW_STOCK.LOW_KG },

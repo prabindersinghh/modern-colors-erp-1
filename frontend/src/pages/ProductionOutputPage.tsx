@@ -167,6 +167,32 @@ export function ProductionOutputPage() {
                   )}
                 </div>
 
+                {/* Dispatch visibility for the head: how much of this output has left
+                    the factory vs still sitting. Server-scoped to their department. */}
+                {o.fgStats && (
+                  <div className="mt-1">
+                    <div className="flex justify-between text-xs text-chip-500">
+                      <span>
+                        <span className="font-semibold text-chip-800">{o.fgStats.dispatched}</span> of {o.fgStats.total}{' '}
+                        dispatched
+                        {o.fgStats.awaiting > 0 ? ` · ${o.fgStats.awaiting} still here` : ''}
+                        {o.fgStats.scrapped > 0 ? ` · ${o.fgStats.scrapped} scrapped` : ''}
+                        {o.fgStats.refurbished > 0 ? ` · ${o.fgStats.refurbished} refurbished` : ''}
+                      </span>
+                      <span className="font-semibold text-chip-800">{o.fgStats.pct}%</span>
+                    </div>
+                    <div
+                      className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-chip-100"
+                      role="progressbar"
+                      aria-valuenow={o.fgStats.pct}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                    >
+                      <div className="h-full rounded-full bg-healthy" style={{ width: `${o.fgStats.pct}%` }} />
+                    </div>
+                  </div>
+                )}
+
                 {/* Explicit Generate → Save → Print for the FG label roll (item 4). */}
                 {o.fgGeneratedAt && (
                   <LabelRollFlow

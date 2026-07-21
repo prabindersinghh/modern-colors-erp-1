@@ -179,6 +179,7 @@ export function CataloguePage() {
                 <TableHead>Category</TableHead>
                 <TableHead>Unit</TableHead>
                 <TableHead>Packaging</TableHead>
+                <TableHead className="whitespace-nowrap">Min / Max stock</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -192,6 +193,9 @@ export function CataloguePage() {
                   <TableCell>{it.category ?? '—'}</TableCell>
                   <TableCell>{it.unit ?? '—'}</TableCell>
                   <TableCell>{it.standardPackaging ?? '—'}</TableCell>
+                  <TableCell>
+                    <MinMaxCell item={it} canEdit={isAdmin} onSaved={refresh} />
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -214,6 +218,95 @@ export function CataloguePage() {
   )
 }
 
+
+/**
+ * Min/max stock thresholds, Admin-editable inline. In the material's OWN unit; they
+ * drive the stock-percentage display and replace the built-in low-stock defaults for
+ * this material. Server validates max > min and audits the change.
+ */
+function MinMaxCell({ item, canEdit, onSaved }: { item: CatalogueItem; canEdit: boolean; onSaved: () => void }) {
+  const [editing, setEditing] = useState(false)
+  const [min, setMin] = useState('')
+  const [max, setMax] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const save = async () => {
+    const minLevel = min.trim() === '' ? null : Number(min)
+    const maxLevel = max.trim() === '' ? null : Number(max)
+    if ((minLevel != null && !(minLevel >= 0)) || (maxLevel != null && !(maxLevel >= 0))) {
+      toast({ variant: 'destructive', title: 'Levels must be zero or more' })
+      return
+    }
+    if (minLevel != null && maxLevel != null && maxLevel <= minLevel) {
+      toast({ variant: 'destructive', title: 'Max must be greater than min' })
+      return
+    }
+    setBusy(true)
+    try {
+      await api.patch(`/catalogue/${item.id}`, { minLevel, maxLevel })
+      toast({ title: 'Stock levels updated', description: item.materialName })
+      setEditing(false)
+      onSaved()
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'Could not update levels', description: err instanceof ApiError ? err.message : '' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (editing) {
+    return (
+      <div className="flex items-center gap-1">
+        <Input
+          autoFocus
+          type="number"
+          min={0}
+          step="any"
+          value={min}
+          onChange={(e) => setMin(e.target.value)}
+          placeholder="min"
+          className="h-7 w-16 text-xs"
+        />
+        <span className="text-xs text-muted-foreground">/</span>
+        <Input
+          type="number"
+          min={0}
+          step="any"
+          value={max}
+          onChange={(e) => setMax(e.target.value)}
+          placeholder="max"
+          className="h-7 w-16 text-xs"
+        />
+        <Button size="sm" className="h-7" onClick={save} disabled={busy}>Save</Button>
+        <Button size="sm" variant="ghost" className="h-7" onClick={() => setEditing(false)}>✕</Button>
+      </div>
+    )
+  }
+
+  const label =
+    item.minLevel != null || item.maxLevel != null
+      ? `${item.minLevel ?? '—'} / ${item.maxLevel ?? '—'}`
+      : null
+
+  return (
+    <div className="flex items-center gap-1.5 text-xs">
+      <span className={label ? 'tabular text-chip-700' : 'text-muted-foreground'}>{label ?? 'not set'}</span>
+      {canEdit && (
+        <button
+          type="button"
+          className="tactile text-[11px] font-medium text-chip-500 underline-offset-2 hover:text-primary hover:underline"
+          onClick={() => {
+            setMin(item.minLevel != null ? String(item.minLevel) : '')
+            setMax(item.maxLevel != null ? String(item.maxLevel) : '')
+            setEditing(true)
+          }}
+        >
+          Edit
+        </button>
+      )}
+    </div>
+  )
+}
 
 /** SKU cell: shows the code + a "Provisional" badge for TMP- entries, with one-click
  * inline edit to replace a provisional code with a real SKU (audited server-side). */
