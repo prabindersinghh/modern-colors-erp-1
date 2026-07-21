@@ -131,7 +131,14 @@ function RequestCard({
   showDepartment: boolean
   onReview?: (itemId: string, body: ReviewBody) => Promise<void>
 }) {
-  const totalReq = request.items.reduce((s, i) => s + i.requestedKg, 0)
+  // Totals are grouped by unit — litres and kilograms are never added together.
+  const requestedByUnit = request.items.reduce<Record<string, number>>((m, i) => {
+    m[i.unit] = Number(((m[i.unit] ?? 0) + i.requestedKg).toFixed(3))
+    return m
+  }, {})
+  const requestedLabel = Object.entries(requestedByUnit)
+    .map(([u, v]) => `${v} ${u}`)
+    .join(' + ')
   const pendingCount = request.items.filter((i) => i.status === 'PENDING').length
   return (
     <Card>
@@ -140,7 +147,7 @@ function RequestCard({
           <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
             {showDepartment && <Badge variant="outline">{request.department}</Badge>}
             <span>{request.items.length} material{request.items.length === 1 ? '' : 's'}</span>
-            <span className="text-muted-foreground">· {totalReq} kg requested</span>
+            <span className="text-muted-foreground">· {requestedLabel} requested</span>
             {onReview && pendingCount > 0 && (
               <Badge variant="secondary">{pendingCount} to action</Badge>
             )}
@@ -188,14 +195,14 @@ function RequestCard({
                     )}
                   </TableCell>
                   <TableCell className="font-mono text-xs">{it.sku ?? '—'}</TableCell>
-                  <TableCell className="text-right">{it.requestedKg} kg</TableCell>
-                  <TableCell className="text-right">{it.approvedKg != null ? `${it.approvedKg} kg` : '—'}</TableCell>
-                  <TableCell className="text-right">{it.issuedKg} kg</TableCell>
+                  <TableCell className="text-right">{it.requestedKg} {it.unit}</TableCell>
+                  <TableCell className="text-right">{it.approvedKg != null ? `${it.approvedKg} ${it.unit}` : '—'}</TableCell>
+                  <TableCell className="text-right">{it.issuedKg} {it.unit}</TableCell>
                   <TableCell><StatusBadge status={it.status} /></TableCell>
                   {onReview && (
                     <TableCell>
                       {it.status === 'PENDING' ? (
-                        <LineActions requestedKg={it.requestedKg} onReview={(body) => onReview(it.id, body)} />
+                        <LineActions requestedKg={it.requestedKg} unit={it.unit} onReview={(body) => onReview(it.id, body)} />
                       ) : isIssuable(it) ? (
                         <Button asChild size="sm" className="h-8 gap-1">
                           <Link to={`/stock?requestItemId=${it.id}`}>
@@ -222,9 +229,11 @@ function RequestCard({
 /** Store's per-line controls: Accept / Partial (KG) / Reject (reason). */
 function LineActions({
   requestedKg,
+  unit,
   onReview,
 }: {
   requestedKg: number
+  unit: string
   onReview: (body: ReviewBody) => Promise<void>
 }) {
   const [mode, setMode] = useState<'idle' | 'partial' | 'reject'>('idle')
@@ -256,7 +265,7 @@ function LineActions({
           className="h-8 w-20"
           autoFocus
         />
-        <span className="text-xs text-muted-foreground">kg</span>
+        <span className="text-xs text-muted-foreground">{unit}</span>
         <Button size="sm" className="h-8" disabled={busy || !(Number(value) > 0 && Number(value) < requestedKg)} onClick={() => run({ action: 'PARTIAL', approvedKg: Number(value) })}>
           <Check className="h-4 w-4" />
         </Button>
@@ -293,13 +302,14 @@ interface DraftLine {
   key: number
   selected: Selected | null
   kg: string
+  unit: 'kg' | 'L' // measure of the amount — litres for liquids like solvents
   batchId: string // Phase 3 — per LINE, so one request can serve several batches
 }
 let lineKeySeq = 1
 
 /** Head-only: build a multi-material request, then submit all lines at once. */
 function NewRequestForm({ onCreated }: { onCreated: () => void }) {
-  const [lines, setLines] = useState<DraftLine[]>([{ key: 0, selected: null, kg: '', batchId: '' }])
+  const [lines, setLines] = useState<DraftLine[]>([{ key: 0, selected: null, kg: '', unit: 'kg', batchId: '' }])
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   // Phase 3 — the head's own recent batches (server scopes to their department).
@@ -322,7 +332,7 @@ function NewRequestForm({ onCreated }: { onCreated: () => void }) {
 
   const setLine = (key: number, patch: Partial<DraftLine>) =>
     setLines((prev) => prev.map((l) => (l.key === key ? { ...l, ...patch } : l)))
-  const addLine = () => setLines((prev) => [...prev, { key: lineKeySeq++, selected: null, kg: '', batchId: '' }])
+  const addLine = () => setLines((prev) => [...prev, { key: lineKeySeq++, selected: null, kg: '', unit: 'kg', batchId: '' }])
   const removeLine = (key: number) =>
     setLines((prev) => (prev.length === 1 ? prev : prev.filter((l) => l.key !== key)))
 
@@ -339,11 +349,12 @@ function NewRequestForm({ onCreated }: { onCreated: () => void }) {
           sku: l.selected!.sku ?? undefined,
           catalogueItemId: l.selected!.catalogueItemId ?? undefined,
           requestedKg: Number(l.kg),
+          unit: l.unit,
           batchId: l.batchId || undefined,
         })),
       })
       toast({ title: 'Request raised', description: `${validLines.length} material${validLines.length === 1 ? '' : 's'} sent to Store.` })
-      setLines([{ key: lineKeySeq++, selected: null, kg: '', batchId: '' }])
+      setLines([{ key: lineKeySeq++, selected: null, kg: '', unit: 'kg', batchId: '' }])
       setNote('')
       onCreated()
     } catch (err) {
@@ -389,7 +400,7 @@ function NewRequestForm({ onCreated }: { onCreated: () => void }) {
             const lineBatch = batches.find((b) => b.id === l.batchId)
             return (
               <div key={l.key} className="space-y-1">
-                <div className="grid gap-2 sm:grid-cols-[24px_minmax(0,1fr)_150px_110px_36px] sm:items-center">
+                <div className="grid gap-2 sm:grid-cols-[24px_minmax(0,1fr)_150px_150px_36px] sm:items-center">
                   <div className="text-xs text-muted-foreground">{i + 1}</div>
                   {l.selected ? (
                     <div className="flex h-9 items-center justify-between rounded-md border bg-muted/40 px-3 text-sm">
@@ -430,14 +441,28 @@ function NewRequestForm({ onCreated }: { onCreated: () => void }) {
                       </option>
                     ))}
                   </select>
-                  <Input
-                    type="number"
-                    min={0}
-                    step="any"
-                    value={l.kg}
-                    onChange={(e) => setLine(l.key, { kg: e.target.value })}
-                    placeholder="kg"
-                  />
+                  {/* Amount + its unit. Litres for liquids (solvents); kg otherwise. */}
+                  <div className="flex gap-1.5">
+                    <Input
+                      type="number"
+                      min={0}
+                      step="any"
+                      value={l.kg}
+                      onChange={(e) => setLine(l.key, { kg: e.target.value })}
+                      placeholder={l.unit}
+                      className="min-w-0 flex-1"
+                    />
+                    <select
+                      value={l.unit}
+                      onChange={(e) => setLine(l.key, { unit: e.target.value as DraftLine['unit'] })}
+                      className="h-9 shrink-0 rounded-md border border-input bg-background px-2 text-sm"
+                      title="Unit — litres for liquids like solvents"
+                      aria-label="Unit"
+                    >
+                      <option value="kg">kg</option>
+                      <option value="L">L</option>
+                    </select>
+                  </div>
                   <Button
                     type="button"
                     variant="ghost"

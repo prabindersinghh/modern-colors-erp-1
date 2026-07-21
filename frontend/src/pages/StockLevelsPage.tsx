@@ -97,8 +97,13 @@ function LevelsTab() {
         </div>
         {data && (
           <div className="shrink-0 text-sm text-muted-foreground">
-            <span className="font-medium text-foreground">{data.grandTotalKg} kg</span> across {data.unitCount} unit
-            {data.unitCount === 1 ? '' : 's'}
+            {/* Totals are shown per unit — kilograms and litres are never summed together. */}
+            <span className="font-medium text-foreground">
+              {data.totalsByUnit.length > 0
+                ? data.totalsByUnit.map((t) => `${t.totalBalance} ${t.unit}`).join(' · ')
+                : '0 kg'}
+            </span>{' '}
+            across {data.unitCount} unit{data.unitCount === 1 ? '' : 's'}
           </div>
         )}
       </div>
@@ -145,7 +150,7 @@ function LevelsTab() {
                               : 'font-semibold text-chip-900'
                           }
                         >
-                          {m.totalBalanceKg} kg
+                          {m.totalBalanceKg} {m.stockUnit}
                         </span>
                       </TableCell>
                       <TableCell className="text-right">{m.unitCount}</TableCell>
@@ -172,7 +177,7 @@ function LevelsTab() {
                                 {fmtDate(u.arrivedAt)} · {u.ageDays}d
                               </span>
                             </TableCell>
-                            <TableCell className="whitespace-nowrap text-right text-sm">{u.balanceKg} kg</TableCell>
+                            <TableCell className="whitespace-nowrap text-right text-sm">{u.balanceKg} {m.stockUnit}</TableCell>
                             <TableCell className="text-right">
                               <Badge variant="outline" className="text-[10px]">{u.status.replace(/_/g, ' ')}</Badge>
                             </TableCell>
@@ -278,7 +283,7 @@ function AgeingTab() {
                       {u.materialName}
                       {u.sku ? <span className="ml-1.5 font-mono text-[11px] text-muted-foreground">{u.sku}</span> : null}
                     </TableCell>
-                    <TableCell className="whitespace-nowrap text-right text-sm">{u.balanceKg} kg</TableCell>
+                    <TableCell className="whitespace-nowrap text-right text-sm">{u.balanceKg} {u.stockUnit}</TableCell>
                     <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{fmtDate(u.arrivedAt)}</TableCell>
                     <TableCell className={`text-right text-sm font-medium ${cls}`}>{u.ageDays}d</TableCell>
                     <TableCell className="truncate text-xs text-muted-foreground">{u.supplier ?? '—'}</TableCell>
@@ -420,9 +425,9 @@ function LedgerTab() {
                     {t.material?.materialName ?? '—'}
                     {t.requestItem ? <Badge variant="outline" className="ml-1 text-[10px]">request</Badge> : null}
                   </TableCell>
-                  <TableCell className="text-right">{t.quantityKg} kg</TableCell>
+                  <TableCell className="text-right">{t.quantityKg} {t.material?.stockUnit ?? 'kg'}</TableCell>
                   <TableCell>{t.department ?? '—'}</TableCell>
-                  <TableCell className="text-right">{t.balanceAfter} kg</TableCell>
+                  <TableCell className="text-right">{t.balanceAfter} {t.material?.stockUnit ?? 'kg'}</TableCell>
                   <TableCell className="text-xs text-muted-foreground">{t.actor?.name ?? '—'}</TableCell>
                 </TableRow>
               ))}

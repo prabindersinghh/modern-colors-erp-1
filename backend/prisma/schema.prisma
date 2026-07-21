@@ -225,7 +225,11 @@ model Material {
   arrivedAt      DateTime?
   scannedAt      DateTime?
 
-  balanceKg Float? // Phase 2 — live remaining stock (KG) for this unit. Init = receivedWeight.
+  balanceKg Float? // Phase 2 — live remaining stock for this unit. Init = receivedWeight.
+  // The measure `balanceKg`/`weight` are denominated in: "kg" or "L". Liquids (solvents)
+  // are litres. Additive, defaults to "kg" so every existing unit is unchanged. The
+  // column keeps its historical name; only the LABEL varies by this field.
+  stockUnit String @default("kg")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -326,6 +330,10 @@ model ProductionRequestItem {
   sku             String?
   catalogueItemId String?
   requestedKg     Float
+  // The unit of requestedKg/approvedKg/issuedKg on this line: "kg" or "L". Additive,
+  // defaults to "kg" so every existing line is unchanged. The *Kg columns keep their
+  // names; this labels them.
+  unit            String            @default("kg")
   status          RequestStatus     @default(PENDING) // PENDING/APPROVED/PARTIAL/REJECTED
   approvedKg      Float? // = requestedKg (accept) or a lower amount (partial)
   rejectionReason String?

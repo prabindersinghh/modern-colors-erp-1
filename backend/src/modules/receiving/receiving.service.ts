@@ -94,12 +94,13 @@ export class ReceivingService {
       where: { scannedAt: { not: null } },
       orderBy: { scannedAt: 'desc' },
       take: n,
-      select: { uniqueId: true, materialName: true, balanceKg: true, scannedAt: true },
+      select: { uniqueId: true, materialName: true, balanceKg: true, stockUnit: true, scannedAt: true },
     });
     return rows.map((m) => ({
       uniqueId: m.uniqueId,
       materialName: m.materialName,
       balanceKg: m.balanceKg,
+      stockUnit: m.stockUnit,
       needsWeight: m.balanceKg == null,
       scannedAt: m.scannedAt,
     }));

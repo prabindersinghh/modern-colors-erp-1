@@ -140,6 +140,7 @@ an operator/admin · **System** = generated/derived by the backend.
 |---|---|---|---|---|
 | `balanceKg` | **Live remaining stock (KG) on this unit** | System | Float? | Seeded from the **PO line's pack weight** (`POLineItem.weight`) at registration; updated in the same DB transaction as every ledger row, with the unit row locked `FOR UPDATE`, so balance and ledger can never drift and can never go negative (I11). `null` = no pack weight known, and such units are blocked from all stock movement. |
 | `receivedWeight` | Actual weighed weight, when someone corrects it | User | Float? | No longer part of the receiving flow — set only via the weight-**correction** endpoint. If stock has already moved on the unit, a correction **shifts** `balanceKg` by the delta rather than overwriting it, so it never erases recorded consumption. |
+| `stockUnit` | Measure of `balanceKg`/`weight` — `kg` or `L` | System | String (default `kg`) | Litres for liquids (solvents), inferred from the PO line's unit text at registration. Additive since 2026-07-21; every existing unit is `kg`. The column keeps its `Kg` name; only the label varies. Stock-level totals are split by unit. |
 
 > **This changed on 2026-07-20.** Receiving used to weigh every unit, and `balanceKg` was
 > initialised from `receivedWeight`. A truckload can be ~2,500 sacks, so weighing was removed
@@ -177,7 +178,8 @@ an operator/admin · **System** = generated/derived by the backend.
 | `requestId` | Parent request | System | UUID | Cascade-deleted with the request |
 | `materialName` | Material requested | User (catalogue pick) | String | Verified against the scanned QR at issue time |
 | `sku` / `catalogueItemId` | Catalogue reference | User | String? / String? | Match key |
-| `requestedKg` | How much the head asked for | User | Float | Display |
+| `requestedKg` | How much the head asked for, in `unit` | User | Float | Display. Column keeps its `Kg` name; `unit` labels it. |
+| `unit` | Measure of `requestedKg`/`approvedKg`/`issuedKg` — `kg` or `L` | User | String (default `kg`) | Liquids (solvents) are requested in litres. Additive since 2026-07-21; every existing line is `kg`. Totals are grouped by unit — L and kg are never summed. |
 | `status` | `PENDING` \| `APPROVED` \| `PARTIAL` \| `REJECTED` | Store | Enum | Set **per line**; drives the parent status |
 | `approvedKg` | What Store approved (= requested, or lower for a partial) | Store | Float? | **Caps** how much may be issued against this line |
 | `rejectionReason` | Why a line was rejected | Store | String? | Shown to the requesting head |

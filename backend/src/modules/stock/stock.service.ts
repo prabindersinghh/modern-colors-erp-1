@@ -19,6 +19,7 @@ const unitSelect = {
   status: true,
   receivedWeight: true,
   balanceKg: true,
+  stockUnit: true, // "kg" or "L" — the measure balanceKg is in (labels the movement UI)
   arrivedAt: true,
   po: { select: { poNumber: true, supplier: true } },
 } satisfies Prisma.MaterialSelect;
@@ -137,6 +138,7 @@ export class StockService {
         materialName: true,
         sku: true,
         balanceKg: true,
+        stockUnit: true,
         arrivedAt: true,
         po: { select: { poNumber: true, supplier: true } },
       },
@@ -149,6 +151,7 @@ export class StockService {
         materialName: u.materialName,
         sku: u.sku,
         balanceKg: u.balanceKg ?? 0,
+        stockUnit: u.stockUnit,
         arrivedAt: u.arrivedAt,
         ageDays: days,
         level: ageingLevelFor(days),
@@ -204,7 +207,7 @@ export class StockService {
     };
     const units = await this.prisma.material.findMany({
       where,
-      select: { uniqueId: true, materialName: true, sku: true, status: true, balanceKg: true, arrivedAt: true },
+      select: { uniqueId: true, materialName: true, sku: true, status: true, balanceKg: true, stockUnit: true, arrivedAt: true },
     });
     const now = new Date();
 
@@ -222,6 +225,7 @@ export class StockService {
       {
         materialName: string;
         sku: string | null;
+        stockUnit: string;
         totalBalanceKg: number;
         unitCount: number;
         units: LevelUnit[];
@@ -231,7 +235,9 @@ export class StockService {
       const key = (u.sku?.trim().toLowerCase() || u.materialName.trim().toLowerCase());
       const g =
         groups.get(key) ??
-        { materialName: u.materialName, sku: u.sku, totalBalanceKg: 0, unitCount: 0, units: [] };
+        // Missing stockUnit is treated as kg (the column default) — defensive, so a legacy
+        // row can never create an "undefined" unit bucket.
+        { materialName: u.materialName, sku: u.sku, stockUnit: u.stockUnit || 'kg', totalBalanceKg: 0, unitCount: 0, units: [] };
       g.totalBalanceKg = Number((g.totalBalanceKg + (u.balanceKg ?? 0)).toFixed(6));
       g.unitCount += 1;
       const days = ageDays(u.arrivedAt, now);
@@ -252,10 +258,25 @@ export class StockService {
     const materials = [...groups.values()].sort((a, b) =>
       a.materialName.localeCompare(b.materialName),
     );
-    const grandTotalKg = Number(
-      materials.reduce((s, m) => s + m.totalBalanceKg, 0).toFixed(6),
-    );
-    return { materials, grandTotalKg, unitCount: units.length };
+
+    // Factory-wide totals are split BY UNIT — kilograms and litres are never added into
+    // one number (the same rule the dispatch analytics enforce). Each entry is one
+    // measure's total across all materials in it.
+    const byUnit = new Map<string, { totalBalance: number; unitCount: number }>();
+    for (const m of materials) {
+      const t = byUnit.get(m.stockUnit) ?? { totalBalance: 0, unitCount: 0 };
+      t.totalBalance = Number((t.totalBalance + m.totalBalanceKg).toFixed(6));
+      t.unitCount += m.unitCount;
+      byUnit.set(m.stockUnit, t);
+    }
+    const totalsByUnit = [...byUnit.entries()]
+      .map(([unit, t]) => ({ unit, ...t }))
+      .sort((a, b) => (a.unit === 'kg' ? -1 : b.unit === 'kg' ? 1 : a.unit.localeCompare(b.unit)));
+
+    // grandTotalKg is retained for compatibility but is now the kilogram-only total, so
+    // it can never silently include litres.
+    const grandTotalKg = totalsByUnit.find((t) => t.unit === 'kg')?.totalBalance ?? 0;
+    return { materials, totalsByUnit, grandTotalKg, unitCount: units.length };
   }
 
   /**
@@ -295,7 +316,7 @@ export class StockService {
         where,
         include: {
           actor: { select: { id: true, name: true } },
-          material: { select: { uniqueId: true, materialName: true, sku: true } },
+          material: { select: { uniqueId: true, materialName: true, sku: true, stockUnit: true } },
           requestItem: { select: { id: true, requestId: true, materialName: true } },
         },
         orderBy: { createdAt: 'desc' },

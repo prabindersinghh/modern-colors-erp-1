@@ -181,7 +181,7 @@ export function StockPage() {
       toast({
         variant: 'destructive',
         title: 'Not enough on this unit',
-        description: `Only ${unit.balanceKg} kg remain on ${unit.uniqueId}.`,
+        description: `Only ${unit.balanceKg} ${unit.stockUnit} remain on ${unit.uniqueId}.`,
       })
       return
     }
@@ -192,7 +192,7 @@ export function StockPage() {
         toast({
           variant: 'destructive',
           title: 'Over the approved amount',
-          description: `Only ${round(remaining)} kg of the approved ${issue.item.approvedKg ?? 0} kg remain on this line.`,
+          description: `Only ${round(remaining)} ${issue.item.unit} of the approved ${issue.item.approvedKg ?? 0} ${issue.item.unit} remain on this line.`,
         })
         return
       }
@@ -219,9 +219,9 @@ export function StockPage() {
       setReviewOpen(false)
       // Brief confirmation, then the camera reopens automatically for the next unit.
       flow.finish(
-        `${TYPE_META[type].label === 'Add' ? 'Added' : TYPE_META[type].label === 'Deduct' ? 'Deducted' : 'Discarded'} ${q} kg ${
+        `${TYPE_META[type].label === 'Add' ? 'Added' : TYPE_META[type].label === 'Deduct' ? 'Deducted' : 'Discarded'} ${q} ${unit.stockUnit} ${
           type === 'ADD' ? 'to' : 'from'
-        } ${unit.uniqueId} · ${res.unit.balanceKg} kg remaining`,
+        } ${unit.uniqueId} · ${res.unit.balanceKg} ${unit.stockUnit} remaining`,
       )
       setUnit(null) // detail screen closes; ScanPanel takes over
       setHistory([])
@@ -291,15 +291,15 @@ export function StockPage() {
               {issue.item.sku ? <span className="text-muted-foreground"> · {issue.item.sku}</span> : null}
             </div>
             <div className="text-muted-foreground">
-              Approved {issue.item.approvedKg ?? 0} kg · issued {issue.item.issuedKg} kg ·{' '}
-              <span className="font-medium text-foreground">{remaining} kg remaining</span>
+              Approved {issue.item.approvedKg ?? 0} {issue.item.unit} · issued {issue.item.issuedKg} {issue.item.unit} ·{' '}
+              <span className="font-medium text-foreground">{remaining} {issue.item.unit} remaining</span>
             </div>
             {/* Proactive FIFO recommendation: scan the oldest unit first. */}
             {fifoHint && (
               <div className="mt-1 flex items-center gap-1.5 rounded-md bg-primary/10 px-2 py-1 text-xs text-primary">
                 <PackageCheck className="h-3.5 w-3.5 shrink-0" />
                 Recommended: scan <span className="font-mono font-semibold">{fifoHint.uniqueId}</span> first
-                (oldest, {fifoHint.balanceKg} kg, {fifoHint.ageDays}d)
+                (oldest, {fifoHint.balanceKg} {issue.item.unit}, {fifoHint.ageDays}d)
               </div>
             )}
             <Button variant="ghost" size="sm" className="mt-1 h-7 px-0 text-xs" onClick={clearIssue}>
@@ -344,7 +344,7 @@ export function StockPage() {
                 icon={false}
                 className="shrink-0 whitespace-nowrap"
               >
-                {unit.balanceKg} kg on unit
+                {unit.balanceKg} {unit.stockUnit} on unit
               </SeverityBadge>
             </CardTitle>
           </CardHeader>
@@ -371,7 +371,7 @@ export function StockPage() {
                       {unit.fifo.recommended.arrivedAt
                         ? new Date(unit.fifo.recommended.arrivedAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
                         : '—'}
-                      , {unit.fifo.recommended.balanceKg} kg, {unit.fifo.recommended.ageDays} days old) has been in stock
+                      , {unit.fifo.recommended.balanceKg} {unit.stockUnit}, {unit.fifo.recommended.ageDays} days old) has been in stock
                       longer. Consider using it first.
                       {unit.fifo.olderUnits.length > 1 ? ` (+${unit.fifo.olderUnits.length - 1} more older)` : ''}
                     </div>
@@ -407,7 +407,9 @@ export function StockPage() {
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label htmlFor="qty">
-                  {issue && type === 'DEDUCT' ? 'Actual quantity issued (kg)' : 'Quantity (kg)'}
+                  {issue && type === 'DEDUCT'
+                    ? `Actual quantity issued (${issue.item.unit})`
+                    : `Quantity (${unit.stockUnit})`}
                 </Label>
                 <Input
                   id="qty"
@@ -424,11 +426,11 @@ export function StockPage() {
                     from what was approved. Pre-filled, but freely editable within caps. */}
                 {issue && type === 'DEDUCT' && (
                   <p className="text-xs text-muted-foreground">
-                    Approved {issue.item.approvedKg ?? 0} kg · already issued {issue.item.issuedKg} kg ·{' '}
+                    Approved {issue.item.approvedKg ?? 0} {issue.item.unit} · already issued {issue.item.issuedKg} {issue.item.unit} ·{' '}
                     <span className="font-medium text-foreground">
-                      {round(Math.max(0, (issue.item.approvedKg ?? 0) - issue.item.issuedKg))} kg remaining
+                      {round(Math.max(0, (issue.item.approvedKg ?? 0) - issue.item.issuedKg))} {issue.item.unit} remaining
                     </span>
-                    . Enter what you actually weighed out.
+                    . Enter what you actually issued.
                   </p>
                 )}
               </div>
@@ -476,11 +478,11 @@ export function StockPage() {
                   {history.map((h) => (
                     <li key={h.id} className="flex items-center justify-between px-3 py-1.5">
                       <span className={TYPE_META[h.type].cls}>
-                        {TYPE_META[h.type].label} {h.quantityKg} kg
+                        {TYPE_META[h.type].label} {h.quantityKg} {unit.stockUnit}
                         {h.department ? ` · ${h.department}` : ''}
                       </span>
                       <span className="text-muted-foreground">
-                        → {h.balanceAfter} kg · {h.createdAt.slice(0, 16).replace('T', ' ')}
+                        → {h.balanceAfter} {unit.stockUnit} · {h.createdAt.slice(0, 16).replace('T', ' ')}
                       </span>
                     </li>
                   ))}
@@ -538,6 +540,8 @@ function IssueReviewDialog({
   onConfirm: () => void
 }) {
   const meta = TYPE_META[type]
+  const uom = unit.stockUnit // measure of this unit's balance ("kg" or "L")
+  const lineUom = issue?.item.unit ?? uom // measure of the request line's amounts
   const balanceAfter =
     type === 'ADD' ? round(unit.balanceKg + quantityKg) : round(unit.balanceKg - quantityKg)
   const approved = issue?.item.approvedKg ?? null
@@ -563,7 +567,7 @@ function IssueReviewDialog({
             value={
               <span className={`text-base font-semibold ${meta.cls}`}>
                 {type === 'ADD' ? '+' : '−'}
-                {quantityKg} kg
+                {quantityKg} {uom}
               </span>
             }
           />
@@ -571,7 +575,7 @@ function IssueReviewDialog({
             label="Balance on unit"
             value={
               <span>
-                {unit.balanceKg} kg → <span className="font-semibold">{balanceAfter} kg</span>
+                {unit.balanceKg} {uom} → <span className="font-semibold">{balanceAfter} {uom}</span>
               </span>
             }
           />
@@ -583,8 +587,8 @@ function IssueReviewDialog({
           <p className="mt-3 flex items-start gap-2 rounded-md border border-warning-border bg-warning-surface p-2.5 text-xs text-warning-foreground">
             <AlertTriangle className="mt-px h-4 w-4 shrink-0" />
             <span>
-              This differs from the {remainingBefore} kg remaining on the approved line
-              (approved {approved} kg). The actual amount above is what will be recorded.
+              This differs from the {remainingBefore} {lineUom} remaining on the approved line
+              (approved {approved} {lineUom}). The actual amount above is what will be recorded.
             </span>
           </p>
         )}
@@ -595,7 +599,7 @@ function IssueReviewDialog({
             <AlertTriangle className="mt-px h-4 w-4 shrink-0" />
             <span>
               Older stock available — <b>{unit.fifo.recommended.uniqueId}</b> (
-              {unit.fifo.recommended.balanceKg} kg, {unit.fifo.recommended.ageDays} days old). You can
+              {unit.fifo.recommended.balanceKg} {uom}, {unit.fifo.recommended.ageDays} days old). You can
               still proceed.
             </span>
           </p>

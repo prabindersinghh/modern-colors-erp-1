@@ -8,6 +8,18 @@ const SEQ = 'material_unique_seq';
 
 type PoWithLines = PurchaseOrder & { lineItems: POLineItem[] };
 
+/**
+ * Whether a unit's stock is measured in litres or kilograms, inferred from the PO line's
+ * unit text. Liquids (solvents) arrive stated in litres; everything else defaults to kg.
+ * Best-effort — a head can still request the material in the right unit regardless, and
+ * the stored balance is the same number either way (only the label differs).
+ */
+export function deriveStockUnit(unitText: string | null | undefined): string {
+  return /^\s*(l|lt|ltr|ltrs|litre|litres|liter|liters)\b\.?/i.test(unitText ?? '')
+    ? 'L'
+    : 'kg';
+}
+
 @Injectable()
 export class MaterialService implements OnModuleInit {
   constructor(
@@ -71,6 +83,7 @@ export class MaterialService implements OnModuleInit {
             unit: line.unit,
             weight: line.weight,
             balanceKg: openingBalance,
+            stockUnit: deriveStockUnit(line.unit),
             status: MaterialStatus.REGISTERED,
           },
         });

@@ -90,6 +90,8 @@ export interface Material {
   batchNumber: string | null
   unit: string | null
   weight: number | null
+  /** Measure of balanceKg — "kg" or "L" (litres for liquids like solvents). */
+  stockUnit: string
   status: MaterialStatus
   /** Manual receiving weight. Historical only — receiving no longer weighs. */
   receivedWeight: number | null
@@ -141,6 +143,8 @@ export interface ProductionRequestItem {
   sku: string | null
   catalogueItemId: string | null
   requestedKg: number
+  /** Unit of requestedKg/approvedKg/issuedKg — "kg" or "L" (litres for liquids). */
+  unit: string
   status: RequestStatus
   approvedKg: number | null
   rejectionReason: string | null
@@ -194,6 +198,8 @@ export interface StockUnit {
   status: MaterialStatus
   receivedWeight: number | null
   balanceKg: number
+  /** Measure of balanceKg — "kg" or "L". Labels the movement UI. */
+  stockUnit: string
   arrivedAt: string | null
   po?: { poNumber: string | null; supplier: string | null }
   fifo?: FifoContext
@@ -202,7 +208,7 @@ export interface StockUnit {
 export type AgeingLevel = 'FRESH' | 'AMBER' | 'RED'
 export interface AgeingStock {
   thresholds: { amberDays: number; redDays: number }
-  units: { uniqueId: string; materialName: string; sku: string | null; balanceKg: number; arrivedAt: string | null; ageDays: number; level: AgeingLevel }[]
+  units: { uniqueId: string; materialName: string; sku: string | null; balanceKg: number; stockUnit: string; arrivedAt: string | null; ageDays: number; level: AgeingLevel }[]
   amberCount: number
   redCount: number
   oldestAgeDays: number
@@ -219,7 +225,7 @@ export interface StockTransaction {
   note: string | null
   createdAt: string
   actor?: { id: string; name: string }
-  material?: { uniqueId: string; materialName: string; sku: string | null }
+  material?: { uniqueId: string; materialName: string; sku: string | null; stockUnit?: string }
   requestItem?: { id: string; requestId: string; materialName: string } | null
 }
 
@@ -227,6 +233,8 @@ export interface StockTransaction {
 export interface StockLevelMaterial {
   materialName: string
   sku: string | null
+  /** Measure of totalBalanceKg — "kg" or "L". */
+  stockUnit: string
   totalBalanceKg: number
   unitCount: number
   // Oldest-first (FIFO order), each with received date + age + ageing level.
@@ -241,6 +249,9 @@ export interface StockLevelMaterial {
 }
 export interface StockLevels {
   materials: StockLevelMaterial[]
+  /** Factory-wide totals, one per measure — litres and kilograms are never summed together. */
+  totalsByUnit: { unit: string; totalBalance: number; unitCount: number }[]
+  /** Kilogram-only total (retained for compatibility). */
   grandTotalKg: number
   unitCount: number
 }
@@ -474,6 +485,7 @@ export interface StockAgeingRow {
   materialName: string
   sku: string | null
   balanceKg: number
+  stockUnit: string
   arrivedAt: string | null
   ageDays: number
   level: AgeingLevel

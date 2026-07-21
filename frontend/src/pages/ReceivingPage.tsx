@@ -34,6 +34,7 @@ interface RecentReceipt {
   uniqueId: string
   materialName: string
   balanceKg: number | null
+  stockUnit: string
   needsWeight: boolean
   scannedAt: string | null
 }
@@ -73,7 +74,7 @@ export function ReceivingPage() {
           return rows.map((r) => ({
             ok: true,
             title: `${r.uniqueId} received`,
-            detail: `${r.materialName} · ${r.balanceKg != null ? `${r.balanceKg} kg` : 'no weight'}`,
+            detail: `${r.materialName} · ${r.balanceKg != null ? `${r.balanceKg} ${r.stockUnit}` : 'no weight'}`,
           }))
         })
       })
@@ -122,7 +123,7 @@ export function ReceivingPage() {
         device: DEVICE,
       })
       const m = res.material
-      const kg = m.balanceKg != null ? `${m.balanceKg} kg` : 'no weight'
+      const kg = m.balanceKg != null ? `${m.balanceKg} ${m.stockUnit}` : 'no weight'
 
       if (res.alreadyScanned) {
         return push({

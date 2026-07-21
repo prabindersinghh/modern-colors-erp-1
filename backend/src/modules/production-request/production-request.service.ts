@@ -126,6 +126,7 @@ export class ProductionRequestService {
             sku: it.sku?.trim() || null,
             catalogueItemId: it.catalogueItemId || null,
             requestedKg: it.requestedKg,
+            unit: it.unit === 'L' ? 'L' : 'kg',
             status: RequestStatus.PENDING,
             batchId: it.batchId || null,
           })),
