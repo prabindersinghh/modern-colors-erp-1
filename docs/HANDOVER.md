@@ -53,8 +53,14 @@ a future auditor sees why the log starts where it does rather than suspecting ta
 
 - [ ] Confirm the R2 token has **Object Read & Write** on `modern-colors-storage`
       → `GET /api/health/storage?deep=1` (Store/Admin login) returns `"ok": true`
-- [ ] Confirm all six logins work and **change every default password**
-      (`ChangeMe123!` is published in [`PHASE2_UAT.md`](./PHASE2_UAT.md))
+- [ ] **Change every default password.** `ChangeMe123!` is published in
+      [`PHASE2_UAT.md`](./PHASE2_UAT.md). The Admin's **Users** tab flags any login
+      still using it — reset those, or deactivate the seeded heads you are not using
+      and create your own.
+- [ ] Decide which logins the factory actually wants. The Admin can create Production
+      Head and Dispatch logins himself in **Users**; rows are marked *"Came with the
+      system"* or *"Created by you"*. Logins are never deleted, only deactivated, so
+      history stays attributed.
 - [ ] Decide: is the Master Catalogue still demo data, or the factory's real
       ~500–600 SKUs? This decides `--flush-catalogue` below.
 - [ ] Enter the factory's own Claude API key in **Settings**
@@ -62,8 +68,8 @@ a future auditor sees why the log starts where it does rather than suspecting ta
 
 ## The flush
 
-Wipes all transactional data. Keeps the 7 users, the encrypted Claude key, and (by
-default) the catalogue.
+Wipes all transactional data. Keeps **every user account**, the encrypted Claude key,
+and (by default) the catalogue.
 
 ```bash
 cd backend

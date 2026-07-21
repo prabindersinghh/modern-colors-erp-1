@@ -11,6 +11,61 @@ intent, the entry below reflects what the diff actually changed.
 
 ---
 
+## 21 July 2026 (evening) — The factory owner manages his own logins
+
+| Time | Commit | Change |
+|---|---|---|
+| 18:16 | `28ad071` | **Admin can create production head and dispatch logins** |
+| 21:58 | `26bc9f7` | Users tab made readable on a phone |
+| 23:02 | `c4bafed` | Seeded logins labelled as such; renaming a login |
+
+Until now every login came from a seed script, so adding a second PU head meant a
+developer. The Admin (Oversight) can now create Production Head and Dispatch logins
+himself, reset their passwords, and deactivate or reactivate them.
+
+**This did not make Oversight a write role.** User management is a *second named door*,
+built the same way as the FG correction door: its own controller, its own guard
+(`UserAdminGuard`), `@AllowUserAdmin()` on each handler, and no `@Roles` anywhere on it.
+`user-admin.spec.ts` sweeps every controller in the app and asserts that OVERSIGHT still
+appears in no mutating `@Roles` list, and that the complete set of doors is exactly the
+six user-admin handlers plus `FgCorrectionsController.correct`. Adding a seventh
+mutating route for Oversight anywhere else fails that test.
+
+What the server enforces, not just the form:
+
+- **No escalation.** Only `PRODUCTION_HEAD` and `DISPATCH` can be minted. The pre-existing
+  Store creation path accepted any role and was capped at the same time.
+- **The domain is ours.** The form submits a local part only; the server appends
+  `@moderncolours.local`. A smuggled `evil@gmail.com` is rejected by the charset rule.
+- **Heads need a department; Dispatch is department-less by force**, whatever is posted.
+- **Nothing is ever deleted.** Removing a login deactivates it, so its history stays
+  attributed. Store and Admin logins cannot be deactivated at all — locking the factory
+  out would be unrecoverable.
+- **No password or hash is logged, returned, or written to the audit trail.** Tests
+  assert the audit entry contains neither.
+
+Multiple heads in one department **share that department's data and can continue each
+other's batches**, while every action stays recorded under the individual login —
+`multi-head.spec.ts` proves the scoping layer cannot tell a seeded head from a created
+one, and `GET /analytics/my` breaks activity down per person.
+
+**Seeded logins are now labelled.** The six accounts that came with the system
+(`admin@`, `oversight@`, `pu@`, `enamel@`, `powder@`, `dispatch@`) looked exactly like
+ones the owner creates himself. Each row in the Users tab now reads *"Came with the
+system"* or *"Created by you"*, and a seeded login still on a published default password
+is flagged so it gets reset or retired. The check is a bcrypt compare done server-side
+against seeded accounts only — created logins cannot hold a default, because
+`passwordProblem()` rejects `ChangeMe123!` at creation and at reset.
+
+**Renaming** (`POST /admin/users/:id/rename`, audited as `USER_RENAMED`) changes the
+display name and nothing else — never the email, role, department or active state — and
+refuses the protected Store/Admin accounts like every other action on that door.
+`pu2@moderncolours.local`, created while verifying the multi-head flow, was renamed to
+*"TEST PU Login — not for production use"* and left deactivated: its history stays intact
+and it remains the standing proof that department handover works.
+
+---
+
 ## 21 July 2026 — Analytics for the owner and for Dispatch
 
 | Time | Commit | Change |
