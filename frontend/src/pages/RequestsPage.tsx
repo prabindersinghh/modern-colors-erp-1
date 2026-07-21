@@ -21,6 +21,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { EmptyState } from '@/components/common/EmptyState'
 import { AnimatedNumber } from '@/components/ui/animated-number'
 import { toast } from '@/hooks/useToast'
+import { useAutoRefresh } from '@/lib/refresh'
 
 export const STATUS_STYLE: Record<RequestStatus, { label: string; cls: string }> = {
   PENDING: { label: 'Pending', cls: 'bg-warning-surface text-warning-foreground border-warning-border' },
@@ -57,6 +58,9 @@ export function RequestsPage() {
     api.get<RequestSummary>('/production-requests/summary').then(setSummary).catch(() => {})
   }, [])
   useEffect(() => void load(), [load])
+  // The Store's pending inbox is what everyone else is waiting on — keep it moving
+  // while visible. Heads' request lists refresh on focus/mutation only.
+  useAutoRefresh(load, { intervalMs: isStore ? 20_000 : undefined })
 
   const reviewLine = async (reqId: string, itemId: string, body: ReviewBody) => {
     try {

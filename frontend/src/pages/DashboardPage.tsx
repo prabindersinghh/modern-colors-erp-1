@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useAutoRefresh } from '@/lib/refresh'
 import { FileText, PackageCheck, ScanLine, Scale, CheckCircle2 } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { DashboardSummary } from '@/types/api'
@@ -19,6 +20,7 @@ export function DashboardPage() {
       .catch((e) => setError(e.message))
   }
   useEffect(load, [])
+  useAutoRefresh(load)
 
   if (error) return <ErrorState message={error} onRetry={load} />
   if (!data) return <LoadingSkeleton />

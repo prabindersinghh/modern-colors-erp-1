@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   Boxes,
@@ -20,6 +20,7 @@ import { MovementTrend, CategoryBars } from '@/components/charts/Charts'
 import { WindowToggle } from '@/components/charts/WindowToggle'
 import { LowStockAlerts, AgeingStockPanel, Kpi, ChartCard, Empty, DashboardSkeleton } from '@/components/dashboard/parts'
 import { formatUnitTotals } from '@/lib/units'
+import { useAutoRefresh } from '@/lib/refresh'
 
 export function StoreDashboardPage() {
   const [days, setDays] = useState(30)
@@ -27,10 +28,15 @@ export function StoreDashboardPage() {
   const [provisional, setProvisional] = useState(0)
   const [error, setError] = useState(false)
 
+  const load = useCallback(
+    () => api.get<StoreAnalytics>(`/analytics/store?days=${days}`).then(setData).catch(() => setError(true)),
+    [days],
+  )
   useEffect(() => {
     setData(null)
-    api.get<StoreAnalytics>(`/analytics/store?days=${days}`).then(setData).catch(() => setError(true))
-  }, [days])
+    void load()
+  }, [load])
+  useAutoRefresh(load)
 
   useEffect(() => {
     api.get<{ count: number }>('/catalogue/provisional-count').then((r) => setProvisional(r.count)).catch(() => {})

@@ -12,6 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { EmptyState } from '@/components/common/EmptyState'
 import { Modal } from '@/components/common/Modal'
 import { toast } from '@/hooks/useToast'
+import { useAutoRefresh } from '@/lib/refresh'
 
 export const BATCH_STATUS: Record<BatchStatus, { label: string; cls: string }> = {
   OPEN: { label: 'Open', cls: 'bg-healthy/15 text-healthy border-healthy/30' },
@@ -43,6 +44,9 @@ export function BatchesPage() {
     [],
   )
   useEffect(() => void load(''), [load])
+  // Dispatch progress moves without any action from the head — keep the bars live
+  // while the tab is visible; focus/reconnect/mutations refresh instantly.
+  useAutoRefresh(() => load(search), { intervalMs: 20_000 })
 
   return (
     <div className="space-y-4">

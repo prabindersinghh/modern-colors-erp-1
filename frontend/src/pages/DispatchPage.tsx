@@ -27,6 +27,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { EmptyState } from '@/components/common/EmptyState'
 import { ConfirmationDialog } from '@/components/common/ConfirmationDialog'
 import { toast } from '@/hooks/useToast'
+import { useAutoRefresh } from '@/lib/refresh'
 
 const DEVICE = 'web-client'
 
@@ -65,6 +66,10 @@ export function DispatchPage() {
     setHistory(h)
   }, [])
   useEffect(() => void load(), [load])
+  // Mid-run currency: another dispatcher (or a bulk action) can move a batch while this
+  // phone is scanning. Poll only while the scan tab is open and visible; scans of THIS
+  // session already refetch instantly via the mutation bus.
+  useAutoRefresh(load, { intervalMs: 12_000, enabled: tab === 'scan' })
 
   const push = (r: RapidScanResult) => {
     setRecent((prev) => [r, ...prev].slice(0, 12))
@@ -341,6 +346,7 @@ function ReturnsTab() {
     api.get<FinishedGood[]>('/finished-goods/returns/history').then(setHistory).catch(() => {})
   }, [])
   useEffect(() => void loadHistory(), [loadHistory])
+  useAutoRefresh(loadHistory)
 
   const lookup = async (raw: string) => {
     const id = extractUniqueId(raw)

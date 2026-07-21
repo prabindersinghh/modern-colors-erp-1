@@ -1,3 +1,5 @@
+import { notifyMutation } from '@/lib/refresh'
+
 // Typed REST client for the Modern Colours backend.
 // JWT is stored in localStorage; a 401 clears it and notifies listeners so the
 // auth layer can redirect to the login screen.
@@ -108,54 +110,79 @@ async function doFetch(path: string, init: RequestInit, opts: RequestOptions = {
   )
 }
 
+/** A successful mutation notifies the refresh bus, so every mounted screen of THIS
+ *  user refetches immediately — no page has to hand-wire "refetch after save". */
+function afterMutation<T>(path: string, p: Promise<T>): Promise<T> {
+  return p.then((data) => {
+    try {
+      notifyMutation(path)
+    } catch {
+      /* refresh is best-effort — a listener error must never fail the mutation */
+    }
+    return data
+  })
+}
+
 export const api = {
   get: <T>(path: string, opts?: RequestOptions) =>
     doFetch(path, { headers: authHeaders() }, { retries: 2, ...opts }).then((r) => parse<T>(r)),
 
   post: <T>(path: string, body?: unknown, opts?: RequestOptions) =>
-    doFetch(
+    afterMutation(
       path,
-      {
-        method: 'POST',
-        headers: authHeaders({ 'Content-Type': 'application/json' }),
-        body: body !== undefined ? JSON.stringify(body) : undefined,
-      },
-      opts,
-    ).then((r) => parse<T>(r)),
+      doFetch(
+        path,
+        {
+          method: 'POST',
+          headers: authHeaders({ 'Content-Type': 'application/json' }),
+          body: body !== undefined ? JSON.stringify(body) : undefined,
+        },
+        opts,
+      ).then((r) => parse<T>(r)),
+    ),
 
   put: <T>(path: string, body?: unknown, opts?: RequestOptions) =>
-    doFetch(
+    afterMutation(
       path,
-      {
-        method: 'PUT',
-        headers: authHeaders({ 'Content-Type': 'application/json' }),
-        body: body !== undefined ? JSON.stringify(body) : undefined,
-      },
-      opts,
-    ).then((r) => parse<T>(r)),
+      doFetch(
+        path,
+        {
+          method: 'PUT',
+          headers: authHeaders({ 'Content-Type': 'application/json' }),
+          body: body !== undefined ? JSON.stringify(body) : undefined,
+        },
+        opts,
+      ).then((r) => parse<T>(r)),
+    ),
 
   patch: <T>(path: string, body?: unknown, opts?: RequestOptions) =>
-    doFetch(
+    afterMutation(
       path,
-      {
-        method: 'PATCH',
-        headers: authHeaders({ 'Content-Type': 'application/json' }),
-        body: body !== undefined ? JSON.stringify(body) : undefined,
-      },
-      opts,
-    ).then((r) => parse<T>(r)),
+      doFetch(
+        path,
+        {
+          method: 'PATCH',
+          headers: authHeaders({ 'Content-Type': 'application/json' }),
+          body: body !== undefined ? JSON.stringify(body) : undefined,
+        },
+        opts,
+      ).then((r) => parse<T>(r)),
+    ),
 
   del: <T>(path: string, opts?: RequestOptions) =>
-    doFetch(path, { method: 'DELETE', headers: authHeaders() }, opts).then((r) => parse<T>(r)),
+    afterMutation(path, doFetch(path, { method: 'DELETE', headers: authHeaders() }, opts).then((r) => parse<T>(r))),
 
   // Uploads: no auto-retry (would risk a duplicate PO) but a longer timeout for large
   // phone photos over slow mobile links.
   postForm: <T>(path: string, form: FormData, opts?: RequestOptions) =>
-    doFetch(
+    afterMutation(
       path,
-      { method: 'POST', headers: authHeaders(), body: form }, // browser sets multipart boundary
-      { timeoutMs: 60_000, ...opts },
-    ).then((r) => parse<T>(r)),
+      doFetch(
+        path,
+        { method: 'POST', headers: authHeaders(), body: form }, // browser sets multipart boundary
+        { timeoutMs: 60_000, ...opts },
+      ).then((r) => parse<T>(r)),
+    ),
 
   // Wake a possibly-cold backend before the user acts (fire-and-forget).
   warmUp: () =>

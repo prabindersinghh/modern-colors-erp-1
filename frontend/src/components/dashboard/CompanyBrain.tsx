@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Sankey, Tooltip, ResponsiveContainer, Layer, Rectangle } from 'recharts'
 import { ArrowRight, Boxes, FlaskConical, PackageCheck, Truck, TrendingDown } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { Department, FactoryFlow, UnitTotal } from '@/types/api'
 import { formatUnitTotals } from '@/lib/units'
+import { useAutoRefresh } from '@/lib/refresh'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { AnimatedNumber } from '@/components/ui/animated-number'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -246,14 +247,20 @@ export function CompanyBrain() {
   const [error, setError] = useState(false)
   const [picked, setPicked] = useState<FlowNode | null>(null)
 
+  const load = useCallback(
+    () =>
+      api
+        .get<FactoryFlow>(`/analytics/flow?from=${range.from}&to=${range.to}`)
+        .then(setFlow)
+        .catch(() => setError(true)),
+    [range.from, range.to],
+  )
   useEffect(() => {
-    setFlow(null)
+    setFlow(null) // skeleton only when the range actually changes
     setError(false)
-    api
-      .get<FactoryFlow>(`/analytics/flow?from=${range.from}&to=${range.to}`)
-      .then(setFlow)
-      .catch(() => setError(true))
-  }, [range.from, range.to])
+    void load()
+  }, [load])
+  useAutoRefresh(load)
 
   const graph = useMemo(() => (flow ? buildGraph(flow) : null), [flow])
 

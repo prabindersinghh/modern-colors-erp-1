@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ClipboardList, TrendingDown, PackageCheck } from 'lucide-react'
 import { api } from '@/lib/api'
@@ -13,6 +13,7 @@ import { STATUS_COLOR } from '@/components/charts/chartTheme'
 import { WindowToggle } from '@/components/charts/WindowToggle'
 import { Kpi, ChartCard, Empty, DashboardSkeleton } from '@/components/dashboard/parts'
 import { formatUnitTotals, kgOnly, sumByUnit } from '@/lib/units'
+import { useAutoRefresh } from '@/lib/refresh'
 
 const STATUSES: RequestStatus[] = ['PENDING', 'IN_PROGRESS', 'APPROVED', 'PARTIAL', 'REJECTED']
 const DEPT_LABEL: Record<string, string> = { PU: 'PU', ENAMEL: 'Enamel', POWDER: 'Powder' }
@@ -23,10 +24,16 @@ export function HeadDashboardPage() {
   const [data, setData] = useState<MyAnalytics | null>(null)
   const [error, setError] = useState(false)
 
+  const load = useCallback(
+    () => api.get<MyAnalytics>(`/analytics/my?days=${days}`).then(setData).catch(() => setError(true)),
+    [days],
+  )
   useEffect(() => {
     setData(null)
-    api.get<MyAnalytics>(`/analytics/my?days=${days}`).then(setData).catch(() => setError(true))
-  }, [days])
+    void load()
+  }, [load])
+  // The head WATCHES dispatch progress from here — keep it moving while visible.
+  useAutoRefresh(load, { intervalMs: 20_000 })
 
   if (error) return <EmptyState title="Could not load dashboard" description="Please refresh to try again." />
   if (!data) return <DashboardSkeleton title="My department" />

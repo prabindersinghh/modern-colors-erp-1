@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { CheckCircle2, XCircle, HardDrive, KeyRound, BookMarked, Eraser, ShieldAlert } from 'lucide-react'
 import { api } from '@/lib/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/common/EmptyState'
 import { cn } from '@/lib/utils'
+import { useAutoRefresh } from '@/lib/refresh'
 
 interface Readiness {
   generatedAt: string
@@ -48,9 +49,9 @@ export function HandoverReadiness() {
   const [data, setData] = useState<Readiness | null>(null)
   const [error, setError] = useState(false)
 
-  useEffect(() => {
-    api.get<Readiness>('/handover/readiness').then(setData).catch(() => setError(true))
-  }, [])
+  const load = useCallback(() => api.get<Readiness>('/handover/readiness').then(setData).catch(() => setError(true)), [])
+  useEffect(() => void load(), [load])
+  useAutoRefresh(load)
 
   if (error) return <EmptyState title="Could not load readiness" description="Please refresh to try again." />
   if (!data) {

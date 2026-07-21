@@ -17,6 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { EmptyState } from '@/components/common/EmptyState'
 import { formatUnitTotals } from '@/lib/units'
+import { useAutoRefresh } from '@/lib/refresh'
 import { cn } from '@/lib/utils'
 
 const TYPE_CLS: Record<StockTxnType, string> = {
@@ -88,6 +89,7 @@ function LevelsTab() {
     const t = setTimeout(() => load(q), 250)
     return () => clearTimeout(t)
   }, [q, load])
+  useAutoRefresh(() => load(q))
 
   return (
     <div className="space-y-3">
@@ -238,6 +240,10 @@ function AgeingTab() {
     }, 250)
     return () => clearTimeout(t)
   }, [q])
+  // Silent freshness — no loading flash on focus/reconnect/mutation refetches.
+  useAutoRefresh(() =>
+    api.get<StockAgeing>(`/stock/ageing${q ? `?q=${encodeURIComponent(q)}` : ''}`).then(setData).catch(() => {}),
+  )
 
   const rows = (data?.units ?? []).filter((u) => (filter === 'ALL' ? true : u.level === filter))
 
@@ -390,6 +396,7 @@ function LedgerTab() {
     const t = setTimeout(load, 250)
     return () => clearTimeout(t)
   }, [load])
+  useAutoRefresh(load)
 
   // Reset to page 1 when a filter changes.
   useEffect(() => setPage(1), [type, department, unitId])

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useAutoRefresh } from '@/lib/refresh'
 import { ScrollText } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { AuditEntry } from '@/types/api'
@@ -15,6 +16,7 @@ export function AuditPage() {
   useEffect(() => {
     api.get<AuditEntry[]>('/audit?take=200').then(setRows).catch(() => {})
   }, [])
+  useAutoRefresh(() => api.get<AuditEntry[]>('/audit?take=200').then(setRows).catch(() => {}))
 
   const shown = filter
     ? rows.filter(

@@ -106,7 +106,7 @@ export function LogoLockup({
 
 /** The company tagline. Single source of truth — used by the strip, the login
  *  screen and the browser title. */
-export const TAGLINE = 'Every colour, accounted for.'
+export const TAGLINE = 'Colors that last forever.'
 
 /**
  * The tagline strip — a slow, continuous scroll of the company tagline.

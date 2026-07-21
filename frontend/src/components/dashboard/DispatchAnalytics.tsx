@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Truck, PackageCheck, Clock, Timer, Undo2, Layers } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { DispatchAnalytics as Data } from '@/types/api'
@@ -11,6 +11,7 @@ import { DEPT_COLOR } from '@/components/charts/chartTheme'
 import { WindowToggle } from '@/components/charts/WindowToggle'
 import { ChartCard, Empty } from '@/components/dashboard/parts'
 import { cn } from '@/lib/utils'
+import { useAutoRefresh } from '@/lib/refresh'
 
 /**
  * Dispatch analytics.
@@ -29,11 +30,16 @@ export function DispatchAnalytics({ compact = false }: { compact?: boolean }) {
   const [data, setData] = useState<Data | null>(null)
   const [error, setError] = useState(false)
 
+  const load = useCallback(
+    () => api.get<Data>(`/analytics/dispatch?days=${days}`).then(setData).catch(() => setError(true)),
+    [days],
+  )
   useEffect(() => {
     setData(null)
     setError(false)
-    api.get<Data>(`/analytics/dispatch?days=${days}`).then(setData).catch(() => setError(true))
-  }, [days])
+    void load()
+  }, [load])
+  useAutoRefresh(load)
 
   if (error) {
     return <EmptyState title="Could not load dispatch analytics" description="Please refresh to try again." />

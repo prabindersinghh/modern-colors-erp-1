@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useAutoRefresh } from '@/lib/refresh'
 import { Upload, Plus, BookMarked, AlertTriangle, FileDown } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
 import type { CatalogueItem, Paginated } from '@/types/api'
@@ -54,6 +55,9 @@ export function CataloguePage() {
     void load('')
     void loadCount()
   }, [])
+
+  // Min/max edits or imports from another session appear on focus/reconnect.
+  useAutoRefresh(() => { void load(); void loadCount() })
 
   const refresh = async () => {
     await load()

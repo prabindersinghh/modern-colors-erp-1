@@ -20,6 +20,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { EmptyState } from '@/components/common/EmptyState'
 import { ConfirmationDialog } from '@/components/common/ConfirmationDialog'
 import { toast } from '@/hooks/useToast'
+import { useAutoRefresh } from '@/lib/refresh'
 import { LabelRollFlow } from '@/components/labels/LabelRollFlow'
 
 export function ProductionOutputPage() {
@@ -39,6 +40,7 @@ export function ProductionOutputPage() {
     setOutputs(o)
   }, [])
   useEffect(() => void load(), [load])
+  useAutoRefresh(load, { intervalMs: 20_000 })
 
   const confirmOutput = async () => {
     if (!confirmTarget) return

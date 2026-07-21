@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   Boxes,
@@ -27,6 +27,7 @@ import { HandoverReadiness } from '@/components/dashboard/HandoverReadiness'
 import { FgCorrectionCard } from '@/components/dashboard/FgCorrectionCard'
 import { cn } from '@/lib/utils'
 import { formatUnitTotals, kgOnly } from '@/lib/units'
+import { useAutoRefresh } from '@/lib/refresh'
 
 const DEPARTMENTS: Department[] = ['PU', 'ENAMEL', 'POWDER']
 const STATUSES: RequestStatus[] = ['PENDING', 'IN_PROGRESS', 'APPROVED', 'PARTIAL', 'REJECTED']
@@ -43,10 +44,17 @@ export function OversightPage() {
   const [data, setData] = useState<AdminAnalytics | null>(null)
   const [error, setError] = useState(false)
 
+  const load = useCallback(
+    () => api.get<AdminAnalytics>(`/analytics/overview?days=${days}`).then(setData).catch(() => setError(true)),
+    [days],
+  )
   useEffect(() => {
-    setData(null)
-    api.get<AdminAnalytics>(`/analytics/overview?days=${days}`).then(setData).catch(() => setError(true))
-  }, [days])
+    setData(null) // full skeleton only on mount / window change
+    setError(false)
+    void load()
+  }, [load])
+  // Focus / reconnect / any of this user's mutations — silent refetch, data stays up.
+  useAutoRefresh(load)
 
   // The owner's three views. Company Brain leads and is the landing view: it is the
   // one screen that answers "what came in, what got made, what went out" in a glance,
