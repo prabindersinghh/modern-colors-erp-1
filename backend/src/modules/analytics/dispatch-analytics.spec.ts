@@ -49,6 +49,11 @@ describe('DispatchAnalyticsService.flow — unit correctness', () => {
    * routes stockTransaction.findMany by transaction type the same way.
    */
   const build = (over: {
+    /** Units that physically ARRIVED in range (receiving) — feeds "received". */
+    arrived?: Array<{ qty: number | null; unit: string }>;
+    /** Live balances — feeds "still in store". null qty = blocked (no pack weight). */
+    inStock?: Array<{ qty: number | null; unit: string }>;
+    /** ADD-ledger rows (returns from departments) — must NOT feed "received". */
     added?: Array<{ quantityKg: number; unit: string }>;
     issued?: Array<{ quantityKg: number; unit: string; department: string }>;
     outputs?: Array<Record<string, unknown>>;
@@ -60,6 +65,24 @@ describe('DispatchAnalyticsService.flow — unit correctness', () => {
         material: { stockUnit: r.unit },
       }));
     const base = {
+      material: {
+        // flow() asks for arrivals (where.arrivedAt) and the live snapshot (where.OR).
+        findMany: jest.fn().mockImplementation(({ where }: { where: Record<string, unknown> }) => {
+          if (where.arrivedAt) {
+            return Promise.resolve(
+              (over.arrived ?? []).map((r) => ({
+                weight: r.qty,
+                receivedWeight: null,
+                balanceKg: r.qty,
+                stockUnit: r.unit,
+              })),
+            );
+          }
+          return Promise.resolve(
+            (over.inStock ?? []).map((r) => ({ balanceKg: r.qty, stockUnit: r.unit })),
+          );
+        }),
+      },
       stockTransaction: {
         findMany: jest.fn().mockImplementation(({ where }: { where: { type: string } }) => {
           if (where.type === 'ADD') return Promise.resolve(txnRows(over.added ?? []));
@@ -92,7 +115,7 @@ describe('DispatchAnalyticsService.flow — unit correctness', () => {
 
   it('splits mixed-unit RAW material per unit — received/issued never blend', async () => {
     const svc = build({
-      added: [{ quantityKg: 100, unit: 'kg' }, { quantityKg: 200, unit: 'L' }],
+      arrived: [{ qty: 100, unit: 'kg' }, { qty: 200, unit: 'L' }],
       issued: [{ quantityKg: 60, unit: 'kg', department: 'PU' }, { quantityKg: 50, unit: 'L', department: 'PU' }],
     });
     const r = await svc.flow(range.from, range.to);
@@ -111,7 +134,7 @@ describe('DispatchAnalyticsService.flow — unit correctness', () => {
 
   it('returns a null yield when output is litres and input is kilograms', async () => {
     const svc = build({
-      added: [{ quantityKg: 500, unit: 'kg' }],
+      arrived: [{ qty: 500, unit: 'kg' }],
       issued: [{ quantityKg: 400, unit: 'kg', department: 'PU' }],
       outputs: [
         { packageCount: 10, sizePerPackage: 20, sizeUnit: 'L', productName: 'A', batch: { department: 'PU' } },

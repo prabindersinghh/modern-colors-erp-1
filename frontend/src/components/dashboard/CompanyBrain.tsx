@@ -98,27 +98,19 @@ function buildGraph(flow: FactoryFlow) {
     links.push({ source: received, target: n, value: Math.max(0.5, (magnitude(s.discarded.totals) / rawMax) * 100), real: lbl, color: STAGE_COLOR.discarded })
   }
 
-  // Received but NOT yet issued or discarded — it is still sitting in the store.
-  // Without this the left side does not balance and the diagram silently implies
-  // everything that came in went out, which is the opposite of the truth.
-  // Balanced PER UNIT: litres in must never be netted off against kilograms out.
-  const stillByUnit = s.received.totals
-    .map((r) => {
-      const out =
-        (s.issued.totals.find((t) => t.unit === r.unit)?.total ?? 0) +
-        (s.discarded.totals.find((t) => t.unit === r.unit)?.total ?? 0)
-      return { unit: r.unit, total: Number((r.total - out).toFixed(3)) }
-    })
-    .filter((t) => t.total > 0)
-
-  if (stillByUnit.length > 0) {
+  // Still in store — the SERVER's live balance snapshot (same source as the stock
+  // levels screen), not a range subtraction. The old client-side derivation inherited
+  // the wrong "received" figure and could go nonsensical; the snapshot cannot.
+  const stillByUnit = s.inStore.totals
+  if (magnitude(stillByUnit) > 0 || s.inStore.blockedUnits > 0) {
     const lbl = formatUnitTotals(stillByUnit)
-    const n = add('instock', 'Still in store', lbl, STAGE_COLOR.inprocess)
+    const blocked = s.inStore.blockedUnits > 0 ? ` (+${s.inStore.blockedUnits} awaiting weight)` : ''
+    const n = add('instock', 'Still in store', `${lbl}${blocked}`, STAGE_COLOR.inprocess)
     links.push({
       source: received,
       target: n,
       value: Math.max(0.5, (magnitude(stillByUnit) / rawMax) * 100),
-      real: `${lbl} not yet issued`,
+      real: `${lbl} in the factory now${blocked}`,
       color: STAGE_COLOR.inprocess,
     })
   }
@@ -557,7 +549,13 @@ function DrillDown({ node, flow, onClose }: { node: FlowNode; flow: FactoryFlow;
 
   if (node.key === 'received') {
     rows.push({ label: 'Total received', value: formatUnitTotals(s.received.totals) })
-    rows.push({ label: 'Stock movements', value: `${s.received.movements}` })
+    rows.push({ label: 'Units received', value: `${s.received.units}` })
+    if (s.received.blockedUnits > 0)
+      rows.push({ label: 'Awaiting pack weight', value: `${s.received.blockedUnits}` })
+  } else if (node.key === 'instock') {
+    rows.push({ label: 'In the factory now', value: formatUnitTotals(s.inStore.totals) })
+    if (s.inStore.blockedUnits > 0)
+      rows.push({ label: 'Awaiting pack weight', value: `${s.inStore.blockedUnits}` })
   } else if (['PU', 'ENAMEL', 'POWDER'].includes(node.key)) {
     const d = node.key as Department
     const iss = s.issued.byDepartment.find((x) => x.department === d)

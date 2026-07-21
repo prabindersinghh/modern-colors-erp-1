@@ -208,14 +208,19 @@ export class StockService {
    * consistent, so no re-summing of transactions is needed.
    */
   async levels(params: { q?: string }) {
+    // VISIBILITY CONTRACT: a unit that physically ARRIVED must appear here even when
+    // it has no balance yet (no pack weight on the invoice). It contributes 0 to every
+    // total but is listed and FLAGGED — a sack in the factory must never be on no list.
     const where: Prisma.MaterialWhereInput = {
-      balanceKg: { not: null }, // only weighed units participate in stock
-      OR: params.q
-        ? [
-            { materialName: { contains: params.q, mode: 'insensitive' } },
-            { sku: { contains: params.q, mode: 'insensitive' } },
-            { uniqueId: { contains: params.q, mode: 'insensitive' } },
-          ]
+      OR: [{ balanceKg: { not: null } }, { balanceKg: null, scannedAt: { not: null } }],
+      AND: params.q
+        ? {
+            OR: [
+              { materialName: { contains: params.q, mode: 'insensitive' } },
+              { sku: { contains: params.q, mode: 'insensitive' } },
+              { uniqueId: { contains: params.q, mode: 'insensitive' } },
+            ],
+          }
         : undefined,
     };
     const units = await this.prisma.material.findMany({
@@ -228,6 +233,7 @@ export class StockService {
     type LevelUnit = {
       uniqueId: string;
       balanceKg: number;
+      needsWeight: boolean;
       status: string;
       arrivedAt: Date | null;
       ageDays: number;
@@ -257,6 +263,7 @@ export class StockService {
       g.units.push({
         uniqueId: u.uniqueId,
         balanceKg: u.balanceKg ?? 0,
+        needsWeight: u.balanceKg === null,
         status: u.status,
         arrivedAt: u.arrivedAt,
         ageDays: days,
@@ -293,7 +300,8 @@ export class StockService {
     const totalsByUnit = unitTotals(materials.map((m) => ({ unit: m.stockUnit, qty: m.totalBalanceKg })));
     // grandTotalKg is retained for compatibility but is now the kilogram-only total, so
     // it can never silently include litres.
-    return { materials, totalsByUnit, grandTotalKg: kgOnly(totalsByUnit), unitCount: units.length };
+    const needsWeightUnits = units.filter((u) => u.balanceKg === null).length;
+    return { materials, totalsByUnit, grandTotalKg: kgOnly(totalsByUnit), unitCount: units.length, needsWeightUnits };
   }
 
   /**

@@ -247,6 +247,8 @@ export interface StockLevelMaterial {
   units: {
     uniqueId: string
     balanceKg: number
+    /** Physically here but no pack weight — listed and flagged, never hidden. */
+    needsWeight: boolean
     status: MaterialStatus
     arrivedAt: string | null
     ageDays: number
@@ -260,6 +262,8 @@ export interface StockLevels {
   /** Kilogram-only total (retained for compatibility). */
   grandTotalKg: number
   unitCount: number
+  /** Arrived units with no pack weight — in the factory, flagged, excluded from totals. */
+  needsWeightUnits: number
 }
 
 // Body for POST /stock/transactions.
@@ -628,7 +632,10 @@ export interface FactoryFlow {
   range: { from: string; to: string }
   stages: {
     // Raw material is kg OR litres — carried as a per-unit breakdown, never blended.
-    received: { totals: UnitTotal[]; movements: number }
+    /** Units that physically ARRIVED (receiving scan) in the range. */
+    received: { totals: UnitTotal[]; units: number; blockedUnits: number }
+    /** Live snapshot of what sits in the factory NOW (same source as stock levels). */
+    inStore: { totals: UnitTotal[]; blockedUnits: number }
     issued: { totals: UnitTotal[]; byDepartment: { department: Department; totals: UnitTotal[]; movements: number }[] }
     discarded: { totals: UnitTotal[] }
     batches: { opened: number }

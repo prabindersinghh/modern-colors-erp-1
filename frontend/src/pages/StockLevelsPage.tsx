@@ -111,6 +111,16 @@ function LevelsTab() {
 
       <p className="text-xs text-muted-foreground">Expand a material to see its units — listed oldest-first (FIFO); use the "use first" unit before newer ones.</p>
 
+      {/* VISIBILITY: sacks that are physically here but carry no pack weight. They are
+          in the lists below, flagged — never hidden — and excluded from totals until
+          the pack weight is set on their PO line. */}
+      {data && data.needsWeightUnits > 0 && (
+        <div className="chip-edge flex items-center gap-2 rounded-lg border border-warning-border bg-warning-surface py-2.5 pl-4 pr-4 text-sm text-warning-foreground [--chip-edge-color:hsl(var(--warning))]">
+          <span className="font-semibold">{data.needsWeightUnits}</span> unit{data.needsWeightUnits === 1 ? ' is' : 's are'} in the factory with no pack
+          weight — flagged below, not counted in totals. Set the pack weight on the purchase order to unblock.
+        </div>
+      )}
+
       {!loading && data && data.materials.length === 0 ? (
         <EmptyState title="No stock in hand" description="Weighed units with a remaining balance will appear here." />
       ) : (
@@ -204,7 +214,15 @@ function LevelsTab() {
                                 {fmtDate(u.arrivedAt)} · {u.ageDays}d
                               </span>
                             </TableCell>
-                            <TableCell className="whitespace-nowrap text-right text-sm">{u.balanceKg} {m.stockUnit}</TableCell>
+                            <TableCell className="whitespace-nowrap text-right text-sm">
+                              {u.needsWeight ? (
+                                <span className="rounded bg-critical-surface px-1.5 py-0.5 text-[11px] font-semibold text-critical">
+                                  needs weight
+                                </span>
+                              ) : (
+                                <>{u.balanceKg} {m.stockUnit}</>
+                              )}
+                            </TableCell>
                             <TableCell className="text-right">
                               <Badge variant="outline" className="text-[10px]">{u.status.replace(/_/g, ' ')}</Badge>
                             </TableCell>

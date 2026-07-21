@@ -344,13 +344,22 @@ export class DispatchAnalyticsService {
   async flow(from: Date, to: Date) {
     const range = { gte: from, lte: to };
 
-    const [receivedRows, issuedRows, discardedRows, outputs, fgCreated, fgDispatched, batches] =
+    const [arrivedRows, inStockRows, issuedRows, discardedRows, outputs, fgCreated, fgDispatched, batches] =
       await Promise.all([
-        // Raw material IN — the ADD ledger is the only honest source. Read with each
-        // row's material unit so the total can be split by unit, never blended.
-        this.prisma.stockTransaction.findMany({
-          where: { type: StockTxnType.ADD, createdAt: range },
-          select: { quantityKg: true, material: { select: { stockUnit: true } } },
+        // Raw material IN = units that physically ARRIVED (receiving scan) in the range,
+        // carrying their seeded opening balance. The ADD ledger is NOT receiving — it
+        // records returns from departments; deriving "received" from it made the figure
+        // sit at zero while a whole truckload was scanned in (the bug this fixes).
+        this.prisma.material.findMany({
+          where: { arrivedAt: range },
+          select: { weight: true, receivedWeight: true, balanceKg: true, stockUnit: true },
+        }),
+
+        // What is sitting in the factory RIGHT NOW (live balances) — the owner's
+        // "still in store", read from the same source as the stock-levels screen.
+        this.prisma.material.findMany({
+          where: { OR: [{ balanceKg: { gt: 0 } }, { balanceKg: null, scannedAt: { not: null } }] },
+          select: { balanceKg: true, stockUnit: true },
         }),
 
         // Issued to each department.
@@ -394,7 +403,17 @@ export class DispatchAnalyticsService {
       ]);
 
     // Raw material is measured in kg OR litres. Group by unit and never blend the two.
-    const receivedTotals = unitTotals(receivedRows.map((r) => ({ unit: r.material?.stockUnit ?? 'kg', qty: r.quantityKg })));
+    // A unit's inward quantity is its seeded opening balance (PO pack weight, or the
+    // corrected weight for legacy units); a blocked no-weight unit counts as a UNIT
+    // received but contributes 0 quantity — it must never vanish from the numbers.
+    const receivedTotals = unitTotals(
+      arrivedRows.map((r) => ({ unit: r.stockUnit, qty: r.weight ?? r.receivedWeight ?? 0 })),
+    );
+    const receivedBlocked = arrivedRows.filter((r) => r.balanceKg === null).length;
+    const inStoreTotals = unitTotals(
+      inStockRows.filter((r) => r.balanceKg !== null).map((r) => ({ unit: r.stockUnit, qty: r.balanceKg })),
+    );
+    const inStoreBlocked = inStockRows.filter((r) => r.balanceKg === null).length;
     const discardedTotals = unitTotals(discardedRows.map((r) => ({ unit: r.material?.stockUnit ?? 'kg', qty: r.quantityKg })));
 
     const issuedByDept = DEPARTMENTS.map((d) => {
@@ -479,7 +498,9 @@ export class DispatchAnalyticsService {
     return {
       range: { from: from.toISOString(), to: to.toISOString() },
       stages: {
-        received: { totals: receivedTotals, movements: receivedRows.length },
+        received: { totals: receivedTotals, units: arrivedRows.length, blockedUnits: receivedBlocked },
+        // Snapshot of NOW (like the stock-levels screen) — not a range-derived guess.
+        inStore: { totals: inStoreTotals, blockedUnits: inStoreBlocked },
         issued: { totals: issuedTotals, byDepartment: issuedByDept },
         discarded: { totals: discardedTotals },
         batches: { opened: batches.length },

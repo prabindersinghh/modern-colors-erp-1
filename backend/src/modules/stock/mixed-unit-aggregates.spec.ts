@@ -82,6 +82,21 @@ describe('Company Brain flow with mixed-unit raw material', () => {
       type, quantityKg: qty, department, material: { stockUnit: unit },
     });
     const prisma = {
+      material: {
+        // "Received" now derives from physical ARRIVALS (the visibility fix), and
+        // "in store" from live balances — same mixed-unit fixture either way.
+        findMany: jest.fn().mockImplementation(({ where }: { where: Record<string, unknown> }) =>
+          Promise.resolve(
+            where.arrivedAt
+              ? [
+                  { weight: KG_A, receivedWeight: null, balanceKg: KG_A, stockUnit: 'kg' },
+                  { weight: KG_B, receivedWeight: null, balanceKg: KG_B, stockUnit: 'kg' },
+                  { weight: LITRES, receivedWeight: null, balanceKg: LITRES, stockUnit: 'L' },
+                ]
+              : [],
+          ),
+        ),
+      },
       stockTransaction: {
         findMany: jest.fn().mockImplementation(({ where }: { where: { type: string } }) => {
           if (where.type === 'ADD')
