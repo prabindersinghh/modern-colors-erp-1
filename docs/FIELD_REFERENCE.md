@@ -257,7 +257,7 @@ an operator/admin · **System** = generated/derived by the backend.
 | `outputId` | Parent output run | System | UUID | Trace |
 | `batchId` | Batch it came from | System | UUID | Trace back to the raw materials consumed |
 | `productName` / `sizePerPackage` / `sizeUnit` | Copied from the output | System | String / Float / String | Label + dispatch display |
-| `status` | `GENERATED` → `READY` → `DISPATCHED` | System | Enum | Dispatch lifecycle |
+| `status` | `GENERATED` → `DISPATCHED`; side-exits `SCRAPPED`/`REFURBISHED` (returns). `READY` is a **known no-op** — never set anywhere; see the enum note below | System | Enum | Dispatch lifecycle |
 | `dispatchedAt` / `dispatchedById` | When dispatched and by whom | System | DateTime? / UUID? | Set on the dispatch scan; a second dispatch of the same drum is rejected |
 | `dispatchNote` | Free-text note at dispatch | Dispatch | String? | Audit |
 | `createdAt` / `updatedAt` | Timestamps | System | DateTime | Audit |
@@ -290,7 +290,7 @@ an operator/admin · **System** = generated/derived by the backend.
 | `RequestStatus` | `PENDING`, `IN_PROGRESS`, `APPROVED`, `PARTIAL`, `REJECTED` | `IN_PROGRESS` is **parent-only**; lines never carry it |
 | `StockTxnType` | `ADD`, `DEDUCT`, `DISCARD` | `DISCARD` is department-less by design |
 | `BatchStatus` | `OPEN`, `OUTPUT_RECORDED`, `CONFIRMED`, `CLOSED` | CONFIRMED/CLOSED → top-ups warn but proceed |
-| `FgStatus` | `GENERATED`, `READY`, `DISPATCHED` | Per-drum dispatch lifecycle |
+| `FgStatus` | `GENERATED`, `READY`, `DISPATCHED`, `SCRAPPED`, `REFURBISHED` | Per-drum lifecycle. **`READY` is dead code**: nothing sets it — generation goes straight into the dispatch queue (`IN (GENERATED, READY)`). It is the reserved hook for a future "labelled & stored" release step; a maintainer adding that step sets READY after label printing and the queue already honours it. |
 
 ---
 

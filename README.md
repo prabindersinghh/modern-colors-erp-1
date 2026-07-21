@@ -54,7 +54,7 @@ Non-admin seeds default to `ChangeMe123!` — **change every one before real use
 | Role (enum) | Displayed as | Login | Scope |
 |---|---|---|---|
 | `ADMIN` | **Store** | `admin@moderncolours.local` | Approves requests, issues stock, catalogue, API key, users |
-| `OVERSIGHT` | **Admin** | `oversight@moderncolours.local` | Read-only across all departments, **plus the Company Brain**. Every mutating route rejects it |
+| `OVERSIGHT` | **Admin** | `oversight@moderncolours.local` | Read-only across all departments, **plus the Company Brain**. No mutating `@Roles` route grants it; its ONE write is the audited finished-goods **correction** endpoint behind a separate named permission (`CorrectionsGuard`), asserted narrow by `fg-corrections.spec.ts` |
 | `PRODUCTION_HEAD` | **PU Head** | `pu@moderncolours.local` | Requests, batches, output — **PU only** |
 | `PRODUCTION_HEAD` | **Enamel Head** | `enamel@moderncolours.local` | Requests, batches, output — **ENAMEL only** |
 | `PRODUCTION_HEAD` | **Powder Head** | `powder@moderncolours.local` | Requests, batches, output — **POWDER only** |

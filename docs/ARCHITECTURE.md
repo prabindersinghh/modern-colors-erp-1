@@ -109,7 +109,7 @@ modern-colors-erp/
 | Role (enum) | Called in the UI | Scope |
 |---|---|---|
 | `ADMIN` | **Store** | Everything in Phase 1 + Store actions in Phases 2–3. The original admin login. |
-| `OVERSIGHT` | **Admin** | Factory-wide, **view only**. No actions. Lands on the Oversight dashboard. |
+| `OVERSIGHT` | **Admin** | Factory-wide, **view only** — structurally: no mutating `@Roles` route grants it (machine-checked). ONE named exception: the audited finished-goods **correction** endpoint (`/finished-goods/corrections/:id`, non-identity fields only, before→after audit, reprint flag) behind its own `@AllowCorrection` + `CorrectionsGuard`, so the view-only sweep stays assertable. Also reads the **handover readiness** panel. |
 | `PRODUCTION_HEAD` | PU / Enamel / Powder Head | Scoped to **one department** via `User.department`. Raises requests, records output. |
 | `OPERATOR` | Operator | Phase 1 inward screens. |
 | `SUPERVISOR` | Supervisor | Phase 1 read access + audit log. |
@@ -184,7 +184,13 @@ Cross-cutting: `common/` (guards, decorators, `auth/department-scope.ts`, crypto
 - `RequestStatus`: PENDING | IN_PROGRESS (parent only) | APPROVED | PARTIAL | REJECTED
 - `StockTxnType`: ADD | DEDUCT | DISCARD
 - `BatchStatus`: OPEN → OUTPUT_RECORDED → CONFIRMED → CLOSED
-- `FgStatus`: GENERATED → READY → DISPATCHED
+- `FgStatus`: GENERATED → DISPATCHED, with three side-exits: SCRAPPED / REFURBISHED
+  (returned goods) and — **known no-op** — `READY`. Nothing in the codebase ever sets
+  READY: minting the QRs (GENERATED) *is* the release to Dispatch, whose queue reads
+  `status IN (GENERATED, READY)`. The value exists as the hook for a future separate
+  "labelled & stored" step between printing and dispatch visibility; wire it up by
+  setting it after label printing — the dispatch queue already accepts it. Until then
+  do not assume it is part of the flow.
 - `MatchType`: EXACT | SIMILAR | NONE
 
 ## 8. Key flows

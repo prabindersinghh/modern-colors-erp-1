@@ -11,6 +11,7 @@ import { AuditService } from '../audit/audit.service';
 import { QrService, type FgQrPayload } from '../qr/qr.service';
 import { AuthUser } from '../../common/decorators/current-user.decorator';
 import { assertDepartmentAccess, departmentFilter } from '../../common/auth/department-scope';
+import { CorrectFinishedGoodDto } from './dto/correct-finished-good.dto';
 
 // Own sequence, separate from material_unique_seq — FG IDs never collide with MC- IDs.
 export const FG_SEQ = 'finished_good_unique_seq';
@@ -54,7 +55,113 @@ export class FinishedGoodsService implements OnModuleInit {
   async unitLabel(user: AuthUser, uniqueId: string): Promise<Buffer> {
     const fg = await this.findByUniqueId(user, uniqueId);
     if (!fg.qrCode?.payload) throw new NotFoundException(`No QR payload stored for ${uniqueId}`);
-    return this.qr.buildLabelRoll([{ payload: fg.qrCode.payload as unknown as FgQrPayload }]);
+    const pdf = await this.qr.buildLabelRoll([{ payload: fg.qrCode.payload as unknown as FgQrPayload }]);
+    // Printing the label satisfies a pending "reprint needed" flag from a correction.
+    if ((fg as { qrReprintNeeded?: boolean }).qrReprintNeeded) {
+      await this.prisma.finishedGood.update({ where: { id: fg.id }, data: { qrReprintNeeded: false } });
+    }
+    return pdf;
+  }
+
+  /**
+   * Audited CORRECTION of a finished-goods record (the factory Admin's one write).
+   *
+   * Guarded by CorrectionsGuard + @AllowCorrection — a named permission, NOT a role
+   * grant, so OVERSIGHT's structural view-only rule stays intact and machine-checked.
+   *
+   * Boundaries, enforced here as well as by the DTO:
+   *  - identity is untouchable: uniqueId, status, batch/output linkage, dispatch and
+   *    return facts can never change through this path;
+   *  - a reason is required and the change is append-only audited with the full
+   *    before→after of exactly the fields that changed;
+   *  - if a PRINTED field changed (name / size), the stored QR payload is regenerated
+   *    so the next print is correct, and the unit is flagged "label needs reprinting".
+   */
+  async correct(user: AuthUser, uniqueId: string, dto: CorrectFinishedGoodDto) {
+    const id = uniqueId.trim();
+    if (!isFinishedGoodId(id)) {
+      throw new BadRequestException(`${id} is not a finished-goods code.`);
+    }
+    const fg = await this.prisma.finishedGood.findUnique({
+      where: { uniqueId: id },
+      include: { batch: true, output: true, qrCode: true },
+    });
+    if (!fg) throw new NotFoundException(`No finished-goods unit with ID ${id}`);
+
+    // Only fields that were provided AND actually differ count as changes.
+    const before: Record<string, unknown> = {};
+    const after: Record<string, unknown> = {};
+    const data: Record<string, unknown> = {};
+    const consider = (field: 'productName' | 'sizePerPackage' | 'sizeUnit' | 'dispatchNote', value: unknown) => {
+      if (value === undefined) return;
+      const current = fg[field];
+      if (value === current) return;
+      before[field] = current;
+      after[field] = value;
+      data[field] = value;
+    };
+    consider('productName', dto.productName?.trim());
+    consider('sizePerPackage', dto.sizePerPackage);
+    consider('sizeUnit', dto.sizeUnit);
+    consider('dispatchNote', dto.dispatchNote === undefined ? undefined : (dto.dispatchNote?.trim() || null));
+
+    if (Object.keys(data).length === 0) {
+      throw new BadRequestException('Nothing to correct — no field differs from the record.');
+    }
+
+    // Did the correction touch what is PRINTED on the physical sticker?
+    const printedChanged = ['productName', 'sizePerPackage', 'sizeUnit'].some((f) => f in data);
+
+    const corrected = await this.prisma.$transaction(async (tx) => {
+      const unit = await tx.finishedGood.update({
+        where: { id: fg.id },
+        data: { ...data, ...(printedChanged ? { qrReprintNeeded: true } : {}) },
+        include: fgInclude,
+      });
+
+      if (printedChanged && fg.qrCode) {
+        // Regenerate the stored payload from the corrected values so the NEXT print is
+        // right. The flag above records that the sticker on the drum is now outdated.
+        const payload: FgQrPayload = {
+          uniqueId: unit.uniqueId,
+          productName: unit.productName,
+          batch: fg.batch.batchNumber,
+          department: fg.batch.department,
+          size: `${unit.sizePerPackage} ${unit.sizeUnit}`,
+          shade: fg.output.shade ?? null,
+          productSku: fg.output.productSku ?? null,
+          date: fg.output.productionDate.toISOString(),
+          kind: 'FINISHED_GOOD' as const,
+        };
+        const imageRef = await this.qr.dataUrl(payload);
+        await tx.finishedGoodQr.update({
+          where: { id: fg.qrCode.id },
+          data: { payload: payload as unknown as Prisma.InputJsonValue, imageRef },
+        });
+      }
+
+      await this.audit.log(
+        {
+          entityType: 'FinishedGood',
+          entityId: fg.id,
+          action: 'FG_CORRECTED',
+          actorId: user.id,
+          before: before as Prisma.InputJsonValue,
+          after: {
+            ...after,
+            uniqueId: fg.uniqueId,
+            batchNumber: fg.batch.batchNumber,
+            reason: dto.note.trim(),
+            labelReprintNeeded: printedChanged,
+          } as Prisma.InputJsonValue,
+        },
+        tx,
+      );
+
+      return unit;
+    });
+
+    return { unit: corrected, labelReprintNeeded: printedChanged };
   }
 
   /**

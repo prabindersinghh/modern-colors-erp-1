@@ -22,6 +22,7 @@ import { BatchModule } from './modules/batch/batch.module';
 import { ProductionOutputModule } from './modules/production-output/production-output.module';
 import { FinishedGoodsModule } from './modules/finished-goods/finished-goods.module';
 
+import { HandoverModule } from './handover/handover.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, validate: validateEnv }),
@@ -44,6 +45,7 @@ import { FinishedGoodsModule } from './modules/finished-goods/finished-goods.mod
     BatchModule,
     ProductionOutputModule,
     FinishedGoodsModule,
+      HandoverModule,
   ],
   controllers: [HealthController, StorageHealthController],
 })

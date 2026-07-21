@@ -486,6 +486,10 @@ model FinishedGood {
   refurbishedFrom   FinishedGood?  @relation("FgRefurbLineage", fields: [refurbishedFromId], references: [id])
   refurbishedInto   FinishedGood?  @relation("FgRefurbLineage")
 
+  // Set when a correction changed a field printed on the physical label (product
+  // name / size); cleared when the unit's label is reprinted.
+  qrReprintNeeded Boolean @default(false)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
