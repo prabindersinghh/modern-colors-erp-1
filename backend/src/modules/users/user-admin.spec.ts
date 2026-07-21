@@ -2,6 +2,7 @@ import { Reflector } from '@nestjs/core';
 import { METHOD_METADATA } from '@nestjs/common/constants';
 import { RequestMethod, BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { Role } from '@prisma/client';
+import * as bcrypt from 'bcryptjs';
 import { ROLES_KEY } from '../../common/decorators/roles.decorator';
 import { ALLOW_CORRECTION_KEY } from '../../common/decorators/allow-correction.decorator';
 import { ALLOW_USER_ADMIN_KEY } from '../../common/decorators/allow-user-admin.decorator';
@@ -86,6 +87,7 @@ describe('the OVERSIGHT write surface stays exactly two named doors', () => {
       'UserAdminController.deactivate',
       'UserAdminController.list',
       'UserAdminController.reactivate',
+      'UserAdminController.rename',
       'UserAdminController.resetPassword',
     ]);
   });
@@ -195,6 +197,44 @@ describe('UserAdminService — creation rules are server-enforced', () => {
     await svc.deactivate(actor, 'u2');
     expect(prisma.user.update.mock.calls.at(-1)![0].data).toEqual({ active: false });
     expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'USER_DEACTIVATED' }));
+  });
+
+  it('rename changes the display name only — never identity, role or active state', async () => {
+    const { svc, prisma, audit } = build();
+    prisma.user.findUnique.mockResolvedValueOnce({
+      id: 'u2', email: 'pu2@moderncolours.local', name: 'PU Head - second shift',
+      role: Role.PRODUCTION_HEAD, department: 'PU', active: false,
+    });
+    await svc.rename(actor, 'u2', '  TEST PU Login - not for production use  ');
+    const call = prisma.user.update.mock.calls.at(-1)![0];
+    expect(call.data).toEqual({ name: 'TEST PU Login - not for production use' }); // trimmed; nothing else touched
+    expect(audit.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'USER_RENAMED',
+        actorId: actor,
+        before: { name: 'PU Head - second shift' },
+      }),
+    );
+    // The protected accounts are unreachable here too — rename goes through getManaged.
+    prisma.user.findUnique.mockResolvedValueOnce({ id: 'u1', email: 'admin@moderncolours.local', role: Role.ADMIN, active: true });
+    await expect(svc.rename(actor, 'u1', 'x')).rejects.toThrow(ConflictException);
+    await expect(svc.rename(actor, 'u2', '   ')).rejects.toThrow(BadRequestException);
+  });
+
+  it('list marks which logins came with the system, and never leaks a hash', async () => {
+    const { svc, prisma } = build();
+    const hash = await bcrypt.hash('ChangeMe123!', 4);
+    prisma.user.findMany.mockResolvedValueOnce([
+      { id: 'a', email: `pu${LOGIN_DOMAIN}`, name: 'PU', role: Role.PRODUCTION_HEAD, department: 'PU', active: true, passwordHash: hash },
+      { id: 'b', email: `pu2${LOGIN_DOMAIN}`, name: 'PU2', role: Role.PRODUCTION_HEAD, department: 'PU', active: false, passwordHash: await bcrypt.hash('somethingelse1', 4) },
+    ]);
+    const rows = await svc.list();
+    expect(rows.map((r) => [r.email, r.seeded, r.usingDefaultPassword])).toEqual([
+      [`pu${LOGIN_DOMAIN}`, true, true],   // seeded AND still on the published default
+      [`pu2${LOGIN_DOMAIN}`, false, false], // the Admin's own login
+    ]);
+    expect(JSON.stringify(rows)).not.toContain('passwordHash');
+    expect(JSON.stringify(rows)).not.toContain('$2');
   });
 
   it('reactivation restores login and audits', async () => {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { UserPlus, KeyRound, UserX, UserCheck, Lock, ShieldCheck } from 'lucide-react'
+import { UserPlus, KeyRound, UserX, UserCheck, Lock, ShieldCheck, Pencil, AlertTriangle } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
 import type { Department, ManagedUser } from '@/types/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -40,6 +40,7 @@ export function UserManagement() {
   const [error, setError] = useState(false)
   const [creating, setCreating] = useState(false)
   const [resetTarget, setResetTarget] = useState<ManagedUser | null>(null)
+  const [renameTarget, setRenameTarget] = useState<ManagedUser | null>(null)
   const [deactivateTarget, setDeactivateTarget] = useState<ManagedUser | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -91,6 +92,18 @@ export function UserManagement() {
         />
       )}
 
+      {users?.some((u) => u.usingDefaultPassword) && (
+        <Card edge="warning">
+          <CardContent className="flex items-start gap-2 p-3.5 text-sm text-chip-700">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+            <span>
+              Some logins that came with the system still use the published default password.
+              Reset them below, or deactivate the ones you are not using and create your own.
+            </span>
+          </CardContent>
+        </Card>
+      )}
+
       {!users ? (
         <p className="text-sm text-chip-500">Loading…</p>
       ) : (
@@ -118,6 +131,13 @@ export function UserManagement() {
                   <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-chip-500">
                     <Badge variant="outline" className="text-[10px]">{ROLE_LABEL[u.role] ?? u.role}</Badge>
                     {u.department && <Badge variant="secondary" className="text-[10px]">{u.department}</Badge>}
+                    {/* Which logins came with the system and which the Admin made himself. */}
+                    <Badge variant="outline" className={cn('text-[10px]', u.seeded ? 'border-chip-300 text-chip-500' : 'border-primary/40 text-primary')}>
+                      {u.seeded ? 'Came with the system' : 'Created by you'}
+                    </Badge>
+                    {u.usingDefaultPassword && (
+                      <Badge className="bg-warning text-[10px] text-warning-foreground hover:bg-warning">Default password</Badge>
+                    )}
                     <span>{u.name}</span>
                   </div>
                   <div className="mt-0.5 text-xs text-chip-500">
@@ -127,6 +147,9 @@ export function UserManagement() {
                 </div>
                 {!protectedRole(u) && (
                   <div className="flex shrink-0 gap-1.5">
+                    <Button size="sm" variant="outline" className="h-9 flex-1 gap-1 text-xs sm:flex-none" disabled={busy} onClick={() => setRenameTarget(u)}>
+                      <Pencil className="h-3.5 w-3.5" /> Rename
+                    </Button>
                     <Button size="sm" variant="outline" className="h-9 flex-1 gap-1 text-xs sm:flex-none" disabled={busy} onClick={() => setResetTarget(u)}>
                       <KeyRound className="h-3.5 w-3.5" /> Reset
                     </Button>
@@ -158,6 +181,21 @@ export function UserManagement() {
         Heads of the same department share that department's data — every action is still recorded
         under the individual login. Store and Admin logins cannot be created or deactivated here.
       </p>
+
+      {renameTarget && (
+        <RenameDialog
+          user={renameTarget}
+          busy={busy}
+          onClose={() => setRenameTarget(null)}
+          onRename={async (name) => {
+            const ok = await act(
+              () => api.post(`/admin/users/${renameTarget.id}/rename`, { name }),
+              `${renameTarget.email} renamed`,
+            )
+            if (ok) setRenameTarget(null)
+          }}
+        />
+      )}
 
       {resetTarget && (
         <ResetPasswordDialog
@@ -289,6 +327,50 @@ function CreateLoginForm({
         </Button>
       </CardContent>
     </Card>
+  )
+}
+
+/** Display name only — the login itself, its role and its history never change. */
+function RenameDialog({
+  user,
+  busy,
+  onClose,
+  onRename,
+}: {
+  user: ManagedUser
+  busy: boolean
+  onClose: () => void
+  onRename: (name: string) => Promise<void>
+}) {
+  const [name, setName] = useState(user.name)
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4">
+      <div className="w-full rounded-t-2xl bg-background p-5 shadow-xl sm:max-w-sm sm:rounded-2xl">
+        <h2 className="text-title-3 text-chip-900">Rename login</h2>
+        <p className="mt-1 font-mono text-xs text-chip-500">{user.email}</p>
+        <div className="mt-4 space-y-1.5">
+          <Label>Display name</Label>
+          <Input value={name} onChange={(e) => setName(e.target.value)} className="h-11" autoFocus />
+          <p className="text-xs text-chip-500">
+            Only the name shown in lists changes. The login, its role and everything it recorded stay
+            exactly as they are.
+          </p>
+        </div>
+        <div className="mt-5 flex gap-2">
+          <Button variant="outline" className="h-11 flex-1" onClick={onClose} disabled={busy}>
+            Cancel
+          </Button>
+          <Button
+            className="h-11 flex-1"
+            disabled={busy || !name.trim() || name.trim() === user.name}
+            onClick={() => void onRename(name.trim())}
+          >
+            Save
+          </Button>
+        </div>
+      </div>
+    </div>
   )
 }
 

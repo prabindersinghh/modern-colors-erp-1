@@ -287,6 +287,10 @@ export interface ManagedUser {
   active: boolean
   lastLoginAt: string | null
   createdAt: string
+  /** True for the logins that came with the system, false for ones the Admin created. */
+  seeded: boolean
+  /** Seeded logins only: still on the published default password. */
+  usingDefaultPassword: boolean
 }
 
 /** Per-person activity in the window — PU vs PU2, separately. */

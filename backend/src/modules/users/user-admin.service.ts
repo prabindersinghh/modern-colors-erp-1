@@ -10,6 +10,21 @@ const CREATABLE_ROLES = [Role.PRODUCTION_HEAD, Role.DISPATCH] as const;
 /** The company domain — composed server-side; never accepted as input. */
 export const LOGIN_DOMAIN = '@moderncolours.local';
 
+/**
+ * The logins created by the seed scripts. Everything else in the table was created by
+ * the factory Admin, so the UI can say which came with the system and which are his.
+ * Derived from prisma/seed.ts, seed-phase2-roles.ts and seed-phase3-dispatch.ts —
+ * a list, deliberately, rather than a schema column for a fact that never changes.
+ */
+export const SEEDED_LOGINS = new Set([
+  `admin${LOGIN_DOMAIN}`,
+  `oversight${LOGIN_DOMAIN}`,
+  `pu${LOGIN_DOMAIN}`,
+  `enamel${LOGIN_DOMAIN}`,
+  `powder${LOGIN_DOMAIN}`,
+  `dispatch${LOGIN_DOMAIN}`,
+]);
+
 const safeSelect = {
   id: true,
   email: true,
@@ -56,11 +71,66 @@ export class UserAdminService {
     private readonly audit: AuditService,
   ) {}
 
-  list() {
-    return this.prisma.user.findMany({
-      select: safeSelect,
+  /**
+   * Every login, each marked `seeded` (came with the system) or not (created by the
+   * Admin), and — for seeded ones only — whether it still uses a published default
+   * password. Newly created logins CANNOT hold a default: passwordProblem() rejects
+   * it at creation and reset, so checking them would be wasted bcrypt work.
+   * No hash or password ever leaves this method.
+   */
+  async list() {
+    const users = await this.prisma.user.findMany({
+      select: { ...safeSelect, passwordHash: true },
       orderBy: [{ active: 'desc' }, { role: 'asc' }, { email: 'asc' }],
     });
+    const candidates = [
+      ...new Set(
+        [
+          'ChangeMe123!',
+          process.env.SEED_ADMIN_PASSWORD,
+          process.env.SEED_PHASE2_PASSWORD,
+          process.env.SEED_PHASE3_PASSWORD,
+        ].filter((p): p is string => !!p),
+      ),
+    ];
+
+    return Promise.all(
+      users.map(async ({ passwordHash, ...u }) => {
+        const seeded = SEEDED_LOGINS.has(u.email);
+        let usingDefaultPassword = false;
+        if (seeded) {
+          for (const c of candidates) {
+            // eslint-disable-next-line no-await-in-loop
+            if (await bcrypt.compare(c, passwordHash)) {
+              usingDefaultPassword = true;
+              break;
+            }
+          }
+        }
+        return { ...u, seeded, usingDefaultPassword };
+      }),
+    );
+  }
+
+  /** Rename a login (display name only — identity and role never change). Audited. */
+  async rename(actorId: string, id: string, name: string) {
+    const trimmed = name.trim();
+    if (!trimmed) throw new BadRequestException('A display name is required.');
+    const user = await this.getManaged(id);
+    const updated = await this.prisma.user.update({
+      where: { id: user.id },
+      data: { name: trimmed },
+      select: safeSelect,
+    });
+    await this.audit.log({
+      entityType: 'User',
+      entityId: user.id,
+      action: 'USER_RENAMED',
+      actorId,
+      before: { name: user.name },
+      after: { email: user.email, name: trimmed },
+    });
+    return updated;
   }
 
   async create(

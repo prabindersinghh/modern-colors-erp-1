@@ -31,6 +31,13 @@ class CreateLoginDto {
   password!: string;
 }
 
+class RenameDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(100)
+  name!: string;
+}
+
 class ResetPasswordDto {
   @IsString()
   @MinLength(8)
@@ -59,6 +66,13 @@ export class UserAdminController {
   @AllowUserAdmin()
   create(@CurrentUser() actor: AuthUser, @Body() dto: CreateLoginDto) {
     return this.users.create(actor.id, dto);
+  }
+
+  /** Change a login's display name (identity and role are never touched). */
+  @Post(':id/rename')
+  @AllowUserAdmin()
+  rename(@CurrentUser() actor: AuthUser, @Param('id') id: string, @Body() dto: RenameDto) {
+    return this.users.rename(actor.id, id, dto.name);
   }
 
   @Post(':id/reset-password')
