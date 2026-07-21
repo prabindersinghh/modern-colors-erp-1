@@ -97,55 +97,56 @@ export function UserManagement() {
         <div className="stagger grid gap-2">
           {users.map((u) => (
             <Card key={u.id} className={cn(!u.active && 'opacity-60')}>
-              <CardContent className="flex flex-wrap items-center gap-x-3 gap-y-2 p-3.5">
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="truncate font-mono text-sm font-medium text-chip-900">{u.email}</span>
+              {/* Mobile: the email gets a full row of its own (it IS the identity, so it
+                  must never truncate), then meta, then actions. From sm up it becomes a
+                  single row with the actions on the right. */}
+              <CardContent className="flex flex-col gap-2 p-3.5 sm:flex-row sm:items-center sm:gap-3">
+                <div className="min-w-0 sm:flex-1">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <span className="break-all font-mono text-sm font-medium text-chip-900">{u.email}</span>
+                    {u.active ? (
+                      <Badge className="shrink-0 bg-healthy text-success-foreground hover:bg-healthy">Active</Badge>
+                    ) : (
+                      <Badge variant="secondary" className="shrink-0">Inactive</Badge>
+                    )}
                     {protectedRole(u) && (
-                      <span className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-chip-500">
+                      <span className="flex shrink-0 items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-chip-500">
                         <Lock className="h-3 w-3" /> protected
                       </span>
                     )}
                   </div>
-                  <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-chip-500">
+                  <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-chip-500">
                     <Badge variant="outline" className="text-[10px]">{ROLE_LABEL[u.role] ?? u.role}</Badge>
                     {u.department && <Badge variant="secondary" className="text-[10px]">{u.department}</Badge>}
                     <span>{u.name}</span>
-                    <span>· created {u.createdAt.slice(0, 10)}</span>
-                    <span>
-                      · last login {u.lastLoginAt ? u.lastLoginAt.slice(0, 16).replace('T', ' ') : 'never'}
-                    </span>
+                  </div>
+                  <div className="mt-0.5 text-xs text-chip-500">
+                    created {u.createdAt.slice(0, 10)} · last login{' '}
+                    {u.lastLoginAt ? u.lastLoginAt.slice(0, 16).replace('T', ' ') : 'never'}
                   </div>
                 </div>
-                <div className="flex shrink-0 items-center gap-1.5">
-                  {u.active ? (
-                    <Badge className="bg-healthy text-success-foreground hover:bg-healthy">Active</Badge>
-                  ) : (
-                    <Badge variant="secondary">Inactive</Badge>
-                  )}
-                  {!protectedRole(u) && (
-                    <>
-                      <Button size="sm" variant="outline" className="h-8 gap-1 text-xs" disabled={busy} onClick={() => setResetTarget(u)}>
-                        <KeyRound className="h-3.5 w-3.5" /> Reset
+                {!protectedRole(u) && (
+                  <div className="flex shrink-0 gap-1.5">
+                    <Button size="sm" variant="outline" className="h-9 flex-1 gap-1 text-xs sm:flex-none" disabled={busy} onClick={() => setResetTarget(u)}>
+                      <KeyRound className="h-3.5 w-3.5" /> Reset
+                    </Button>
+                    {u.active ? (
+                      <Button size="sm" variant="outline" className="h-9 flex-1 gap-1 text-xs text-destructive sm:flex-none" disabled={busy} onClick={() => setDeactivateTarget(u)}>
+                        <UserX className="h-3.5 w-3.5" /> Deactivate
                       </Button>
-                      {u.active ? (
-                        <Button size="sm" variant="outline" className="h-8 gap-1 text-xs text-destructive" disabled={busy} onClick={() => setDeactivateTarget(u)}>
-                          <UserX className="h-3.5 w-3.5" /> Deactivate
-                        </Button>
-                      ) : (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-8 gap-1 text-xs text-healthy"
-                          disabled={busy}
-                          onClick={() => void act(() => api.post(`/admin/users/${u.id}/reactivate`), `${u.email} reactivated`)}
-                        >
-                          <UserCheck className="h-3.5 w-3.5" /> Reactivate
-                        </Button>
-                      )}
-                    </>
-                  )}
-                </div>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-9 flex-1 gap-1 text-xs text-healthy sm:flex-none"
+                        disabled={busy}
+                        onClick={() => void act(() => api.post(`/admin/users/${u.id}/reactivate`), `${u.email} reactivated`)}
+                      >
+                        <UserCheck className="h-3.5 w-3.5" /> Reactivate
+                      </Button>
+                    )}
+                  </div>
+                )}
               </CardContent>
             </Card>
           ))}
