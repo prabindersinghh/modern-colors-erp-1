@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { PackagePlus, Send, Search, X, ClipboardList, Plus, Trash2, Check, PackageCheck } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
+import { AppLink } from '@/lib/navigation'
 import type {
   Batch,
   CatalogueItem,
@@ -209,9 +210,11 @@ function RequestCard({
                         <LineActions requestedKg={it.requestedKg} unit={it.unit} onReview={(body) => onReview(it.id, body)} />
                       ) : isIssuable(it) ? (
                         <Button asChild size="sm" className="h-8 gap-1">
-                          <Link to={`/stock?requestItemId=${it.id}`}>
+                          {/* AppLink records the origin, so Back from Scan & Issue
+                              returns to this inbox rather than the dashboard. */}
+                          <AppLink to={`/stock?requestItemId=${it.id}`}>
                             <PackageCheck className="h-4 w-4" /> Issue
-                          </Link>
+                          </AppLink>
                         </Button>
                       ) : it.status === 'APPROVED' || it.status === 'PARTIAL' ? (
                         <span className="text-xs text-healthy">fulfilled</span>

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useAutoRefresh } from '@/lib/refresh'
 import { ScrollText } from 'lucide-react'
 import { api } from '@/lib/api'
+import { useUrlText } from '@/lib/urlState'
 import type { AuditEntry } from '@/types/api'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
@@ -11,7 +12,7 @@ import { formatDateTime } from '@/lib/utils'
 
 export function AuditPage() {
   const [rows, setRows] = useState<AuditEntry[]>([])
-  const [filter, setFilter] = useState('')
+  const [filter, setFilter] = useUrlText('q')
 
   useEffect(() => {
     api.get<AuditEntry[]>('/audit?take=200').then(setRows).catch(() => {})

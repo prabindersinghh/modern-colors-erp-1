@@ -3,6 +3,7 @@ import { Layers, Plus, ArrowRight, PackageCheck, FlaskConical, Truck } from 'luc
 import { api, ApiError } from '@/lib/api'
 import { formatUnitTotals } from '@/lib/units'
 import { useAuth } from '@/lib/auth'
+import { useUrlId, useUrlText } from '@/lib/urlState'
 import type { Batch, BatchStatus, BatchTrace } from '@/types/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -30,9 +31,12 @@ export function BatchesPage() {
   const { user } = useAuth()
   const isHead = user?.role === 'PRODUCTION_HEAD'
   const [batches, setBatches] = useState<Batch[]>([])
-  const [search, setSearch] = useState('')
+  // Search replaces rather than pushes — typing must not bury the previous screen.
+  const [search, setSearch] = useUrlText('q')
   const [creating, setCreating] = useState(false)
-  const [traceId, setTraceId] = useState<string | null>(null)
+  // The open trace IS a place the user went, so it gets a history entry: back (and
+  // Android's gesture back) closes the trace and returns to the list, filter intact.
+  const [traceId, setTraceId] = useUrlId('trace')
 
   const load = useCallback(
     async (q = '') => {
@@ -43,7 +47,10 @@ export function BatchesPage() {
     },
     [],
   )
-  useEffect(() => void load(''), [load])
+  // Load with whatever filter the URL arrived with — a shared link, or a Back into
+  // this list, must show the filtered rows and not silently the unfiltered ones.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => void load(search), [load])
   // Dispatch progress moves without any action from the head — keep the bars live
   // while the tab is visible; focus/reconnect/mutations refresh instantly.
   useAutoRefresh(() => load(search), { intervalMs: 20_000 })

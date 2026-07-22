@@ -50,3 +50,6 @@ WhatsApp*.jpeg
 WhatsApp*.jpg
 *invoice*.jpeg
 *invoice*.jpg
+
+# Playwright MCP scratch output (page snapshots can contain live factory data)
+.playwright-mcp/

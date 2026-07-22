@@ -4,6 +4,7 @@ import { Upload, Plus, BookMarked, AlertTriangle, FileDown } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
 import type { CatalogueItem, Paginated } from '@/types/api'
 import { useAuth } from '@/lib/auth'
+import { useUrlFlag, useUrlText } from '@/lib/urlState'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -29,8 +30,8 @@ export function CataloguePage() {
   const canEdit = hasRole('ADMIN') || hasRole('OPERATOR')
   const [items, setItems] = useState<CatalogueItem[]>([])
   const [total, setTotal] = useState(0)
-  const [search, setSearch] = useState('')
-  const [provisionalOnly, setProvisionalOnly] = useState(false)
+  const [search, setSearch] = useUrlText('q')
+  const [provisionalOnly, setProvisionalOnly] = useUrlFlag('provisional')
   const [provisionalCount, setProvisionalCount] = useState(0)
   const [addOpen, setAddOpen] = useState(false)
   const [preview, setPreview] = useState<{ file: File; data: ImportPreview } | null>(null)
@@ -52,8 +53,11 @@ export function CataloguePage() {
     api.get<{ count: number }>('/catalogue/provisional-count').then((r) => setProvisionalCount(r.count)).catch(() => {})
 
   useEffect(() => {
-    void load('')
+    // Defaults to the current search/provisional filter, so arriving with ?q= in the
+    // URL lists the matching SKUs rather than the whole catalogue.
+    void load()
     void loadCount()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Min/max edits or imports from another session appear on focus/reconnect.

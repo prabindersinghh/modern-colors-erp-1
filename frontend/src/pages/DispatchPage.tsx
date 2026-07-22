@@ -12,6 +12,8 @@ import {
 } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
+import { useUrlId, useUrlParam } from '@/lib/urlState'
+import { usePageBack, useNavigation } from '@/lib/navigation'
 import type { DispatchHistory, DispatchReady, FinishedGood } from '@/types/api'
 import { RapidScanPanel, type RapidScanResult } from '@/components/scan/RapidScanPanel'
 import { ScanPanel } from '@/components/scan/ScanPanel'
@@ -45,7 +47,9 @@ function extractUniqueId(text: string): string {
 type ReadyBatch = DispatchReady['batches'][number]
 
 export function DispatchPage() {
-  const [tab, setTab] = useState<'scan' | 'returns' | 'analytics'>('scan')
+  const [tab, setTab] = useUrlParam<'scan' | 'returns' | 'analytics'>('tab', 'scan', {
+    allowed: ['scan', 'returns', 'analytics'],
+  })
   const { user } = useAuth()
   const [ready, setReady] = useState<DispatchReady | null>(null)
   const [history, setHistory] = useState<DispatchHistory | null>(null)
@@ -53,7 +57,14 @@ export function DispatchPage() {
   const [bulkTarget, setBulkTarget] = useState<ReadyBatch | null>(null)
   // The batch the dispatcher chose to work through. Scanning is never blocked to it —
   // a drum from another batch still dispatches, with a heads-up in the result.
-  const [activeBatchId, setActiveBatchId] = useState<string | null>(null)
+  // Choosing a batch to work through is a navigation step: back returns to the
+  // batch list rather than dropping the dispatcher out of the screen entirely.
+  const [activeBatchId, setActiveBatchId] = useUrlId('batch')
+  // Dispatch is this role's only screen. Back closes whichever batch or tab is open
+  // rather than being absent entirely; the scan panel keeps its own "Back to scan".
+  const { goBackWithinScreen } = useNavigation()
+  usePageBack(activeBatchId || tab !== 'scan' ? () => goBackWithinScreen('/dispatch') : null, 'Dispatch')
+
   const [count, setCount] = useState(0)
   const [recent, setRecent] = useState<RapidScanResult[]>([])
 

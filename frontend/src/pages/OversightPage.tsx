@@ -11,6 +11,8 @@ import {
   TrendingUp,
 } from 'lucide-react'
 import { api } from '@/lib/api'
+import { useUrlParam } from '@/lib/urlState'
+import { usePageBack, useNavigation } from '@/lib/navigation'
 import type { AdminAnalytics, Department, RequestStatus, StockTxnType } from '@/types/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -41,7 +43,15 @@ const TXN_META: Record<StockTxnType, { icon: typeof PlusCircle; cls: string }> =
 }
 
 export function OversightPage() {
-  const [view, setView] = useState<'factory' | 'brain' | 'dispatch' | 'handover' | 'users'>('brain')
+  // Each view is somewhere the owner navigated to, so it gets its own history entry:
+  // back closes the view they opened rather than leaving oversight altogether.
+  const [view, setView] = useUrlParam<'factory' | 'brain' | 'dispatch' | 'handover' | 'users'>('view', 'brain', {
+    allowed: ['factory', 'brain', 'dispatch', 'handover', 'users'],
+  })
+  // This screen is the Admin's home, so the usual Back has nowhere to go. On a view
+  // other than the default, Back closes that view — matching the system back gesture.
+  const { goBackWithinScreen } = useNavigation()
+  usePageBack(view !== 'brain' ? () => goBackWithinScreen('/oversight') : null, 'Company Brain')
   const [days, setDays] = useState(30)
   const [data, setData] = useState<AdminAnalytics | null>(null)
   const [error, setError] = useState(false)

@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import { Sparkles, Trash2, Plus, CheckCircle2, ClipboardCheck, FileText, BookMarked } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
+import { useUnsavedChanges } from '@/lib/navigation'
 import type { Paginated, PurchaseOrder, POLineItem, MatchType } from '@/types/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -149,6 +150,24 @@ function ReviewOne({ poId }: { poId: string }) {
   const [po, setPo] = useState<PurchaseOrder | null>(null)
   const [busy, setBusy] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
+  // A line's edits live in the line until "Save line" is pressed, so navigating away
+  // would drop them silently. Each line reports its dirty state and leaving asks first.
+  const [dirtyLines, setDirtyLines] = useState<Set<string>>(new Set())
+  const reportDirty = useCallback((id: string, dirty: boolean) => {
+    setDirtyLines((prev) => {
+      if (prev.has(id) === dirty) return prev
+      const next = new Set(prev)
+      if (dirty) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  }, [])
+  useUnsavedChanges(
+    dirtyLines.size > 0,
+    `${dirtyLines.size} edited line${dirtyLines.size === 1 ? '' : 's'} on this invoice ${
+      dirtyLines.size === 1 ? 'has' : 'have'
+    } not been saved. Leaving now discards ${dirtyLines.size === 1 ? 'it' : 'them'} — nothing else on the invoice changes.`,
+  )
 
   const load = useCallback(
     () => api.get<PurchaseOrder>(`/purchase-orders/${poId}`).then(setPo).catch(() => {}),
@@ -268,7 +287,16 @@ function ReviewOne({ poId }: { poId: string }) {
           ) : (
             <div className="space-y-2">
               {(po.lineItems ?? []).map((li, i) => (
-                <LineCard key={li.id} poId={poId} item={li} index={i} editable={editable} canAddSku={canAddSku} onChange={load} />
+                <LineCard
+                  key={li.id}
+                  poId={poId}
+                  item={li}
+                  index={i}
+                  editable={editable}
+                  canAddSku={canAddSku}
+                  onChange={load}
+                  onDirtyChange={reportDirty}
+                />
               ))}
             </div>
           )}
@@ -344,6 +372,7 @@ function LineCard({
   editable,
   canAddSku = false,
   onChange,
+  onDirtyChange,
 }: {
   poId: string
   item: POLineItem
@@ -351,6 +380,7 @@ function LineCard({
   editable: boolean
   canAddSku?: boolean
   onChange: () => void
+  onDirtyChange?: (id: string, dirty: boolean) => void
 }) {
   const [v, setV] = useState({
     materialName: item.materialName,
@@ -363,6 +393,13 @@ function LineCard({
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [addingSku, setAddingSku] = useState(false)
+
+  // Tell the screen so it can warn before this line's edits are navigated away from.
+  // The unmount clear matters: a saved-and-reloaded line must not stay "dirty".
+  useEffect(() => {
+    onDirtyChange?.(item.id, dirty)
+    return () => onDirtyChange?.(item.id, false)
+  }, [dirty, item.id, onDirtyChange])
 
   // Add this (unmatched) material to the Master Catalogue. Uses the line's own
   // name/SKU/HSN; a provisional TMP- code is generated server-side if no SKU. Audited

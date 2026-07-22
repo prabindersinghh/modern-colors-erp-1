@@ -2,37 +2,17 @@ import { useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { Navbar } from './Navbar'
-
-// Page titles + subtitles for every screen across all three phases.
-// Keep in sync with Sidebar nav + App routes.
-const pageTitles: Record<string, { title: string; subtitle?: string }> = {
-  // Role dashboards
-  '/': { title: 'Dashboard', subtitle: "Today's invoices, materials received, pending scans/weighing" },
-  '/oversight': { title: 'Factory oversight', subtitle: 'Every department, read-only' },
-  '/store': { title: 'Store dashboard', subtitle: 'Requests to action, stock health and today’s movement' },
-  '/my': { title: 'My department', subtitle: 'Your requests, batches and consumption' },
-  // Phase 2 — requests & stock
-  '/requests': { title: 'Requests', subtitle: 'Raise and track per-material production requests' },
-  '/stock': { title: 'Scan & Issue', subtitle: 'Scan a unit to add, deduct or discard stock' },
-  '/stock-levels': { title: 'Stock Levels', subtitle: 'Live balances, ageing and the movement ledger' },
-  // Phase 3 — finished goods
-  '/batches': { title: 'Batches', subtitle: 'Thread raw materials through to finished goods' },
-  '/production-output': { title: 'Production Output', subtitle: 'Record what a batch produced, then confirm it' },
-  '/dispatch': { title: 'Dispatch', subtitle: 'Scan finished goods out of the factory' },
-  // Phase 1 — inward
-  '/purchase-orders': { title: 'Invoice Upload', subtitle: 'Upload an invoice for AI extraction' },
-  '/review': { title: 'Review & Confirm', subtitle: 'Verify and correct extracted materials before saving' },
-  '/labels': { title: 'QR Labels', subtitle: 'Generate and print QR labels per physical unit' },
-  '/receiving': { title: 'Receive Stock', subtitle: 'Scan each sack on arrival — no weighing' },
-  '/catalogue': { title: 'Master Catalogue', subtitle: 'Factory raw-material SKU reference' },
-  '/audit': { title: 'Audit Log', subtitle: 'Immutable record of every change' },
-  '/settings': { title: 'Settings', subtitle: 'Claude API key and system configuration' },
-}
+import { ConfirmationDialog } from '@/components/common/ConfirmationDialog'
+import { ROUTE_TITLES, toPattern } from '@/lib/nav'
+import { useNavigation } from '@/lib/navigation'
 
 export function AppLayout() {
   const location = useLocation()
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const pageInfo = pageTitles[location.pathname] ?? { title: 'Modern Colours' }
+  // Titles live with the route map in nav.ts so the heading and the Back label can
+  // never disagree about what a screen is called.
+  const pageInfo = ROUTE_TITLES[toPattern(location.pathname)] ?? { title: 'Modern Colours' }
+  const { pendingMessage, confirmPending, cancelPending } = useNavigation()
 
   return (
     <div className="min-h-screen bg-background">
@@ -55,6 +35,18 @@ export function AppLayout() {
           </div>
         </main>
       </div>
+
+      {/* Leaving a screen that still holds unsaved work asks first — the navigation
+          is held until answered, and nothing is written either way. */}
+      <ConfirmationDialog
+        open={!!pendingMessage}
+        onOpenChange={(open) => !open && cancelPending()}
+        title="Leave without saving?"
+        description={pendingMessage ?? ''}
+        confirmLabel="Discard and leave"
+        variant="destructive"
+        onConfirm={confirmPending}
+      />
 
       {sidebarOpen && (
         <div

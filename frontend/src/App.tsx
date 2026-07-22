@@ -1,6 +1,7 @@
 import { Suspense, lazy } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from '@/lib/auth'
+import { NavigationProvider } from '@/lib/navigation'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { Toaster } from '@/components/common/Toaster'
 import { LoginPage } from '@/pages/LoginPage'
@@ -135,7 +136,11 @@ export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
-        <AuthedRoutes />
+        {/* Inside the router (it reads location) and inside auth (back targets are
+            role-checked), so every screen shares one back/forward implementation. */}
+        <NavigationProvider>
+          <AuthedRoutes />
+        </NavigationProvider>
         <Toaster />
       </BrowserRouter>
     </AuthProvider>

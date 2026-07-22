@@ -22,6 +22,7 @@ import type {
 } from '@/types/api'
 import { ScanPanel } from '@/components/scan/ScanPanel'
 import { useScanFlow } from '@/components/scan/useScanFlow'
+import { usePageBack } from '@/lib/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -256,6 +257,12 @@ export function StockPage() {
     setQty('')
     setNote('')
   }
+
+  // While a unit is open the screen OWNS the back gesture: Back (and Android's
+  // gesture back) returns to the camera instead of abandoning the run. The in-page
+  // "Back to scan" button below calls the same reset, so the two agree rather than
+  // compete for the same intent.
+  usePageBack(unit ? reset : null, 'scan')
 
   const clearIssue = () => {
     setIssue(null)

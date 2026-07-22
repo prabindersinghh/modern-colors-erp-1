@@ -1,8 +1,11 @@
 import { Menu } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { NotificationBell } from './NotificationBell'
 import { ProfileDropdown } from './ProfileDropdown'
 import { LogoMark, TaglineStrip } from '@/components/brand/Logo'
+import { NavControls } from './NavControls'
+import { useNavigation } from '@/lib/navigation'
 
 interface NavbarProps {
   title: string
@@ -11,6 +14,10 @@ interface NavbarProps {
 }
 
 export function Navbar({ title, subtitle, onMenuClick }: NavbarProps) {
+  const { back, canGoForward } = useNavigation()
+  // On a phone the width is spoken for. The brand mark is decorative and the sidebar
+  // already carries the lockup, so navigation wins the space when both want it.
+  const hideMark = !!back || canGoForward
   return (
     <header className="sticky top-0 z-30 border-b bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/75">
       <div className="flex h-14 items-center justify-between px-4 lg:px-6">
@@ -26,7 +33,8 @@ export function Navbar({ title, subtitle, onMenuClick }: NavbarProps) {
           </Button>
           {/* The brand mark shows on mobile only — on desktop the sidebar
               already carries the lockup and a second one is just noise. */}
-          <LogoMark className="h-6 w-6 shrink-0 lg:hidden" />
+          <NavControls />
+          <LogoMark className={cn('h-6 w-6 shrink-0 lg:hidden', hideMark && 'hidden')} />
           <div className="min-w-0">
             <h1 className="truncate text-title-3 leading-none text-chip-900">{title}</h1>
             {subtitle && (

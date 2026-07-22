@@ -15,6 +15,7 @@ import { AnimatedNumber } from '@/components/ui/animated-number'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { useUrlParam, useUrlText } from '@/lib/urlState'
 import { EmptyState } from '@/components/common/EmptyState'
 import { formatUnitTotals } from '@/lib/units'
 import { useAutoRefresh } from '@/lib/refresh'
@@ -31,9 +32,14 @@ const fmtDate = (iso: string | null) =>
   iso ? new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: '2-digit' }) : '—'
 
 export function StockLevelsPage() {
+  // The chosen tab is part of where the user is: back closes the tab they opened
+  // instead of leaving Stock Levels altogether.
+  const [tab, setTab] = useUrlParam<'levels' | 'ageing' | 'ledger'>('tab', 'levels', {
+    allowed: ['levels', 'ageing', 'ledger'],
+  })
   return (
     <div className="space-y-4">
-      <Tabs defaultValue="levels">
+      <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
         {/* -mx-1 px-1 gives the scrolling tab strip a little bleed so the last tab
             doesn't sit flush against the screen edge when it scrolls. */}
         {/* Three tabs + icons cannot fit 320–390px screens. Rather than clipping the
@@ -70,7 +76,8 @@ export function StockLevelsPage() {
 }
 
 function LevelsTab() {
-  const [q, setQ] = useState('')
+  // Searches replace rather than push: typing must not fill history with keystrokes.
+  const [q, setQ] = useUrlText('q')
   const [data, setData] = useState<StockLevels | null>(null)
   const [expanded, setExpanded] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -242,10 +249,12 @@ function LevelsTab() {
 
 /** Stock ageing — the plain "how old is my stock" view (30-day / 60-day buckets). */
 function AgeingTab() {
-  const [q, setQ] = useState('')
+  const [q, setQ] = useUrlText('aq')
   const [data, setData] = useState<StockAgeing | null>(null)
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState<'ALL' | 'AMBER' | 'RED'>('ALL')
+  const [filter, setFilter] = useUrlParam<'ALL' | 'AMBER' | 'RED'>('bucket', 'ALL', {
+    allowed: ['ALL', 'AMBER', 'RED'],
+  })
 
   useEffect(() => {
     const t = setTimeout(async () => {
@@ -388,9 +397,9 @@ function BucketCard({
 }
 
 function LedgerTab() {
-  const [type, setType] = useState<StockTxnType | ''>('')
-  const [department, setDepartment] = useState<Department | ''>('')
-  const [unitId, setUnitId] = useState('')
+  const [type, setType] = useUrlParam<StockTxnType | ''>('type', '')
+  const [department, setDepartment] = useUrlParam<Department | ''>('dept', '')
+  const [unitId, setUnitId] = useUrlText('unit')
   const [page, setPage] = useState(1)
   const [res, setRes] = useState<Paginated<StockTransaction> | null>(null)
   const [loading, setLoading] = useState(true)
