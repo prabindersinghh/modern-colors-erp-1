@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, StreamableFile, UseGuards } from '@nestjs/common';
 import { IsInt, Min } from 'class-validator';
 import { Role } from '@prisma/client';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -43,6 +43,24 @@ export class ReceivingSlipController {
   @Roles(Role.ADMIN, Role.OPERATOR, Role.OVERSIGHT, Role.REVIEWER)
   findOne(@Param('id') id: string) {
     return this.slips.findOne(id);
+  }
+
+  /**
+   * The printable slip. Store prints its copy from here and Gate prints the paper he
+   * hands over with the truck — the SAME renderer, so the two can never diverge.
+   * Available from DRAFT onward: a gate guard should not have to wait for Store to
+   * confirm before he can hand over paper. Gate is scoped to his own uploads in the
+   * service. This is the SLIP only; the invoice document is untouched and stays where
+   * it was, and the slip carries nothing commercial.
+   */
+  @Get(':id/slip.pdf')
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.OVERSIGHT, Role.REVIEWER)
+  async slipPdf(@CurrentUser() user: AuthUser, @Param('id') id: string): Promise<StreamableFile> {
+    const { pdf, fileName } = await this.slips.printable(user, id);
+    return new StreamableFile(pdf, {
+      type: 'application/pdf',
+      disposition: `inline; filename="${fileName}"`,
+    });
   }
 
   /**

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { FileUp, Camera, Send, CheckCircle2, Clock, Loader2, Pencil } from 'lucide-react'
+import { FileUp, Camera, Send, CheckCircle2, Clock, Loader2, Pencil, Printer } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -190,7 +190,23 @@ function GateInvoiceCard({
           </Badge>
         </button>
 
-        {open && <Proofread poId={po.id} locked={!!sent} onChanged={onChanged} onSent={loadSlip} />}
+        {open && (
+          <>
+            {slip && (
+              // The same document Store prints, from the same renderer — the gate guard
+              // hands this paper over with the truck. Available from DRAFT onward so he
+              // need not wait for Store to confirm.
+              <Button
+                variant="outline"
+                className="h-11 w-full gap-1.5"
+                onClick={() => void api.openBlob(`/receiving-slips/${slip.id}/slip.pdf`)}
+              >
+                <Printer className="h-4 w-4" /> Download / print slip ({slip.slipNumber})
+              </Button>
+            )}
+            <Proofread poId={po.id} locked={!!sent} onChanged={onChanged} onSent={loadSlip} />
+          </>
+        )}
       </CardContent>
     </Card>
   )

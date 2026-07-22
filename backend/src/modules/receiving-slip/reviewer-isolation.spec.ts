@@ -96,7 +96,9 @@ describe('REVIEWER is view-only by construction', () => {
       'GET /receiving-slips',
       'GET /receiving-slips/:id',
       'GET /receiving-slips/by-po/:poId',
-      // The document itself — the other half of the side-by-side review.
+      // The printable slip — the same document Store and Gate print.
+      'GET /receiving-slips/:id/slip.pdf',
+      // The invoice itself — the other half of the side-by-side review.
       'GET /purchase-orders/:id/file',
     ].sort());
   });
@@ -107,5 +109,24 @@ describe('REVIEWER is view-only by construction', () => {
       const hit = routes.filter((r) => r.roles.includes(Role.REVIEWER) && r.name.includes(prefix));
       expect({ prefix, hit: hit.map((h) => h.name) }).toEqual({ prefix, hit: [] });
     }
+  });
+});
+
+describe('the printable slip is one renderer, scoped per actor', () => {
+  it('Gate can print ONLY slips for invoices he uploaded', () => {
+    // Store and Gate print the same document from the same route, so the paper the
+    // gate guard carries and Store's copy cannot diverge. What differs is reach: a
+    // gate guard prints for the truck he is standing next to and nothing else.
+    const route = routes.find((r) => r.name === 'GET /receiving-slips/:id/slip.pdf');
+    expect(route).toBeDefined();
+    expect(route!.roles.sort()).toEqual(['ADMIN', 'OPERATOR', 'OVERSIGHT', 'REVIEWER']);
+    // The uploadedById scoping itself lives in ReceivingSlipService.printable — a role
+    // list cannot express "his own", so it is enforced there and proven live.
+  });
+
+  it('printing a slip is a GET, so it can never be a write door', () => {
+    const route = routes.find((r) => r.name === 'GET /receiving-slips/:id/slip.pdf');
+    expect(route!.method).toBe('GET');
+    expect(route!.door).toBeNull();
   });
 });

@@ -9,6 +9,7 @@ import { Prisma, Role, SlipStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { AuthUser } from '../../common/decorators/current-user.decorator';
+import { buildSlipPdf } from './slip-pdf';
 
 const SLIP_SEQ = 'receiving_slip_seq';
 
@@ -295,6 +296,48 @@ export class ReceivingSlipService {
       after: { slipNumber: slip.slipNumber, scannedCount, expected: slip.unitCount },
     });
     return updated;
+  }
+
+  /**
+   * The printable slip — ONE renderer, shared by Store and Gate.
+   *
+   * Gate is scoped to invoices HE uploaded: a gate guard may print the paper for the
+   * truck he is standing next to, and nothing else. Checked here rather than in the
+   * controller so the rule travels with the data, and enforced server-side because a
+   * hidden button is not a permission.
+   */
+  async printable(user: AuthUser, id: string): Promise<{ pdf: Buffer; fileName: string }> {
+    const slip = await this.prisma.receivingSlip.findUnique({
+      where: { id },
+      select: {
+        slipNumber: true,
+        supplier: true,
+        receivedDate: true,
+        status: true,
+        unitCount: true,
+        scannedCount: true,
+        lines: true,
+        po: { select: { uploadedById: true } },
+        generatedBy: { select: { name: true, email: true } },
+      },
+    });
+    if (!slip) throw new NotFoundException('No such receiving slip.');
+
+    if (user.role === Role.OPERATOR && slip.po?.uploadedById !== user.id) {
+      throw new ForbiddenException('You can only print slips for invoices you uploaded.');
+    }
+
+    const pdf = await buildSlipPdf({
+      slipNumber: slip.slipNumber,
+      supplier: slip.supplier,
+      receivedDate: slip.receivedDate,
+      status: slip.status,
+      unitCount: slip.unitCount,
+      scannedCount: slip.scannedCount,
+      lines: slip.lines as unknown as SlipLine[],
+      generatedBy: slip.generatedBy,
+    });
+    return { pdf, fileName: `${slip.slipNumber}.pdf` };
   }
 
   /** Slips, newest first — Store's record of what has come in. */

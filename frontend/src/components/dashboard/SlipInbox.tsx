@@ -131,7 +131,7 @@ export function SlipInbox() {
                     <Button
                       variant="outline"
                       className="h-11 flex-1 gap-1.5"
-                      onClick={() => window.print()}
+                      onClick={() => void api.openBlob(`/receiving-slips/${s.id}/slip.pdf`)}
                     >
                       <Printer className="h-4 w-4" /> Print slip
                     </Button>
