@@ -7,6 +7,7 @@ import { ROLES_KEY } from '../../common/decorators/roles.decorator';
 import { ALLOW_CORRECTION_KEY } from '../../common/decorators/allow-correction.decorator';
 import { ALLOW_USER_ADMIN_KEY } from '../../common/decorators/allow-user-admin.decorator';
 import { ALLOW_REPRINT_APPROVAL_KEY } from '../../common/decorators/allow-reprint-approval.decorator';
+import { ALLOW_ACCESS_FLIP_KEY } from '../../common/decorators/allow-access-flip.decorator';
 import { UserAdminGuard } from '../../common/guards/user-admin.guard';
 import { UserAdminController } from './user-admin.controller';
 import { UserAdminService, LOGIN_DOMAIN } from './user-admin.service';
@@ -28,6 +29,10 @@ import {
   LabelReprintController,
   LabelReprintApprovalController,
 } from '../label-reprint/label-reprint.controller';
+import {
+  SystemFlagsController,
+  SystemFlagsAdminController,
+} from '../system-flags/system-flags.controller';
 
 /**
  * User management is the SECOND named door through OVERSIGHT's view-only rule.
@@ -53,6 +58,8 @@ const ALL_CONTROLLERS: [string, any][] = [
   ['ReceivingController', ReceivingController],
   ['LabelReprintController', LabelReprintController],
   ['LabelReprintApprovalController', LabelReprintApprovalController],
+  ['SystemFlagsController', SystemFlagsController],
+  ['SystemFlagsAdminController', SystemFlagsAdminController],
 ];
 
 const methodsOf = (c: any): string[] =>
@@ -81,6 +88,7 @@ describe('the OVERSIGHT write surface stays exactly two named doors', () => {
     const userAdmin: string[] = [];
     const corrections: string[] = [];
     const reprints: string[] = [];
+    const flips: string[] = [];
     for (const [name, controller] of ALL_CONTROLLERS) {
       for (const m of methodsOf(controller)) {
         if (reflector.getAllAndOverride<boolean>(ALLOW_USER_ADMIN_KEY, [controller.prototype[m], controller]))
@@ -89,6 +97,8 @@ describe('the OVERSIGHT write surface stays exactly two named doors', () => {
           corrections.push(`${name}.${m}`);
         if (reflector.getAllAndOverride<boolean>(ALLOW_REPRINT_APPROVAL_KEY, [controller.prototype[m], controller]))
           reprints.push(`${name}.${m}`);
+        if (reflector.getAllAndOverride<boolean>(ALLOW_ACCESS_FLIP_KEY, [controller.prototype[m], controller]))
+          flips.push(`${name}.${m}`);
       }
     }
     expect(corrections).toEqual(['FgCorrectionsController.correct']);
@@ -98,6 +108,10 @@ describe('the OVERSIGHT write surface stays exactly two named doors', () => {
       'LabelReprintApprovalController.approve',
       'LabelReprintApprovalController.reject',
     ]);
+    // The FOURTH door: flipping the segregation-of-duties access flag. A door being
+    // ADDED is the pattern working — each Oversight write is named, guarded and
+    // enumerated here. What must never happen is one appearing that is NOT in this list.
+    expect(flips.sort()).toEqual(['SystemFlagsAdminController.set']);
     expect(userAdmin.sort()).toEqual([
       'UserAdminController.create',
       'UserAdminController.deactivate',

@@ -131,6 +131,8 @@ async function countAll(): Promise<Counts> {
     // Preserved
     User: await prisma.user.count(),
     Setting: await prisma.setting.count(),
+    // Preserved deliberately: resetting this would restore Store's inward access.
+    SystemFlag: await prisma.systemFlag.count(),
     MasterCatalogueItem: await prisma.masterCatalogueItem.count(),
     // Deleted
     PurchaseOrder: await prisma.purchaseOrder.count(),
@@ -150,7 +152,7 @@ async function countAll(): Promise<Counts> {
   };
 }
 
-const PRESERVED = new Set(['User', 'Setting']);
+const PRESERVED = new Set(['User', 'Setting', 'SystemFlag']);
 
 function table(before: Counts, after?: Counts) {
   const rows = Object.keys(before);

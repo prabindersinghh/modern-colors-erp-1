@@ -12,6 +12,7 @@ import {
 import { MaterialStatus, Role } from '@prisma/client';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
+import { StoreInwardGuard } from '../../common/guards/store-inward.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { MaterialService } from './material.service';
 import { QrService, QrPayload, LabelInput } from '../qr/qr.service';
@@ -75,7 +76,15 @@ export class MaterialController {
    * once. This is the operator's repair action from the needs-weight queue — ONE entry
    * per line rather than per sack.
    */
-  @Post('purchase-orders/:poId/pack-weight')
+  /**
+   * Set the per-package weight for an invoice's unweighed units.
+   *
+   * Q2 of the segregation plan: this is a PHYSICAL fact about the sack, not commercial
+   * data, and Store owns the needs-weight queue — so Store keeps it and it is NOT
+   * behind the inward flip. Renamed off the `purchase-orders/` prefix so the boundary
+   * reads honestly: Store touches materials, never invoices.
+   */
+  @Post('materials/pack-weight/:poId')
   @Roles(Role.ADMIN, Role.OPERATOR)
   setPackWeight(
     @Param('poId') poId: string,
@@ -115,6 +124,7 @@ export class MaterialController {
 
   // Single unit's QR as a PNG — individual download / print-shop use (item 12).
   @Get('materials/:id/qr.png')
+  @UseGuards(StoreInwardGuard)
   async qrPng(@CurrentUser() user: AuthUser, @Param('id') id: string): Promise<StreamableFile> {
     // A single unit's sticker is its own scope: pulling one PNG must not lock the
     // whole invoice, but it IS a print of that unit's label.
@@ -133,6 +143,7 @@ export class MaterialController {
   // Printable QR labels (PDF) — ONE 3×1.5" label per page for a label-roll printer,
   // so page count === unit count. All units of an invoice.
   @Get('purchase-orders/:poId/labels.pdf')
+  @UseGuards(StoreInwardGuard)
   async labels(@CurrentUser() user: AuthUser, @Param('poId') poId: string): Promise<StreamableFile> {
     const scope = { kind: 'PO_LABELS', poId } as const;
     await this.reprints.assertMayPrint(scope);
@@ -150,6 +161,7 @@ export class MaterialController {
 
   // Individual QR PNGs (one per unit, named by unique ID) bundled as a ZIP (item 12).
   @Get('purchase-orders/:poId/labels.zip')
+  @UseGuards(StoreInwardGuard)
   async labelsZip(@CurrentUser() user: AuthUser, @Param('poId') poId: string): Promise<StreamableFile> {
     const scope = { kind: 'PO_LABELS', poId } as const;
     await this.reprints.assertMayPrint(scope);
@@ -166,6 +178,7 @@ export class MaterialController {
   // CSV of label data (incl. the exact QR payload string) — for label-design
   // software like BarTender / NiceLabel to merge onto a .btw/.lbl template.
   @Get('purchase-orders/:poId/labels.csv')
+  @UseGuards(StoreInwardGuard)
   async labelsCsv(@CurrentUser() user: AuthUser, @Param('poId') poId: string): Promise<StreamableFile> {
     // The CSV feeds BarTender/NiceLabel, which prints the same stickers — so it draws
     // on the same allowance as the PDF and the ZIP rather than being a way around it.
@@ -197,6 +210,22 @@ export class MaterialController {
       type: 'text/csv; charset=utf-8',
       disposition: `attachment; filename="labels-${safePoId}.csv"`,
     });
+  }
+
+  /**
+   * DEPRECATED alias of the route above, kept ONLY because Vercel deploys in ~30s and
+   * Railway can take 30 minutes: for that window the new UI would otherwise call a
+   * route the old API does not serve, and Store could not unblock a unit. Delete once
+   * both sides are known deployed.
+   */
+  @Post('purchase-orders/:poId/pack-weight')
+  @Roles(Role.ADMIN, Role.OPERATOR)
+  setPackWeightLegacy(
+    @Param('poId') poId: string,
+    @Body() dto: SetPackWeightDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.setPackWeight(poId, dto, user);
   }
 
   // ── helpers ──

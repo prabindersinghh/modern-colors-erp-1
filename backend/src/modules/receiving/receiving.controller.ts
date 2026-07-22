@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/co
 import { Role } from '@prisma/client';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
+import { StoreInwardGuard } from '../../common/guards/store-inward.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
 import { ReceivingService } from './receiving.service';
@@ -9,7 +10,8 @@ import { ScanDto, WeightDto } from './dto/receiving.dto';
 
 // Receiving actions are Operator (and Admin). Idempotent for offline re-sync (I9).
 @Controller('receiving')
-@UseGuards(JwtAuthGuard, RolesGuard)
+// Q1: receiving is inward, so it moves to Gate with the rest of the flow.
+@UseGuards(JwtAuthGuard, RolesGuard, StoreInwardGuard)
 @Roles(Role.ADMIN, Role.OPERATOR)
 export class ReceivingController {
   constructor(private readonly receiving: ReceivingService) {}

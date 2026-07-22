@@ -15,6 +15,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { POStatus, Role } from '@prisma/client';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
+import { StoreInwardGuard } from '../../common/guards/store-inward.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
 import {
@@ -29,7 +30,9 @@ import { CreateLineItemDto, UpdateLineItemDto } from './dto/line-item.dto';
 // detail / file); write routes keep their stricter ADMIN+OPERATOR gates below. The
 // Phase 3 DISPATCH role is excluded entirely — it never sees supplier or PO data.
 @Controller('purchase-orders')
-@UseGuards(JwtAuthGuard, RolesGuard)
+// StoreInwardGuard runs after RolesGuard and governs the STORE DESK ONLY: when the
+// cutover flag is off, Store loses the invoice flow while Gate keeps all of it.
+@UseGuards(JwtAuthGuard, RolesGuard, StoreInwardGuard)
 @Roles(Role.ADMIN, Role.OPERATOR, Role.SUPERVISOR, Role.OVERSIGHT)
 export class PurchaseOrderController {
   constructor(private readonly po: PurchaseOrderService) {}

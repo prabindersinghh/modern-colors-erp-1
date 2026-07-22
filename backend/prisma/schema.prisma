@@ -129,6 +129,7 @@ model User {
   reprintRequested LabelReprintRequest[] @relation("ReprintRequestedBy")
   reprintDecided   LabelReprintRequest[] @relation("ReprintDecidedBy")
   slipsGenerated   ReceivingSlip[]       @relation("SlipGeneratedBy")
+  flagsChanged     SystemFlag[]          @relation("FlagUpdatedBy")
   slipsFinalized   ReceivingSlip[]       @relation("SlipFinalizedBy")
 
   @@index([role])
@@ -642,4 +643,22 @@ model ReceivingSlip {
 
   @@index([status])
   @@index([receivedDate])
+}
+
+// ───────────────────────── Operational flags ─────────────────────────
+
+/**
+ * A plain operational switch — NOT a secret, so deliberately not a `Setting` (that model
+ * exists for AES-encrypted values like the Claude key and every crypto field on it is
+ * required).
+ * Today it holds exactly one key, STORE_INWARD_ACCESS, which is what makes the
+ * segregation-of-duties cutover reversible in seconds instead of a redeploy: revoking
+ * Store's inward access is a value change, and restoring it is the same change back.
+ */
+model SystemFlag {
+  key         String   @id
+  value       String
+  updatedById String?
+  updatedBy   User?    @relation("FlagUpdatedBy", fields: [updatedById], references: [id])
+  updatedAt   DateTime @updatedAt
 }

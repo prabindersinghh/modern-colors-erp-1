@@ -95,11 +95,82 @@ describe('Phase 1 access is intact after the DISPATCH role-gating', () => {
     });
   });
 
-  it('Store (ADMIN) retains access to every Phase 1 endpoint', () => {
+  // ── the segregation-of-duties cutover, pinned in BOTH flag states ──
+  //
+  // @Roles still lists ADMIN on the inward routes; what revokes Store is
+  // StoreInwardGuard reading STORE_INWARD_ACCESS at request time. So "flag ON" is an
+  // assertion about @Roles, and "flag OFF" is an assertion that the guard is actually
+  // attached to those routes. Together they pin today's reality and the post-flip one.
+
+  it('flag ON — Store (ADMIN) still reaches every Phase 1 endpoint (today, and after a flip back)', () => {
     for (const endpoints of Object.values(SCREENS)) {
       for (const [name, controller, method] of endpoints) {
         expect({ name, ok: allows(controller, method, Role.ADMIN) }).toEqual({ name, ok: true });
       }
+    }
+  });
+
+  /** Is StoreInwardGuard attached to this route, at method or class level? */
+  const guarded = (controller: any, method: string): boolean => {
+    const onMethod: any[] = Reflect.getMetadata('__guards__', controller.prototype[method]) ?? [];
+    const onClass: any[] = Reflect.getMetadata('__guards__', controller) ?? [];
+    return [...onMethod, ...onClass].some((g) => g?.name === 'StoreInwardGuard');
+  };
+
+  it('flag OFF — every INWARD route is behind StoreInwardGuard, so Store loses all of them', () => {
+    // Enumerated deliberately rather than derived from SCREENS: those screen lists also
+    // contain the dashboard, the catalogue and the materials reads, all of which Store
+    // KEEPS. The flip covers the inward flow itself and nothing else.
+    const INWARD: [string, any, string][] = [
+      ['GET /purchase-orders', PurchaseOrderController, 'list'],
+      ['GET /purchase-orders/:id', PurchaseOrderController, 'findOne'],
+      ['GET /purchase-orders/:id/file', PurchaseOrderController, 'file'],
+      ['POST /purchase-orders', PurchaseOrderController, 'upload'],
+      ['POST /purchase-orders/manual', PurchaseOrderController, 'createManual'],
+      ['POST /purchase-orders/:id/extract', PurchaseOrderController, 'extract'],
+      ['POST /purchase-orders/:id/manual', PurchaseOrderController, 'manual'],
+      ['POST /purchase-orders/:id/line-items', PurchaseOrderController, 'addLine'],
+      ['PATCH .../line-items/:itemId', PurchaseOrderController, 'updateLine'],
+      ['DELETE .../line-items/:itemId', PurchaseOrderController, 'deleteLine'],
+      ['POST /purchase-orders/:id/confirm', PurchaseOrderController, 'confirm'],
+      ['GET /materials/:id/qr.png', MaterialController, 'qrPng'],
+      ['GET /purchase-orders/:poId/labels.pdf', MaterialController, 'labels'],
+      ['GET /purchase-orders/:poId/labels.zip', MaterialController, 'labelsZip'],
+      ['GET /purchase-orders/:poId/labels.csv', MaterialController, 'labelsCsv'],
+      // Q1: receiving is inward, so it moves to Gate with the rest.
+      ['POST /receiving/scan', ReceivingController, 'scan'],
+      ['GET /receiving/recent', ReceivingController, 'recent'],
+    ];
+    for (const [name, controller, method] of INWARD) {
+      expect({ name, behindFlip: guarded(controller, method) }).toEqual({ name, behindFlip: true });
+    }
+  });
+
+  it('flag OFF — GATE keeps every one of those routes; the flip touches Store alone', () => {
+    // Asserted in two places on purpose: here at the routing layer, and in
+    // store-inward-flip.spec.ts at the guard itself, which returns true for OPERATOR
+    // whatever the flag says.
+    for (const endpoints of Object.values(SCREENS)) {
+      for (const [name, controller, method] of endpoints) {
+        expect({ name, ok: allows(controller, method, Role.OPERATOR) }).toEqual({ name, ok: true });
+      }
+    }
+  });
+
+  it('what Store KEEPS is not behind the flip — materials, and the pack-weight unblock', () => {
+    // Q2: pack weight is a physical fact about a sack and Store owns the needs-weight
+    // queue, so it must survive the flip. Same for reading materials.
+    const notGuarded = (controller: any, method: string): boolean => {
+      const onMethod: any[] = Reflect.getMetadata('__guards__', controller.prototype[method]) ?? [];
+      const onClass: any[] = Reflect.getMetadata('__guards__', controller) ?? [];
+      return ![...onMethod, ...onClass].some((g) => g?.name === 'StoreInwardGuard');
+    };
+    for (const method of ['list', 'needsWeight', 'findOne', 'setPackWeight', 'unitsForPo']) {
+      if (typeof (MaterialController.prototype as any)[method] !== 'function') continue;
+      expect({ method, keptByStore: notGuarded(MaterialController, method) }).toEqual({
+        method,
+        keptByStore: true,
+      });
     }
   });
 

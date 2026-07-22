@@ -24,6 +24,7 @@ import { FinishedGoodsModule } from './modules/finished-goods/finished-goods.mod
 
 import { LabelReprintModule } from './modules/label-reprint/label-reprint.module';
 import { ReceivingSlipModule } from './modules/receiving-slip/receiving-slip.module';
+import { SystemFlagsModule } from './modules/system-flags/system-flags.module';
 import { HandoverModule } from './handover/handover.module';
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { HandoverModule } from './handover/handover.module';
     FinishedGoodsModule,
     LabelReprintModule,
     ReceivingSlipModule,
+    SystemFlagsModule,
       HandoverModule,
   ],
   controllers: [HealthController, StorageHealthController],

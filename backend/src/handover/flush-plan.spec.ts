@@ -47,7 +47,10 @@ describe('handover flush plan', () => {
     return map;
   })();
 
-  const PRESERVED = ['User', 'Setting'];
+  // SystemFlag is PRESERVED, not deleted. Wiping it would reset STORE_INWARD_ACCESS to
+  // its default of "on" and silently hand the Store desk back the inward flow on
+  // handover day — the one day nobody would be watching for it.
+  const PRESERVED = ['User', 'Setting', 'SystemFlag'];
   const CONDITIONAL = ['MasterCatalogueItem']; // kept unless --flush-catalogue
 
   it('accounts for every model in the schema', () => {
@@ -77,8 +80,9 @@ describe('handover flush plan', () => {
     expect(violations).toEqual([]);
   });
 
-  it('never deletes users or settings', () => {
-    // Wiping these would lock the factory out and destroy the encrypted Claude key.
+  it('never deletes users, settings or operational flags', () => {
+    // Wiping these would lock the factory out, destroy the encrypted Claude key, or
+    // quietly undo the segregation-of-duties cutover.
     for (const p of PRESERVED) expect(deleteOrder).not.toContain(p);
   });
 
