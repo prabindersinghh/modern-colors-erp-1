@@ -16,7 +16,7 @@ import {
   ExtractedLineItem,
 } from '../ai-extraction/ai-extraction.service';
 import { MaterialService } from '../material/material.service';
-import { ReceivingSlipService } from '../receiving-slip/receiving-slip.service';
+import { ReceivingSlipService, SLIP_SOURCE_SELECT } from '../receiving-slip/receiving-slip.service';
 import { ManualEntryDto } from './dto/manual-entry.dto';
 import { CreateLineItemDto, UpdateLineItemDto } from './dto/line-item.dto';
 
@@ -146,6 +146,15 @@ export class PurchaseOrderService {
     return po;
   }
 
+  /** The invoice lines a slip may draw from — read through the slip's own allow-list. */
+  private slipLines(poId: string) {
+    return this.prisma.pOLineItem.findMany({
+      where: { poId },
+      select: SLIP_SOURCE_SELECT,
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
   async getFile(id: string): Promise<{ buffer: Buffer; fileName: string; mimeType: string }> {
     const po = await this.prisma.purchaseOrder.findUnique({ where: { id } });
     if (!po || !po.fileKey) throw new NotFoundException('Invoice file not found');
@@ -201,6 +210,12 @@ export class PurchaseOrderService {
           status: POStatus.AI_EXTRACTED,
         },
       });
+      // The slip is born HERE, as the digital PO: Store never sees the invoice, so this
+      // is what it will confirm from. No units exist yet, so no ID ranges.
+      await this.slips.generateFromExtraction(
+        { id: po.id, supplier: result.supplier ?? po.supplier, lineItems: await this.slipLines(po.id) },
+        actorId,
+      );
       await this.audit.log({
         entityType: 'PurchaseOrder',
         entityId: po.id,
@@ -422,7 +437,9 @@ export class PurchaseOrderService {
         // The digital receiving slip is generated HERE, inside the confirm transaction,
         // so a registered inward always has one. Store can no longer see the invoice, so
         // a registered-but-slipless inward would be material Store cannot account for.
-        await this.slips.generateForConfirm(tx, po, units, actorId);
+        // The slip already exists — it was born at extraction and is what Store just
+        // confirmed FROM. Confirming attaches the unit ID ranges to it.
+        await this.slips.attachUnits(tx, po, units, actorId);
 
         await tx.purchaseOrder.update({ where: { id }, data: { status: POStatus.REGISTERED } });
         await this.audit.log(

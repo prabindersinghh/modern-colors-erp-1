@@ -1,4 +1,10 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma, Role, SlipStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -18,10 +24,44 @@ export interface SlipLine {
   packWeight: number | null;
   /** "kg" or "L" — never mixed into a single total anywhere. */
   measure: string;
-  /** Unit ID range these packages were minted as, e.g. MC-000101 … MC-000150. */
-  idFrom: string;
-  idTo: string;
+  /** Unit ID range, once Store has confirmed. Null before then — no unit exists yet. */
+  idFrom: string | null;
+  idTo: string | null;
 }
+
+/** The invoice fields a slip line may draw from. Nothing commercial is listed. */
+export const SLIP_SOURCE_SELECT = {
+  materialName: true,
+  sku: true,
+  quantity: true,
+  unit: true,
+  weight: true,
+} satisfies Prisma.POLineItemSelect;
+
+export type SlipSourceLine = {
+  materialName: string;
+  sku: string | null;
+  quantity: number;
+  unit: string | null;
+  weight: number | null;
+};
+
+/**
+ * The ONLY place an invoice line becomes a slip line — field by field, deliberately.
+ * Never a spread of a Prisma record, which is exactly how `fileKey` and `extractedJson`
+ * once reached an invoice response.
+ */
+export const toSlipLine = (l: SlipSourceLine): SlipLine => ({
+  materialName: l.materialName,
+  sku: l.sku,
+  quantity: l.quantity,
+  unit: l.unit,
+  packWeight: l.weight,
+  // Litres for liquids, kilograms otherwise — labelled per line, never summed together.
+  measure: /^(l|ltr|lt|litre|liter)$/i.test(l.unit ?? '') ? 'L' : 'kg',
+  idFrom: null,
+  idTo: null,
+});
 
 export const formatSlipNumber = (n: number | bigint): string => `RS-${String(n).padStart(6, '0')}`;
 
@@ -48,78 +88,171 @@ export class ReceivingSlipService {
   ) {}
 
   /**
-   * Generate the slip for a just-registered inward.
+   * The slip is BORN AT EXTRACTION, as the digital PO.
    *
-   * Called INSIDE the confirm transaction, so a registered invoice always has a slip —
-   * there is no window in which Store can see units with no record of where they came
-   * from. `units` arrives in line order (registerUnits mints line by line), which is what
-   * lets each line report a contiguous ID range; the count assertion below fails loudly
-   * rather than emitting a slip whose ranges have quietly drifted.
+   * It is no longer a by-product of confirming — it is what Store confirms FROM, because
+   * Store never sees the invoice. At this point no unit exists, so there are no ID ranges
+   * and no unitCount; those attach in {@link attachUnits} when Store confirms.
+   *
+   * Idempotent: re-extracting refreshes a DRAFT rather than minting a second slip, and
+   * refuses to touch one Gate has already handed over.
    */
-  async generateForConfirm(
-    tx: Prisma.TransactionClient,
-    po: {
-      id: string;
-      supplier: string | null;
-      lineItems: {
-        materialName: string;
-        sku: string | null;
-        quantity: number;
-        unit: string | null;
-        weight: number | null;
-      }[];
-    },
-    units: { uniqueId: string }[],
+  async generateFromExtraction(
+    po: { id: string; supplier: string | null; lineItems: SlipSourceLine[] },
     actorId: string,
   ) {
-    const expected = po.lineItems.reduce((n, l) => n + l.quantity, 0);
-    if (units.length !== expected) {
-      throw new ConflictException(
-        `Slip not generated: ${units.length} units minted but the invoice lines total ${expected}.`,
-      );
-    }
-
-    const lines: SlipLine[] = [];
-    let cursor = 0;
-    for (const line of po.lineItems) {
-      const slice = units.slice(cursor, cursor + line.quantity);
-      cursor += line.quantity;
-      if (slice.length === 0) continue;
-      lines.push({
-        materialName: line.materialName,
-        sku: line.sku,
-        quantity: line.quantity,
-        unit: line.unit,
-        packWeight: line.weight,
-        // Litres for liquids, kilograms otherwise — the two are shown separately on the
-        // slip and are never added together.
-        measure: /^(l|ltr|lt|litre|liter)$/i.test(line.unit ?? '') ? 'L' : 'kg',
-        idFrom: slice[0].uniqueId,
-        idTo: slice[slice.length - 1].uniqueId,
+    const lines = po.lineItems.map(toSlipLine);
+    const existing = await this.prisma.receivingSlip.findUnique({ where: { poId: po.id } });
+    if (existing) {
+      // Handed over means proofread: Store's copy must not change underneath it.
+      if (existing.status !== SlipStatus.DRAFT) return existing;
+      return this.prisma.receivingSlip.update({
+        where: { poId: po.id },
+        data: { lines: lines as unknown as Prisma.InputJsonValue, supplier: po.supplier },
       });
     }
 
-    const [{ v }] = await tx.$queryRawUnsafe<{ v: bigint }[]>(`SELECT nextval('${SLIP_SEQ}') AS v`);
-    const slip = await tx.receivingSlip.create({
+    const [{ v }] = await this.prisma.$queryRawUnsafe<{ v: bigint }[]>(
+      `SELECT nextval('${SLIP_SEQ}') AS v`,
+    );
+    const slip = await this.prisma.receivingSlip.create({
       data: {
         slipNumber: formatSlipNumber(v),
         poId: po.id,
         supplier: po.supplier,
         receivedDate: new Date(),
         lines: lines as unknown as Prisma.InputJsonValue,
-        unitCount: units.length,
         status: SlipStatus.DRAFT,
         generatedById: actorId,
       },
     });
 
+    await this.audit.log({
+      entityType: 'ReceivingSlip',
+      entityId: slip.id,
+      action: 'RECEIVING_SLIP_GENERATED',
+      actorId,
+      after: { slipNumber: slip.slipNumber, poId: po.id, lineCount: lines.length },
+    });
+    return slip;
+  }
+
+  /**
+   * Gate's proofread is done: "Looks right — send to Store".
+   *
+   * The snapshot Store works from is taken HERE, after the proofread, so Store always
+   * sees the corrected version. From this moment Gate's line edits are refused.
+   */
+  async sendToStore(user: AuthUser, poId: string) {
+    const slip = await this.prisma.receivingSlip.findUnique({ where: { poId } });
+    if (!slip) throw new NotFoundException('No slip for this invoice.');
+    if (slip.status !== SlipStatus.DRAFT) {
+      throw new ConflictException('This slip has already been handed to Store.');
+    }
+    const po = await this.prisma.purchaseOrder.findUnique({
+      where: { id: poId },
+      select: { supplier: true, lineItems: { select: SLIP_SOURCE_SELECT, orderBy: { createdAt: 'asc' } } },
+    });
+    if (!po?.lineItems.length) throw new BadRequestException('There are no lines to hand over.');
+
+    const updated = await this.prisma.receivingSlip.update({
+      where: { poId },
+      data: {
+        status: SlipStatus.AWAITING_STORE,
+        handedOverAt: new Date(),
+        supplier: po.supplier,
+        lines: po.lineItems.map(toSlipLine) as unknown as Prisma.InputJsonValue,
+      },
+    });
+    await this.audit.log({
+      entityType: 'ReceivingSlip',
+      entityId: slip.id,
+      action: 'RECEIVING_SLIP_SENT_TO_STORE',
+      actorId: user.id,
+      before: { status: SlipStatus.DRAFT },
+      after: { slipNumber: slip.slipNumber, lineCount: po.lineItems.length },
+    });
+    return updated;
+  }
+
+  /**
+   * Gate may only edit while the slip is still his. Server-side, because a proofread
+   * that the UI merely hides is not a proofread.
+   */
+  async assertGateMayEdit(poId: string) {
+    const slip = await this.prisma.receivingSlip.findUnique({
+      where: { poId },
+      select: { status: true },
+    });
+    if (slip && slip.status !== SlipStatus.DRAFT) {
+      throw new ForbiddenException(
+        'This invoice has been handed to Store. Ask Store to correct it during Review & Confirm.',
+      );
+    }
+  }
+
+  /**
+   * Store confirmed: the unit ID ranges attach to the lines they came from.
+   *
+   * Runs inside the confirm transaction. `units` arrives in line order, which is what
+   * lets each line report a contiguous range; the count assertion fails loudly rather
+   * than emitting ranges that have quietly drifted.
+   */
+  async attachUnits(
+    tx: Prisma.TransactionClient,
+    po: { id: string; lineItems: SlipSourceLine[] },
+    units: { uniqueId: string }[],
+    actorId: string,
+  ) {
+    const expected = po.lineItems.reduce((n, l) => n + l.quantity, 0);
+    if (units.length !== expected) {
+      throw new ConflictException(
+        `Slip not updated: ${units.length} units minted but the lines total ${expected}.`,
+      );
+    }
+    const lines: SlipLine[] = [];
+    let cursor = 0;
+    for (const line of po.lineItems) {
+      const slice = units.slice(cursor, cursor + line.quantity);
+      cursor += line.quantity;
+      lines.push({
+        ...toSlipLine(line),
+        idFrom: slice[0]?.uniqueId ?? null,
+        idTo: slice.at(-1)?.uniqueId ?? null,
+      });
+    }
+    // A slip normally already exists (born at extraction). Manual-entry invoices and
+    // anything confirmed before the slip system have none, so one is created here —
+    // history must not go dark just because it predates the lifecycle change.
+    const data = {
+      lines: lines as unknown as Prisma.InputJsonValue,
+      unitCount: units.length,
+      confirmedAt: new Date(),
+    };
+    const existing = await tx.receivingSlip.findUnique({ where: { poId: po.id } });
+    let slip;
+    if (existing) {
+      slip = await tx.receivingSlip.update({ where: { poId: po.id }, data });
+    } else {
+      const [{ v }] = await tx.$queryRawUnsafe<{ v: bigint }[]>(`SELECT nextval('${SLIP_SEQ}') AS v`);
+      slip = await tx.receivingSlip.create({
+        data: {
+          ...data,
+          slipNumber: formatSlipNumber(v),
+          poId: po.id,
+          receivedDate: new Date(),
+          status: SlipStatus.AWAITING_STORE,
+          generatedById: actorId,
+        },
+      });
+    }
     await this.audit.log(
       {
         entityType: 'ReceivingSlip',
         entityId: slip.id,
-        action: 'RECEIVING_SLIP_GENERATED',
+        action: 'RECEIVING_SLIP_UNITS_ATTACHED',
         actorId,
-        after: { slipNumber: slip.slipNumber, poId: po.id, unitCount: units.length, lineCount: lines.length },
+        after: { slipNumber: slip.slipNumber, unitCount: units.length },
       },
       tx,
     );
@@ -228,6 +361,8 @@ export class ReceivingSlipService {
     unitCount: true,
     status: true,
     generatedAt: true,
+    handedOverAt: true,
+    confirmedAt: true,
     finalizedAt: true,
     scannedCount: true,
     generatedBy: { select: { name: true, email: true } },
