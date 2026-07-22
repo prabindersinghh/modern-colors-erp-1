@@ -73,26 +73,66 @@ describe('Phase 1 access is intact after the DISPATCH role-gating', () => {
     ],
   };
 
+  /**
+   * THE CORRECTED SPLIT. Gate does exactly one job — photograph the invoice, upload it,
+   * proofread what was extracted, hand it to Store. Everything downstream is Store's.
+   *
+   * These two lists are the matrix. A route moving between them must be a visible diff
+   * here, which is the point: the previous version of this spec asserted Gate reached
+   * every Phase-1 endpoint, and that is exactly what the re-cut reversed.
+   */
+  const GATE_ROUTES = [
+    'POST /purchase-orders (upload)',
+    'POST /purchase-orders/manual',
+    'POST /purchase-orders/:id/extract',
+    'GET /purchase-orders',
+    'GET /purchase-orders (picker)',
+    'GET /purchase-orders/:id',
+    // Q4(a): Gate proofreads the extracted lines against the paper he is holding — the
+    // only actor who can. Refused server-side once the slip reaches AWAITING_STORE, so
+    // this is a proofread and never a second Review & Confirm.
+    'POST /purchase-orders/:id/line-items',
+    'PATCH .../line-items/:lineId',
+    'DELETE .../line-items/:lineId',
+  ];
+
   describe.each(Object.entries(SCREENS))('%s', (_screen, endpoints) => {
-    it.each(endpoints)('OPERATOR can call %s', (_name, controller, method) => {
-      expect(allows(controller, method, Role.OPERATOR)).toBe(true);
+    it.each(endpoints)('GATE reaches %s only if it is part of scan-and-go', (name, controller, method) => {
+      expect({ name, gate: allows(controller, method, Role.OPERATOR) }).toEqual({
+        name,
+        gate: GATE_ROUTES.includes(name),
+      });
     });
 
-    it.each(endpoints)('SUPERVISOR can call %s', (_name, controller, method) => {
-      // Supervisor is read-only in places; assert only that the ROLE GATE lets it
-      // through where it did before — write routes were always ADMIN/OPERATOR.
-      const required = rolesFor(controller, method) ?? [];
-      const isWriteRoute =
-        required.length > 0 &&
-        !required.includes(Role.SUPERVISOR) &&
-        required.includes(Role.OPERATOR);
-      if (isWriteRoute) {
-        // Pre-existing restriction (e.g. upload/confirm are ADMIN+OPERATOR) — unchanged.
-        expect(required).not.toContain(Role.SUPERVISOR);
-      } else {
-        expect(allows(controller, method, Role.SUPERVISOR)).toBe(true);
-      }
+    it.each(endpoints)('STORE reaches %s — the whole inward flow is Store’s', (name, controller, method) => {
+      expect({ name, store: allows(controller, method, Role.ADMIN) }).toEqual({ name, store: true });
     });
+  });
+
+  it('GATE can never confirm — minting (I1) is Store’s act alone', () => {
+    expect(allows(PurchaseOrderController, 'confirm', Role.OPERATOR)).toBe(false);
+    expect(allows(PurchaseOrderController, 'confirm', Role.ADMIN)).toBe(true);
+  });
+
+  it('STORE can never read the invoice document — permanently, not flag-gated', () => {
+    // The commercial artifact the whole split exists to separate.
+    expect(allows(PurchaseOrderController, 'file', Role.ADMIN)).toBe(false);
+    expect(allows(PurchaseOrderController, 'file', Role.SUPERVISOR)).toBe(false);
+    for (const r of [Role.OPERATOR, Role.OVERSIGHT, Role.REVIEWER]) {
+      expect({ role: r, ok: allows(PurchaseOrderController, 'file', r) }).toEqual({ role: r, ok: true });
+    }
+  });
+
+  it('GATE has no factory-wide view and no labels, catalogue or receiving', () => {
+    for (const [name, controller, method] of [
+      ['dashboard', DashboardController, 'summary'],
+      ['catalogue create', CatalogueController, 'create'],
+      ['receiving scan', ReceivingController, 'scan'],
+      ['labels', MaterialController, 'labels'],
+      ['pack weight', MaterialController, 'setPackWeight'],
+    ] as [string, any, string][]) {
+      expect({ name, gate: allows(controller, method, Role.OPERATOR) }).toEqual({ name, gate: false });
+    }
   });
 
   // ── the segregation-of-duties cutover, pinned in BOTH flag states ──
@@ -122,38 +162,21 @@ describe('Phase 1 access is intact after the DISPATCH role-gating', () => {
     // contain the dashboard, the catalogue and the materials reads, all of which Store
     // KEEPS. The flip covers the inward flow itself and nothing else.
     const INWARD: [string, any, string][] = [
-      ['GET /purchase-orders', PurchaseOrderController, 'list'],
-      ['GET /purchase-orders/:id', PurchaseOrderController, 'findOne'],
-      ['GET /purchase-orders/:id/file', PurchaseOrderController, 'file'],
       ['POST /purchase-orders', PurchaseOrderController, 'upload'],
       ['POST /purchase-orders/manual', PurchaseOrderController, 'createManual'],
       ['POST /purchase-orders/:id/extract', PurchaseOrderController, 'extract'],
-      ['POST /purchase-orders/:id/manual', PurchaseOrderController, 'manual'],
-      ['POST /purchase-orders/:id/line-items', PurchaseOrderController, 'addLine'],
-      ['PATCH .../line-items/:itemId', PurchaseOrderController, 'updateLine'],
-      ['DELETE .../line-items/:itemId', PurchaseOrderController, 'deleteLine'],
-      ['POST /purchase-orders/:id/confirm', PurchaseOrderController, 'confirm'],
-      ['GET /materials/:id/qr.png', MaterialController, 'qrPng'],
-      ['GET /purchase-orders/:poId/labels.pdf', MaterialController, 'labels'],
-      ['GET /purchase-orders/:poId/labels.zip', MaterialController, 'labelsZip'],
-      ['GET /purchase-orders/:poId/labels.csv', MaterialController, 'labelsCsv'],
-      // Q1: receiving is inward, so it moves to Gate with the rest.
-      ['POST /receiving/scan', ReceivingController, 'scan'],
-      ['GET /receiving/recent', ReceivingController, 'recent'],
     ];
     for (const [name, controller, method] of INWARD) {
       expect({ name, behindFlip: guarded(controller, method) }).toEqual({ name, behindFlip: true });
     }
   });
 
-  it('flag OFF — GATE keeps every one of those routes; the flip touches Store alone', () => {
+  it('flag OFF — GATE keeps upload and extraction; the flip touches Store alone', () => {
     // Asserted in two places on purpose: here at the routing layer, and in
     // store-inward-flip.spec.ts at the guard itself, which returns true for OPERATOR
     // whatever the flag says.
-    for (const endpoints of Object.values(SCREENS)) {
-      for (const [name, controller, method] of endpoints) {
-        expect({ name, ok: allows(controller, method, Role.OPERATOR) }).toEqual({ name, ok: true });
-      }
+    for (const m of ['upload', 'createManual', 'extract']) {
+      expect({ m, ok: allows(PurchaseOrderController, m, Role.OPERATOR) }).toEqual({ m, ok: true });
     }
   });
 
@@ -165,7 +188,7 @@ describe('Phase 1 access is intact after the DISPATCH role-gating', () => {
       const onClass: any[] = Reflect.getMetadata('__guards__', controller) ?? [];
       return ![...onMethod, ...onClass].some((g) => g?.name === 'StoreInwardGuard');
     };
-    for (const method of ['list', 'needsWeight', 'findOne', 'setPackWeight', 'unitsForPo']) {
+    for (const method of ['list', 'needsWeight', 'findOne', 'setPackWeight', 'labels', 'qrPng']) {
       if (typeof (MaterialController.prototype as any)[method] !== 'function') continue;
       expect({ method, keptByStore: notGuarded(MaterialController, method) }).toEqual({
         method,
@@ -191,7 +214,7 @@ describe('Phase 1 access is intact after the DISPATCH role-gating', () => {
         switchToHttp: () => ({ getRequest: () => ({ user }) }),
       }) as never;
 
-    expect(guard.canActivate(ctx({ role: Role.OPERATOR }, ReceivingController, 'scan'))).toBe(true);
+    expect(guard.canActivate(ctx({ role: Role.ADMIN }, ReceivingController, 'scan'))).toBe(true);
     expect(() =>
       guard.canActivate(ctx({ role: Role.DISPATCH }, ReceivingController, 'scan')),
     ).toThrow();

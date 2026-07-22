@@ -602,8 +602,9 @@ model LabelReprintRequest {
 // ───────────────────── Digital receiving slip (segregation of duties) ─────────────────────
 
 enum SlipStatus {
-  DRAFT // generated at registration; the gate has not pressed Done yet
-  FINALIZED // the gate closed its receiving session
+  DRAFT // born at extraction — Gate is proofreading it against the paper
+  AWAITING_STORE // Gate has proofread and handed over; Gate can no longer edit
+  FINALIZED // Store finished receiving against it
 }
 
 /**
@@ -629,12 +630,19 @@ model ReceivingSlip {
 
   /// [{ materialName, sku, quantity, unit, packWeight, measure, idFrom, idTo }]
   lines     Json
-  unitCount Int
+  /// Null until Store confirms — at extraction no unit exists yet.
+  unitCount Int?
   status    SlipStatus @default(DRAFT)
+
+  /// Set when Store confirms and the unit ID ranges attach to the lines.
+  confirmedAt DateTime?
 
   generatedById String
   generatedBy   User     @relation("SlipGeneratedBy", fields: [generatedById], references: [id])
   generatedAt   DateTime @default(now())
+
+  /// When Gate pressed "Looks right — send to Store".
+  handedOverAt DateTime?
 
   finalizedById String?
   finalizedBy   User?     @relation("SlipFinalizedBy", fields: [finalizedById], references: [id])

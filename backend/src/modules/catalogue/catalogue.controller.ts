@@ -33,7 +33,6 @@ import { UpdateCatalogueItemDto } from './dto/update-catalogue-item.dto';
 // goods. Write operations keep their own stricter per-route gates below.
 const CATALOGUE_READ_ROLES = [
   Role.ADMIN,
-  Role.OPERATOR,
   Role.SUPERVISOR,
   Role.OVERSIGHT,
   Role.PRODUCTION_HEAD,
@@ -85,7 +84,8 @@ export class CatalogueController {
   // Add a single new SKU: allowed for Operators too (new SKUs arrive daily and
   // are added during operations WITH confirmation). Additive + audited.
   @Post()
-  @Roles(Role.ADMIN, Role.OPERATOR)
+  // The no-match SKU add belongs to Store's Review & Confirm, not to Gate.
+  @Roles(Role.ADMIN)
   create(
     @Body() dto: CreateCatalogueItemDto,
     @CurrentUser() actor: AuthUser,

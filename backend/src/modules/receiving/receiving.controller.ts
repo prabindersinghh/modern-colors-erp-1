@@ -10,9 +10,10 @@ import { ScanDto, WeightDto } from './dto/receiving.dto';
 
 // Receiving actions are Operator (and Admin). Idempotent for offline re-sync (I9).
 @Controller('receiving')
-// Q1: receiving is inward, so it moves to Gate with the rest of the flow.
-@UseGuards(JwtAuthGuard, RolesGuard, StoreInwardGuard)
-@Roles(Role.ADMIN, Role.OPERATOR)
+// Re-cut: scan-to-receive is STORE's, permanently. Gate photographs the invoice and
+// stops; it never touches a physical unit.
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(Role.ADMIN)
 export class ReceivingController {
   constructor(private readonly receiving: ReceivingService) {}
 

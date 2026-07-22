@@ -30,9 +30,10 @@ import { CreateLineItemDto, UpdateLineItemDto } from './dto/line-item.dto';
 // detail / file); write routes keep their stricter ADMIN+OPERATOR gates below. The
 // Phase 3 DISPATCH role is excluded entirely — it never sees supplier or PO data.
 @Controller('purchase-orders')
-// StoreInwardGuard runs after RolesGuard and governs the STORE DESK ONLY: when the
-// cutover flag is off, Store loses the invoice flow while Gate keeps all of it.
-@UseGuards(JwtAuthGuard, RolesGuard, StoreInwardGuard)
+// StoreInwardGuard is applied PER ROUTE below, not to the whole controller: after the
+// re-cut, Store keeps everything derived from the invoice (review, confirm, lines) and
+// loses only the document itself and the two routes that produce it.
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(Role.ADMIN, Role.OPERATOR, Role.SUPERVISOR, Role.OVERSIGHT)
 export class PurchaseOrderController {
   constructor(private readonly po: PurchaseOrderService) {}
@@ -65,8 +66,13 @@ export class PurchaseOrderController {
    * digital slip, so REVIEWER is added HERE and on no other invoice route — it cannot
    * list invoices, cannot open one's data, and holds no write anywhere.
    */
+  /**
+   * The invoice document. PERMANENTLY out of Store's reach — not flag-gated, because
+   * this is the commercial artifact the whole split exists to separate. Gate holds the
+   * paper, the Reviewer checks it, the owner sees everything.
+   */
   @Get(':id/file')
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.SUPERVISOR, Role.OVERSIGHT, Role.REVIEWER)
+  @Roles(Role.OPERATOR, Role.OVERSIGHT, Role.REVIEWER)
   async file(@Param('id') id: string): Promise<StreamableFile> {
     const { buffer, fileName, mimeType } = await this.po.getFile(id);
     // Sanitize the (user-supplied) filename before it reaches the header to
@@ -81,8 +87,11 @@ export class PurchaseOrderController {
   }
 
   // Writes: Operator (and Admin). Supervisor is read-only.
+  // Upload and extraction are Gate's job. Store still reaches them while the cutover
+  // flag is ON, which is what makes the switch reversible.
   @Post()
   @Roles(Role.ADMIN, Role.OPERATOR)
+  @UseGuards(StoreInwardGuard)
   @UseInterceptors(
     // Cap size + restrict fields to mitigate multipart DoS and memory exhaustion.
     // 25 MB allows full-resolution phone photos of a PO; one file only.
@@ -98,12 +107,14 @@ export class PurchaseOrderController {
   // Create a PO by typing it in (no document) — Option B of the upload flow.
   @Post('manual')
   @Roles(Role.ADMIN, Role.OPERATOR)
+  @UseGuards(StoreInwardGuard)
   createManual(@Body() dto: ManualEntryDto, @CurrentUser() actor: AuthUser) {
     return this.po.createManual(dto, actor.id);
   }
 
   @Post(':id/extract')
   @Roles(Role.ADMIN, Role.OPERATOR)
+  @UseGuards(StoreInwardGuard)
   extract(@Param('id') id: string, @CurrentUser() actor: AuthUser) {
     return this.po.extract(id, actor.id);
   }
@@ -148,8 +159,9 @@ export class PurchaseOrderController {
   }
 
   // ── The hard confirm gate (creates Materials + QRs) ──
+  // THE MINTING ACT (invariant I1) — Store's, permanently. Gate never confirms.
   @Post(':id/confirm')
-  @Roles(Role.ADMIN, Role.OPERATOR)
+  @Roles(Role.ADMIN)
   confirm(@Param('id') id: string, @CurrentUser() actor: AuthUser) {
     return this.po.confirm(id, actor.id);
   }

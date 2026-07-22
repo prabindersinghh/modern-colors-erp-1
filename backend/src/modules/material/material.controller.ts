@@ -28,7 +28,9 @@ import { LabelReprintService } from '../label-reprint/label-reprint.service';
  */
 @Controller()
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.ADMIN, Role.OPERATOR, Role.SUPERVISOR, Role.OVERSIGHT)
+// Gate is OFF this controller entirely after the re-cut: no materials browsing, no
+// labels, no pack weight. Printing and the needs-weight queue are Store's.
+@Roles(Role.ADMIN, Role.SUPERVISOR, Role.OVERSIGHT)
 export class MaterialController {
   constructor(
     private readonly materials: MaterialService,
@@ -85,7 +87,7 @@ export class MaterialController {
    * reads honestly: Store touches materials, never invoices.
    */
   @Post('materials/pack-weight/:poId')
-  @Roles(Role.ADMIN, Role.OPERATOR)
+  @Roles(Role.ADMIN)
   setPackWeight(
     @Param('poId') poId: string,
     @Body() dto: SetPackWeightDto,
@@ -124,7 +126,6 @@ export class MaterialController {
 
   // Single unit's QR as a PNG — individual download / print-shop use (item 12).
   @Get('materials/:id/qr.png')
-  @UseGuards(StoreInwardGuard)
   async qrPng(@CurrentUser() user: AuthUser, @Param('id') id: string): Promise<StreamableFile> {
     // A single unit's sticker is its own scope: pulling one PNG must not lock the
     // whole invoice, but it IS a print of that unit's label.
@@ -143,7 +144,6 @@ export class MaterialController {
   // Printable QR labels (PDF) — ONE 3×1.5" label per page for a label-roll printer,
   // so page count === unit count. All units of an invoice.
   @Get('purchase-orders/:poId/labels.pdf')
-  @UseGuards(StoreInwardGuard)
   async labels(@CurrentUser() user: AuthUser, @Param('poId') poId: string): Promise<StreamableFile> {
     const scope = { kind: 'PO_LABELS', poId } as const;
     await this.reprints.assertMayPrint(scope);
@@ -161,7 +161,6 @@ export class MaterialController {
 
   // Individual QR PNGs (one per unit, named by unique ID) bundled as a ZIP (item 12).
   @Get('purchase-orders/:poId/labels.zip')
-  @UseGuards(StoreInwardGuard)
   async labelsZip(@CurrentUser() user: AuthUser, @Param('poId') poId: string): Promise<StreamableFile> {
     const scope = { kind: 'PO_LABELS', poId } as const;
     await this.reprints.assertMayPrint(scope);
@@ -178,7 +177,6 @@ export class MaterialController {
   // CSV of label data (incl. the exact QR payload string) — for label-design
   // software like BarTender / NiceLabel to merge onto a .btw/.lbl template.
   @Get('purchase-orders/:poId/labels.csv')
-  @UseGuards(StoreInwardGuard)
   async labelsCsv(@CurrentUser() user: AuthUser, @Param('poId') poId: string): Promise<StreamableFile> {
     // The CSV feeds BarTender/NiceLabel, which prints the same stickers — so it draws
     // on the same allowance as the PDF and the ZIP rather than being a way around it.
@@ -219,7 +217,7 @@ export class MaterialController {
    * both sides are known deployed.
    */
   @Post('purchase-orders/:poId/pack-weight')
-  @Roles(Role.ADMIN, Role.OPERATOR)
+  @Roles(Role.ADMIN)
   setPackWeightLegacy(
     @Param('poId') poId: string,
     @Body() dto: SetPackWeightDto,

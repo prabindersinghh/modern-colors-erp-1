@@ -10,7 +10,9 @@ import { DashboardService } from './dashboard.service';
 // stock or PO data (enforced here server-side, not just hidden in the UI).
 @Controller('dashboard')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.ADMIN, Role.OPERATOR, Role.SUPERVISOR, Role.OVERSIGHT)
+// Gate has no factory-wide view: no 319-materials-received, no supplier stats. His
+// home is his own uploads, served by GET /purchase-orders scoped to himself.
+@Roles(Role.ADMIN, Role.SUPERVISOR, Role.OVERSIGHT)
 export class DashboardController {
   constructor(private readonly dashboard: DashboardService) {}
 
