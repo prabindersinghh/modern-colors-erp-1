@@ -57,7 +57,13 @@ export class PurchaseOrderController {
     return this.po.findOne(id);
   }
 
+  /**
+   * The invoice document itself. The Reviewer's whole job is to read this beside the
+   * digital slip, so REVIEWER is added HERE and on no other invoice route — it cannot
+   * list invoices, cannot open one's data, and holds no write anywhere.
+   */
   @Get(':id/file')
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.SUPERVISOR, Role.OVERSIGHT, Role.REVIEWER)
   async file(@Param('id') id: string): Promise<StreamableFile> {
     const { buffer, fileName, mimeType } = await this.po.getFile(id);
     // Sanitize the (user-supplied) filename before it reaches the header to

@@ -96,7 +96,9 @@ describe('REVIEWER is view-only by construction', () => {
       'GET /receiving-slips',
       'GET /receiving-slips/:id',
       'GET /receiving-slips/by-po/:poId',
-    ]);
+      // The document itself — the other half of the side-by-side review.
+      'GET /purchase-orders/:id/file',
+    ].sort());
   });
 
   it('cannot reach stock, requests, batches, dispatch, users or settings', () => {

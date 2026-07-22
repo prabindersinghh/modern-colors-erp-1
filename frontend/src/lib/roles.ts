@@ -14,12 +14,16 @@ export function roleLabel(user: Pick<AuthUser, 'role' | 'department'>): string {
       return 'Admin'
     case 'DISPATCH':
       return 'Dispatch'
+    case 'REVIEWER':
+      return 'Reviewer'
     case 'PRODUCTION_HEAD':
       return user.department ? `${DEPT_LABEL[user.department]} Head` : 'Production Head'
     case 'SUPERVISOR':
       return 'Supervisor'
     case 'OPERATOR':
-      return 'Operator'
+      // The dormant OPERATOR role now IS the gate desk. Enum unchanged so no guard,
+      // spec or migration had to move; only what the factory calls it.
+      return 'Gate'
     default:
       return user.role
   }

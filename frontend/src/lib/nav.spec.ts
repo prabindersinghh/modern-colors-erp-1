@@ -25,7 +25,7 @@ import type { Role } from '@/types/api'
  *  - the role map cannot silently drift away from the actual route guards in App.tsx.
  */
 
-const ROLES: Role[] = ['ADMIN', 'OVERSIGHT', 'OPERATOR', 'SUPERVISOR', 'PRODUCTION_HEAD', 'DISPATCH']
+const ROLES: Role[] = ['ADMIN', 'OVERSIGHT', 'OPERATOR', 'SUPERVISOR', 'PRODUCTION_HEAD', 'DISPATCH', 'REVIEWER']
 
 describe('the role map mirrors the real routes', () => {
   // Parsed from App.tsx rather than restated, so adding a route with different roles

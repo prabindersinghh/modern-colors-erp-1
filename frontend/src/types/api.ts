@@ -7,6 +7,7 @@ export type Role =
   | 'OVERSIGHT'
   | 'PRODUCTION_HEAD'
   | 'DISPATCH' // Phase 3 — finished-goods dispatch only
+  | 'REVIEWER' // Segregation of duties — view-only: invoice + slip, nothing else
 export type Department = 'PU' | 'ENAMEL' | 'POWDER'
 
 export interface AuthUser {
@@ -690,6 +691,47 @@ export interface FactoryFlow {
 }
 
 // ── Label reprint approvals (the lock) ──
+
+export interface SlipLine {
+  materialName: string
+  sku: string | null
+  quantity: number
+  unit: string | null
+  packWeight: number | null
+  /** "kg" or "L" — labelled per line, never summed across lines. */
+  measure: string
+  idFrom: string
+  idTo: string
+}
+
+export interface ReceivingSlip {
+  id: string
+  slipNumber: string
+  poId: string
+  supplier: string | null
+  receivedDate: string
+  lines: SlipLine[]
+  unitCount: number
+  status: 'DRAFT' | 'FINALIZED'
+  generatedAt: string
+  finalizedAt: string | null
+  scannedCount: number | null
+  generatedBy?: { name: string | null; email: string } | null
+  finalizedBy?: { name: string | null; email: string } | null
+}
+
+/** One inward as the Reviewer sees it: the invoice, and its slip if it has one. */
+export interface Inward {
+  id: string
+  poNumber: string | null
+  supplier: string | null
+  fileName: string | null
+  status: POStatus
+  createdAt: string
+  confirmedAt: string | null
+  hasInvoiceFile: boolean
+  slip: ReceivingSlip | null
+}
 
 export type ReprintScope = 'PO_LABELS' | 'MC_UNIT_LABEL' | 'FG_OUTPUT_LABELS' | 'FG_UNIT_LABEL'
 export type ReprintStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CONSUMED'

@@ -27,10 +27,11 @@ import type { Role } from '@/types/api'
 const ROLE_LABEL: Record<Role, string> = {
   ADMIN: 'Store',
   OVERSIGHT: 'Admin',
-  OPERATOR: 'Operator',
+  OPERATOR: 'Gate',
   SUPERVISOR: 'Supervisor',
   PRODUCTION_HEAD: 'Production',
   DISPATCH: 'Dispatch',
+  REVIEWER: 'Reviewer',
 }
 
 // Phase 1 navigation. `roles` omitted = visible to every authenticated user.
@@ -49,6 +50,8 @@ const navItems: { to: string; label: string; icon: typeof LayoutDashboard; roles
   { to: '/my', label: 'My Department', icon: Gauge, roles: ['PRODUCTION_HEAD'] },
   // Phase 3 — dispatch has ONE screen and nothing else.
   { to: '/dispatch', label: 'Dispatch', icon: Truck, roles: ['DISPATCH'] },
+  // The Reviewer's only screen.
+  { to: '/review-inwards', label: 'Inward Review', icon: ClipboardCheck, roles: ['REVIEWER'] },
   // Phase 1 material-inward overview for ops roles (Store reaches it via its own screens).
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, roles: PHASE1_OPS, end: true },
   // Phase 2 — production heads raise/track requests; the view-only Admin sees them all.
