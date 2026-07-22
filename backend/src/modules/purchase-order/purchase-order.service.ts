@@ -107,13 +107,22 @@ export class PurchaseOrderService {
     updatedAt: true,
   } satisfies Prisma.PurchaseOrderSelect;
 
-  async list(params: { status?: POStatus; supplier?: string; search?: string; page?: number; pageSize?: number }) {
+  async list(params: {
+    status?: POStatus;
+    supplier?: string;
+    search?: string;
+    page?: number;
+    pageSize?: number;
+    /** Gate sees ONLY his own uploads. Applied here, not in the UI. */
+    uploadedById?: string;
+  }) {
     const page = Math.max(1, params.page ?? 1);
     const pageSize = Math.min(100, Math.max(1, params.pageSize ?? 25));
     const where: Prisma.PurchaseOrderWhereInput = {
       status: params.status,
       supplier: params.supplier ? { contains: params.supplier, mode: 'insensitive' } : undefined,
       poNumber: params.search ? { contains: params.search, mode: 'insensitive' } : undefined,
+      uploadedById: params.uploadedById,
     };
     const [data, total] = await this.prisma.$transaction([
       this.prisma.purchaseOrder.findMany({

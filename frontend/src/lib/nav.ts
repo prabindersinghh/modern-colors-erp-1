@@ -29,6 +29,7 @@ export const ROUTE_TITLES: Record<string, { title: string; subtitle?: string }> 
   '/production-output': { title: 'Production Output', subtitle: 'Record what a batch produced, then confirm it' },
   '/dispatch': { title: 'Dispatch', subtitle: 'Scan finished goods out of the factory' },
   '/review-inwards': { title: 'Inward Review', subtitle: 'Supplier invoice beside the digital receiving slip' },
+  '/gate': { title: 'Gate', subtitle: 'Photograph an invoice, check what was read, hand it to Store' },
   '/purchase-orders': { title: 'Invoice Upload', subtitle: 'Upload an invoice for AI extraction' },
   '/review': { title: 'Review & Confirm', subtitle: 'Verify and correct extracted materials before saving' },
   '/review/:poId': { title: 'Review & Confirm', subtitle: 'Verify and correct extracted materials before saving' },
@@ -59,6 +60,7 @@ export const ROUTE_ROLES: Record<string, Role[] | null> = {
   '/production-output': ['PRODUCTION_HEAD'],
   '/dispatch': ['DISPATCH'],
   '/review-inwards': ['REVIEWER', 'OVERSIGHT'],
+  '/gate': ['OPERATOR'],
   '/purchase-orders': PHASE1_ROLES,
   '/review': PHASE1_ROLES,
   '/review/:poId': PHASE1_ROLES,
@@ -88,6 +90,8 @@ export function homeFor(role: Role | undefined): string {
       return '/dispatch'
     case 'REVIEWER':
       return '/review-inwards'
+    case 'OPERATOR':
+      return '/gate'
     case 'ADMIN':
       return '/store'
     default:

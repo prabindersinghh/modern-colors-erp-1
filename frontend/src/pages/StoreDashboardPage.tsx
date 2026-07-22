@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
+  ScrollText,
   Boxes,
   ClipboardList,
   PackageSearch,
@@ -11,6 +12,7 @@ import {
   AlertTriangle,
 } from 'lucide-react'
 import { api } from '@/lib/api'
+import { SlipInbox } from '@/components/dashboard/SlipInbox'
 import type { StoreAnalytics } from '@/types/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -49,6 +51,15 @@ export function StoreDashboardPage() {
 
   return (
     <div className="space-y-4">
+      {/* Inward now reaches Store as a receiving slip rather than an invoice, so this
+          is the first thing on the dashboard: what the gate says has arrived. */}
+      <section className="space-y-2">
+        <h2 className="flex items-center gap-1.5 text-title-3 text-chip-900">
+          <ScrollText className="h-4 w-4 shrink-0" /> Inward — receiving slips
+        </h2>
+        <SlipInbox />
+      </section>
+
       <div className="flex flex-wrap items-center justify-between gap-2">
         {/* Title lives in the Navbar (see AppLayout pageTitles) — no duplicate h1. */}
         <div className="flex-1" />

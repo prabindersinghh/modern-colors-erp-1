@@ -1,5 +1,6 @@
 import { NavLink } from 'react-router-dom'
 import {
+  Camera,
   LayoutDashboard,
   FileUp,
   ClipboardCheck,
@@ -37,11 +38,12 @@ const ROLE_LABEL: Record<Role, string> = {
 // Phase 1 navigation. `roles` omitted = visible to every authenticated user.
 // Phase 1 screens are scoped to the Phase 1 roles (Store=ADMIN, Operator, Supervisor).
 // The new Phase 2 roles (OVERSIGHT / PRODUCTION_HEAD) get their own nav in later steps.
-const PHASE1_ROLES: Role[] = ['ADMIN', 'OPERATOR', 'SUPERVISOR']
+const PHASE1_ROLES: Role[] = ['ADMIN', 'SUPERVISOR']
 
 // Phase 1 screens that Operators / Supervisors use. Store (ADMIN) also reaches these,
 // but lands on its own analytics dashboard first.
-const PHASE1_OPS: Role[] = ['OPERATOR', 'SUPERVISOR']
+// Gate no longer belongs to the Phase-1 operations group: it has one screen of its own.
+const PHASE1_OPS: Role[] = ['SUPERVISOR']
 
 const navItems: { to: string; label: string; icon: typeof LayoutDashboard; roles?: Role[]; end?: boolean }[] = [
   // Phase 2 — role-specific analytics dashboards (the landing screen per role).
@@ -52,6 +54,8 @@ const navItems: { to: string; label: string; icon: typeof LayoutDashboard; roles
   { to: '/dispatch', label: 'Dispatch', icon: Truck, roles: ['DISPATCH'] },
   // The Reviewer's only screen.
   { to: '/review-inwards', label: 'Inward Review', icon: ClipboardCheck, roles: ['REVIEWER'] },
+  // The Gate's only screen — scan-and-go, nothing downstream.
+  { to: '/gate', label: 'Invoice Upload', icon: Camera, roles: ['OPERATOR'] },
   // Phase 1 material-inward overview for ops roles (Store reaches it via its own screens).
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, roles: PHASE1_OPS, end: true },
   // Phase 2 — production heads raise/track requests; the view-only Admin sees them all.

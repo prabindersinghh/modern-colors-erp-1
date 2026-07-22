@@ -239,7 +239,8 @@ export interface StockLevelMaterial {
   /** Measure of totalBalanceKg — "kg" or "L". */
   stockUnit: string
   totalBalanceKg: number
-  unitCount: number
+  /** Null until Store confirms — at extraction no unit exists yet. */
+  unitCount: number | null
   /** Admin-set thresholds (catalogue) and fullness %; null when not configured. */
   minLevel: number | null
   maxLevel: number | null
@@ -712,8 +713,10 @@ export interface ReceivingSlip {
   receivedDate: string
   lines: SlipLine[]
   unitCount: number
-  status: 'DRAFT' | 'FINALIZED'
+  status: 'DRAFT' | 'AWAITING_STORE' | 'FINALIZED'
   generatedAt: string
+  handedOverAt?: string | null
+  confirmedAt?: string | null
   finalizedAt: string | null
   scannedCount: number | null
   generatedBy?: { name: string | null; email: string } | null

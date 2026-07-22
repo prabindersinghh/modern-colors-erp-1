@@ -23,6 +23,7 @@ import {
   Patch,
 } from '@nestjs/common';
 import { PurchaseOrderService } from './purchase-order.service';
+import { ReceivingSlipService } from '../receiving-slip/receiving-slip.service';
 import { ManualEntryDto } from './dto/manual-entry.dto';
 import { CreateLineItemDto, UpdateLineItemDto } from './dto/line-item.dto';
 
@@ -36,11 +37,15 @@ import { CreateLineItemDto, UpdateLineItemDto } from './dto/line-item.dto';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(Role.ADMIN, Role.OPERATOR, Role.SUPERVISOR, Role.OVERSIGHT)
 export class PurchaseOrderController {
-  constructor(private readonly po: PurchaseOrderService) {}
+  constructor(
+    private readonly po: PurchaseOrderService,
+    private readonly slips: ReceivingSlipService,
+  ) {}
 
   // Read: any authenticated user (Supervisor may view).
   @Get()
   list(
+    @CurrentUser() user: AuthUser,
     @Query('status') status?: POStatus,
     @Query('supplier') supplier?: string,
     @Query('search') search?: string,
@@ -48,6 +53,9 @@ export class PurchaseOrderController {
     @Query('pageSize') pageSize?: string,
   ) {
     return this.po.list({
+      // Gate's home is his own work: scoped SERVER-SIDE, so it holds for a raw API
+      // call just as it does for the screen.
+      uploadedById: user.role === Role.OPERATOR ? user.id : undefined,
       status,
       supplier,
       search,
@@ -133,33 +141,55 @@ export class PurchaseOrderController {
 
   @Post(':id/line-items')
   @Roles(Role.ADMIN, Role.OPERATOR)
-  addLine(@Param('id') id: string, @Body() dto: CreateLineItemDto, @CurrentUser() actor: AuthUser) {
+  async addLine(@Param('id') id: string, @Body() dto: CreateLineItemDto, @CurrentUser() actor: AuthUser) {
+    await this.gateEditCheck(actor, id);
     return this.po.addLineItem(id, dto, actor.id);
   }
 
   @Patch(':id/line-items/:itemId')
   @Roles(Role.ADMIN, Role.OPERATOR)
-  updateLine(
+  async updateLine(
     @Param('id') id: string,
     @Param('itemId') itemId: string,
     @Body() dto: UpdateLineItemDto,
     @CurrentUser() actor: AuthUser,
   ) {
+    await this.gateEditCheck(actor, id);
     return this.po.updateLineItem(id, itemId, dto, actor.id);
   }
 
   @Delete(':id/line-items/:itemId')
   @Roles(Role.ADMIN, Role.OPERATOR)
-  deleteLine(
+  async deleteLine(
     @Param('id') id: string,
     @Param('itemId') itemId: string,
     @CurrentUser() actor: AuthUser,
   ) {
+    await this.gateEditCheck(actor, id);
     return this.po.deleteLineItem(id, itemId, actor.id);
   }
 
   // ── The hard confirm gate (creates Materials + QRs) ──
   // THE MINTING ACT (invariant I1) — Store's, permanently. Gate never confirms.
+  /**
+   * Gate proofreads against the paper he is holding; Store edits during Review &
+   * Confirm. Gate is refused from AWAITING_STORE onward — the proofread is finished
+   * and Store's copy must not change underneath it.
+   */
+  private async gateEditCheck(actor: AuthUser, poId: string) {
+    if (actor.role === Role.OPERATOR) await this.slips.assertGateMayEdit(poId);
+  }
+
+  /**
+   * Gate's proofread is done. The snapshot Store works from is taken here, and Gate's
+   * line edits are refused from this moment on.
+   */
+  @Post(':id/send-to-store')
+  @Roles(Role.OPERATOR)
+  sendToStore(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.slips.sendToStore(user, id);
+  }
+
   @Post(':id/confirm')
   @Roles(Role.ADMIN)
   confirm(@Param('id') id: string, @CurrentUser() actor: AuthUser) {
