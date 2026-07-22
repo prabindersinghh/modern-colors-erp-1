@@ -49,7 +49,7 @@ describe('the role map mirrors the real routes', () => {
     const roles = !rolesExpr
       ? null
       : rolesExpr === 'PHASE1_ROLES'
-        ? (['ADMIN', 'OPERATOR', 'SUPERVISOR'] as Role[])
+        ? (['ADMIN', 'SUPERVISOR'] as Role[]) // Gate left the Phase-1 group in the re-cut
         : (rolesExpr.match(/'([A-Z_]+)'/g) ?? []).map((s) => s.replace(/'/g, '') as Role)
     declared.set(path, roles)
   }
@@ -79,8 +79,10 @@ describe('canAccess', () => {
 
   it('matches the dynamic review route through its pattern', () => {
     expect(toPattern('/review/abc-123')).toBe('/review/:poId')
-    expect(canAccess('/review/abc-123', 'OPERATOR')).toBe(true)
+    expect(canAccess('/review/abc-123', 'ADMIN')).toBe(true)
     expect(canAccess('/review/abc-123', 'DISPATCH')).toBe(false)
+    // Gate never reviews — confirming is Store's act.
+    expect(canAccess('/review/abc-123', 'OPERATOR')).toBe(false)
   })
 
   it('keeps each role inside its own phase', () => {
@@ -90,6 +92,30 @@ describe('canAccess', () => {
     expect(canAccess('/oversight', 'ADMIN')).toBe(false)
     expect(canAccess('/dispatch', 'DISPATCH')).toBe(true)
     expect(canAccess('/dispatch', 'PRODUCTION_HEAD')).toBe(false)
+  })
+})
+
+describe('the Gate desk is exactly two screens', () => {
+  it('OPERATOR can reach ONLY its own home and nothing else', () => {
+    // The regression this pins: the sidebar was stripped but the route guards were
+    // not, so Gate could still open Review & Confirm or Receive Stock by URL and see
+    // a screen whose every call then 403'd.
+    // '/' is the index route: open to every authenticated role because its only job is
+    // to redirect each one to its own home. Gate's home is /gate.
+    const reachable = Object.keys(ROUTE_ROLES).filter((p) => canAccess(p, 'OPERATOR')).sort()
+    expect(reachable).toEqual(['/', '/gate'])
+  })
+
+  it('none of the stripped Phase-1 screens admit the Gate', () => {
+    for (const path of ['/review', '/labels', '/receiving', '/catalogue', '/purchase-orders', '/stock', '/audit']) {
+      expect({ path, gate: canAccess(path, 'OPERATOR') }).toEqual({ path, gate: false })
+    }
+  })
+
+  it('back from the Gate home resolves nowhere else', () => {
+    // With one screen, there is nothing to go back TO — so no control is offered,
+    // rather than one that lands on a forbidden screen.
+    expect(resolveBack({ pathname: '/gate', role: 'OPERATOR' })).toBeNull()
   })
 })
 
@@ -110,7 +136,7 @@ describe('resolveBack', () => {
   })
 
   it('uses the declared parent for a real child screen', () => {
-    expect(resolveBack({ pathname: '/review/abc', role: 'OPERATOR' })).toEqual({ to: '/review', label: 'Review & Confirm' })
+    expect(resolveBack({ pathname: '/review/abc', role: 'ADMIN' })).toEqual({ to: '/review', label: 'Review & Confirm' })
     expect(ROUTE_PARENTS['/review/:poId']).toBe('/review')
   })
 

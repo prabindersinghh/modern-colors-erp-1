@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/common/EmptyState'
 import { toast } from '@/hooks/useToast'
 import { useAutoRefresh } from '@/lib/refresh'
+import { cn } from '@/lib/utils'
 import { useUrlId } from '@/lib/urlState'
 import type { Paginated, POLineItem, PurchaseOrder, ReceivingSlip } from '@/types/api'
 
@@ -102,7 +103,7 @@ export function GateHomePage() {
       </Card>
 
       <div>
-        <h2 className="mb-2 text-title-3 text-chip-900">Your uploads</h2>
+        <h2 className="mb-2 text-title-3 text-chip-900">Your scan history</h2>
         {!pos ? (
           <p className="text-sm text-chip-500">Loading…</p>
         ) : pos.length === 0 ? (
@@ -149,7 +150,15 @@ function GateInvoiceCard({
   }, [po.id])
   useEffect(() => void loadSlip(), [loadSlip])
 
-  const sent = slip?.status && slip.status !== 'DRAFT'
+  const sent = !!slip?.status && slip.status !== 'DRAFT'
+  // Exactly the three states the gate guard cares about, in his words.
+  const state = slip?.confirmedAt
+    ? { label: 'Confirmed', tone: 'bg-healthy text-success-foreground hover:bg-healthy', icon: CheckCircle2 }
+    : sent
+      ? { label: 'With Store', tone: 'bg-info text-info-foreground hover:bg-info', icon: Send }
+      : { label: 'Draft', tone: 'bg-chip-200 text-chip-700 hover:bg-chip-200', icon: Clock }
+  const extraction =
+    slip === undefined ? 'checking…' : slip ? `${slip.lines.length} lines read` : 'nothing read yet'
 
   return (
     <Card className={open ? 'border-primary/40' : undefined}>
@@ -157,19 +166,28 @@ function GateInvoiceCard({
         <button type="button" onClick={onToggle} className="tactile flex w-full items-start justify-between gap-2 text-left">
           <div className="min-w-0">
             <p className="truncate font-medium text-chip-900">{po.poNumber ?? po.fileName ?? 'Invoice'}</p>
-            <p className="truncate text-xs text-chip-500">
-              {po.supplier ?? 'Supplier not read yet'} · {po.createdAt.slice(0, 10)}
+            <p className="truncate text-xs text-chip-500">{po.supplier ?? 'Supplier not read yet'}</p>
+            <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-chip-500">
+              {/* When he uploaded it — to the minute, because a gate guard checks
+                  "did that truck's invoice go through?" against the clock. */}
+              <span className="tabular-nums">
+                {new Date(po.createdAt).toLocaleString(undefined, {
+                  day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+                })}
+              </span>
+              <span aria-hidden>·</span>
+              <span>{extraction}</span>
+              {slip?.slipNumber && (
+                <>
+                  <span aria-hidden>·</span>
+                  <span className="font-mono">{slip.slipNumber}</span>
+                </>
+              )}
             </p>
           </div>
-          {slip === undefined ? null : sent ? (
-            <Badge className="shrink-0 gap-1 bg-healthy text-success-foreground hover:bg-healthy">
-              <CheckCircle2 className="h-3 w-3" /> With Store
-            </Badge>
-          ) : (
-            <Badge variant="secondary" className="shrink-0 gap-1">
-              <Clock className="h-3 w-3" /> Needs checking
-            </Badge>
-          )}
+          <Badge className={cn('shrink-0 gap-1', state.tone)}>
+            <state.icon className="h-3 w-3" /> {state.label}
+          </Badge>
         </button>
 
         {open && <Proofread poId={po.id} locked={!!sent} onChanged={onChanged} onSent={loadSlip} />}

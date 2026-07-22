@@ -31,7 +31,10 @@ const ProductionOutputPage = lazy(() => import('@/pages/ProductionOutputPage').t
 const DispatchPage = lazy(() => import('@/pages/DispatchPage').then((m) => ({ default: m.DispatchPage })))
 
 // Phase 1 screens belong to the Phase 1 roles (Store=ADMIN, Operator, Supervisor).
-const PHASE1_ROLES: Role[] = ['ADMIN', 'OPERATOR', 'SUPERVISOR']
+// Gate is NOT a Phase-1 operator any more: it has one screen of its own. Leaving
+// OPERATOR here let it open Review & Confirm, QR Labels, Receive Stock and the
+// catalogue by URL — the screens rendered and then every API call 403'd.
+const PHASE1_ROLES: Role[] = ['ADMIN', 'SUPERVISOR']
 
 function RequireRole({ roles, children }: { roles: Role[]; children: React.ReactNode }) {
   const { user } = useAuth()

@@ -40,7 +40,8 @@ export const ROUTE_TITLES: Record<string, { title: string; subtitle?: string }> 
   '/settings': { title: 'Settings', subtitle: 'Claude API key and system configuration' },
 }
 
-const PHASE1_ROLES: Role[] = ['ADMIN', 'OPERATOR', 'SUPERVISOR']
+// Must mirror App.tsx exactly — nav.spec.ts parses that file and fails on drift.
+const PHASE1_ROLES: Role[] = ['ADMIN', 'SUPERVISOR']
 
 /**
  * Which roles may open which route. This MIRRORS the <RequireRole> wrappers in App.tsx
