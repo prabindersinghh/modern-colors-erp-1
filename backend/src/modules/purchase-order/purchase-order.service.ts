@@ -77,6 +77,34 @@ export class PurchaseOrderService {
     return po;
   }
 
+  /**
+   * Every invoice field a caller may see — an explicit ALLOW-LIST, not an exclusion.
+   *
+   * Prisma returns all scalars when you use `include` without `select`, which is how
+   * `fileKey` (the raw R2 storage key) and `extractedJson` (the full extraction payload)
+   * were being handed out in the body of GET /purchase-orders and /:id to every Phase-1
+   * role. Neither is needed by any caller — the frontend type does not even declare them,
+   * and the invoice document is reachable only through the download handler, which reads
+   * the key itself rather than trusting one from a response.
+   *
+   * Adding a field here is a deliberate act. commercial-isolation.spec.ts asserts the two
+   * forbidden keys never reappear.
+   */
+  private static readonly SAFE_FIELDS = {
+    id: true,
+    poNumber: true,
+    supplier: true,
+    fileName: true,
+    status: true,
+    source: true,
+    deliveryDate: true,
+    uploadedById: true,
+    confirmedById: true,
+    confirmedAt: true,
+    createdAt: true,
+    updatedAt: true,
+  } satisfies Prisma.PurchaseOrderSelect;
+
   async list(params: { status?: POStatus; supplier?: string; search?: string; page?: number; pageSize?: number }) {
     const page = Math.max(1, params.page ?? 1);
     const pageSize = Math.min(100, Math.max(1, params.pageSize ?? 25));
@@ -91,7 +119,8 @@ export class PurchaseOrderService {
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * pageSize,
         take: pageSize,
-        include: {
+        select: {
+          ...PurchaseOrderService.SAFE_FIELDS,
           uploadedBy: { select: { id: true, name: true } },
           _count: { select: { lineItems: true, materials: true } },
         },
@@ -104,7 +133,8 @@ export class PurchaseOrderService {
   async findOne(id: string) {
     const po = await this.prisma.purchaseOrder.findUnique({
       where: { id },
-      include: {
+      select: {
+        ...PurchaseOrderService.SAFE_FIELDS,
         lineItems: { include: { matchedCatalogue: true }, orderBy: { createdAt: 'asc' } },
         uploadedBy: { select: { id: true, name: true } },
         _count: { select: { materials: true } },
