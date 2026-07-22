@@ -94,10 +94,12 @@ describe('handover flush plan', () => {
     expect(flushSrc).toMatch(/const APPLY = ALLOW && CONFIRMED/);
   });
 
-  it('resets both unique-ID sequences', () => {
-    // Without this the factory's first sack is MC-000351, not MC-000001.
+  it('resets all three unique-ID sequences', () => {
+    // Without this the factory's first sack is MC-000351, not MC-000001 — and the same
+    // applies to its first drum and its first receiving slip.
     expect(flushSrc).toContain('material_unique_seq');
     expect(flushSrc).toContain('finished_good_unique_seq');
+    expect(flushSrc).toContain('receiving_slip_seq');
     expect(flushSrc).toMatch(/RESTART WITH 1/);
   });
 

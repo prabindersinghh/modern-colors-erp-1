@@ -32,7 +32,7 @@ describe('PurchaseOrderService.extract — storage degradation', () => {
     const audit = { log: jest.fn().mockResolvedValue(undefined) };
     const extraction = { extract: jest.fn() };
     // Order must match the real constructor:
-    // prisma, storage, audit, catalogue, extraction, material
+    // prisma, storage, audit, catalogue, extraction, material, slips
     const svc = new PurchaseOrderService(
       prisma as never,
       storage as never,
@@ -40,6 +40,8 @@ describe('PurchaseOrderService.extract — storage degradation', () => {
       { match: jest.fn() } as never,
       extraction as never,
       { registerUnits: jest.fn() } as never,
+      // Slip generation happens on confirm; extraction never reaches it.
+      { generateForConfirm: jest.fn() } as never,
     );
     return { svc, prisma, storage, audit, extraction };
   };

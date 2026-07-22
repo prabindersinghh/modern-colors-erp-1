@@ -23,6 +23,7 @@ import { ProductionOutputModule } from './modules/production-output/production-o
 import { FinishedGoodsModule } from './modules/finished-goods/finished-goods.module';
 
 import { LabelReprintModule } from './modules/label-reprint/label-reprint.module';
+import { ReceivingSlipModule } from './modules/receiving-slip/receiving-slip.module';
 import { HandoverModule } from './handover/handover.module';
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { HandoverModule } from './handover/handover.module';
     ProductionOutputModule,
     FinishedGoodsModule,
     LabelReprintModule,
+    ReceivingSlipModule,
       HandoverModule,
   ],
   controllers: [HealthController, StorageHealthController],

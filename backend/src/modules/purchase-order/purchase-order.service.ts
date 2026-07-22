@@ -16,6 +16,7 @@ import {
   ExtractedLineItem,
 } from '../ai-extraction/ai-extraction.service';
 import { MaterialService } from '../material/material.service';
+import { ReceivingSlipService } from '../receiving-slip/receiving-slip.service';
 import { ManualEntryDto } from './dto/manual-entry.dto';
 import { CreateLineItemDto, UpdateLineItemDto } from './dto/line-item.dto';
 
@@ -39,6 +40,7 @@ export class PurchaseOrderService {
     private readonly catalogue: CatalogueService,
     private readonly extraction: AiExtractionService,
     private readonly material: MaterialService,
+    private readonly slips: ReceivingSlipService,
   ) {}
 
   async upload(file: Express.Multer.File, actorId: string) {
@@ -416,6 +418,11 @@ export class PurchaseOrderService {
         );
 
         const units = await this.material.registerUnits(tx, po, actorId);
+
+        // The digital receiving slip is generated HERE, inside the confirm transaction,
+        // so a registered inward always has one. Store can no longer see the invoice, so
+        // a registered-but-slipless inward would be material Store cannot account for.
+        await this.slips.generateForConfirm(tx, po, units, actorId);
 
         await tx.purchaseOrder.update({ where: { id }, data: { status: POStatus.REGISTERED } });
         await this.audit.log(

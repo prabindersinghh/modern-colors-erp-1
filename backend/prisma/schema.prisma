@@ -23,6 +23,7 @@ enum Role {
   OVERSIGHT // Phase 2 — factory-wide VIEW-ONLY "Admin" (no actions)
   PRODUCTION_HEAD // Phase 2 — PU/Enamel/Powder head, scoped by `department`
   DISPATCH // Phase 3 — finished-goods dispatch ONLY (no raw stock, no requests)
+  REVIEWER // Segregation of duties — VIEW-ONLY: invoice document + digital slip, nothing else
 }
 
 // Phase 2 — production departments. A PRODUCTION_HEAD is scoped to exactly one.
@@ -127,6 +128,8 @@ model User {
   returnedGoods    FinishedGood[]        @relation("FgReturnedBy")
   reprintRequested LabelReprintRequest[] @relation("ReprintRequestedBy")
   reprintDecided   LabelReprintRequest[] @relation("ReprintDecidedBy")
+  slipsGenerated   ReceivingSlip[]       @relation("SlipGeneratedBy")
+  slipsFinalized   ReceivingSlip[]       @relation("SlipFinalizedBy")
 
   @@index([role])
 }
@@ -182,6 +185,7 @@ model PurchaseOrder {
   lineItems       POLineItem[]
   materials       Material[]
   reprintRequests LabelReprintRequest[]
+  receivingSlip   ReceivingSlip?
 
   @@index([poNumber])
   @@index([supplier])
@@ -592,4 +596,50 @@ model LabelReprintRequest {
   @@index([materialId])
   @@index([outputId])
   @@index([finishedGoodId])
+}
+
+// ───────────────────── Digital receiving slip (segregation of duties) ─────────────────────
+
+enum SlipStatus {
+  DRAFT // generated at registration; the gate has not pressed Done yet
+  FINALIZED // the gate closed its receiving session
+}
+
+/**
+ * What the gate hands to Store — the commercial-free record of one inward.
+ * Store no longer sees the invoice, so this is how it learns what arrived: supplier,
+ * date, materials, quantities with kg and L kept separate, pack weights and the unit ID
+ * ranges. It carries NO price, no amount, no HSN and no invoice image, and `lines` is
+ * built by an explicit field-by-field mapper rather than by spreading a record.
+ * `lines` is denormalised on purpose. The slip is a record of what was physically handed
+ * over, so a later catalogue or material edit must never rewrite what the gate guard
+ * already printed and walked across the yard.
+ * A DRAFT slip is fully visible and printable: a gate guard forgetting to press Done
+ * must never hide an inward from Store.
+ */
+model ReceivingSlip {
+  id         String        @id @default(uuid())
+  slipNumber String        @unique // "RS-000001" — its own sequence, reset at handover
+  poId       String        @unique
+  po         PurchaseOrder @relation(fields: [poId], references: [id], onDelete: Cascade)
+
+  supplier     String?
+  receivedDate DateTime
+
+  /// [{ materialName, sku, quantity, unit, packWeight, measure, idFrom, idTo }]
+  lines     Json
+  unitCount Int
+  status    SlipStatus @default(DRAFT)
+
+  generatedById String
+  generatedBy   User     @relation("SlipGeneratedBy", fields: [generatedById], references: [id])
+  generatedAt   DateTime @default(now())
+
+  finalizedById String?
+  finalizedBy   User?     @relation("SlipFinalizedBy", fields: [finalizedById], references: [id])
+  finalizedAt   DateTime?
+  scannedCount  Int? // how many units the gate actually scanned in, at Done
+
+  @@index([status])
+  @@index([receivedDate])
 }

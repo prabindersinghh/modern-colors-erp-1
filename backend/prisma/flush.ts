@@ -114,6 +114,8 @@ const DELETE_ORDER = [
   'Batch',
   'QrCode',
   'Material',
+  // References PurchaseOrder and User, so it must go before PurchaseOrder.
+  'ReceivingSlip',
   'POLineItem',
   'PurchaseOrder',
   'AuditLog',
@@ -143,6 +145,7 @@ async function countAll(): Promise<Counts> {
     FinishedGood: await prisma.finishedGood.count(),
     FinishedGoodQr: await prisma.finishedGoodQr.count(),
     LabelReprintRequest: await prisma.labelReprintRequest.count(),
+    ReceivingSlip: await prisma.receivingSlip.count(),
     AuditLog: await prisma.auditLog.count(),
   };
 }
@@ -208,12 +211,12 @@ async function purgeStorage(): Promise<number> {
 }
 
 /**
- * Restart the unique-ID sequences so the factory's first sack is MC-000001 rather
- * than continuing from our test data. Without this the numbering is correct but
- * confusing forever.
+ * Restart the unique-ID sequences so the factory's first sack is MC-000001, its first
+ * drum FG-000001 and its first receiving slip RS-000001, rather than continuing from our
+ * test data. Without this the numbering is correct but confusing forever.
  */
 async function resetSequences() {
-  const sequences = ['material_unique_seq', 'finished_good_unique_seq'];
+  const sequences = ['material_unique_seq', 'finished_good_unique_seq', 'receiving_slip_seq'];
   for (const seq of sequences) {
     if (APPLY) {
       await prisma.$executeRawUnsafe(`ALTER SEQUENCE "${seq}" RESTART WITH 1`);
