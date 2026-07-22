@@ -147,6 +147,7 @@ describe('UserAdminService — creation rules are server-enforced', () => {
       user: {
         findUnique: jest.fn().mockResolvedValue(null),
         findMany: jest.fn().mockResolvedValue([]),
+        count: jest.fn().mockResolvedValue(2),
         create: jest.fn().mockImplementation(({ data }) => ({ id: 'u-new', ...data, passwordHash: undefined })),
         update: jest.fn().mockImplementation(({ data }) => ({ id: 'u1', email: 'x@moderncolours.local', ...data })),
       },
@@ -166,13 +167,39 @@ describe('UserAdminService — creation rules are server-enforced', () => {
     ).rejects.toThrow(BadRequestException);
   });
 
-  it('NO escalation: only PRODUCTION_HEAD and DISPATCH can be minted', async () => {
+  it('NO escalation: the PRIVILEGED roles can never be minted', async () => {
+    // The creatable set widened for segregation of duties (Gate = OPERATOR, and
+    // REVIEWER), but the roles that carry real power stay seed-only. SUPERVISOR is
+    // included: it reads the audit log, so minting one is an escalation.
     const { svc } = build();
-    for (const role of ['ADMIN', 'OVERSIGHT', 'SUPERVISOR', 'OPERATOR']) {
+    for (const role of ['ADMIN', 'OVERSIGHT', 'SUPERVISOR']) {
       await expect(
         svc.create(actor, { localPart: 'x1', name: 'x', role, department: 'PU', password: 'goodpass1' }),
       ).rejects.toThrow(BadRequestException);
     }
+  });
+
+  it('mints a Gate and a Reviewer, both forced department-less', async () => {
+    const { svc, prisma } = build();
+    await svc.create(actor, { localPart: 'gate2', name: 'Gate — night', role: 'OPERATOR', department: 'PU', password: 'goodpass1' });
+    expect(prisma.user.create.mock.calls[0][0].data).toMatchObject({ role: 'OPERATOR', department: null });
+    await svc.create(actor, { localPart: 'auditor', name: 'Auditor', role: 'REVIEWER', department: 'ENAMEL', password: 'goodpass1' });
+    expect(prisma.user.create.mock.calls[1][0].data).toMatchObject({ role: 'REVIEWER', department: null });
+  });
+
+  it('refuses to deactivate the LAST active Gate — the factory could not receive at all', async () => {
+    const { svc, prisma } = build();
+    prisma.user.findUnique.mockResolvedValueOnce({ id: 'g1', email: 'gate@moderncolours.local', role: Role.OPERATOR, active: true });
+    prisma.user.count.mockResolvedValueOnce(1);
+    await expect(svc.deactivate(actor, 'g1')).rejects.toThrow(/only active Gate login/);
+  });
+
+  it('ALLOWS deactivating a Gate once a second one exists', async () => {
+    const { svc, prisma } = build();
+    prisma.user.findUnique.mockResolvedValueOnce({ id: 'g1', email: 'gate@moderncolours.local', role: Role.OPERATOR, active: true });
+    prisma.user.count.mockResolvedValueOnce(2);
+    await svc.deactivate(actor, 'g1');
+    expect(prisma.user.update.mock.calls.at(-1)![0].data).toEqual({ active: false });
   });
 
   it('a head requires a department; a Dispatch login is department-less by force', async () => {

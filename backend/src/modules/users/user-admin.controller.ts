@@ -18,7 +18,7 @@ class CreateLoginDto {
   @MaxLength(100)
   name!: string;
 
-  @IsIn(['PRODUCTION_HEAD', 'DISPATCH'])
+  @IsIn(['PRODUCTION_HEAD', 'DISPATCH', 'OPERATOR', 'REVIEWER'])
   role!: string;
 
   @IsOptional()

@@ -5,7 +5,10 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 
 /** The only roles the factory Admin may mint. Privileged roles are seed-only. */
-const CREATABLE_ROLES = [Role.PRODUCTION_HEAD, Role.DISPATCH] as const;
+const CREATABLE_ROLES = [Role.PRODUCTION_HEAD, Role.DISPATCH, Role.OPERATOR, Role.REVIEWER] as const;
+
+/** Roles that are NOT department-scoped — the field is forced null whatever is posted. */
+const DEPARTMENTLESS_ROLES: readonly Role[] = [Role.DISPATCH, Role.OPERATOR, Role.REVIEWER];
 
 /** The company domain — composed server-side; never accepted as input. */
 export const LOGIN_DOMAIN = '@moderncolours.local';
@@ -23,6 +26,9 @@ export const SEEDED_LOGINS = new Set([
   `enamel${LOGIN_DOMAIN}`,
   `powder${LOGIN_DOMAIN}`,
   `dispatch${LOGIN_DOMAIN}`,
+  `gate${LOGIN_DOMAIN}`,
+  `pallavi${LOGIN_DOMAIN}`,
+  `rupinder${LOGIN_DOMAIN}`,
 ]);
 
 const safeSelect = {
@@ -154,7 +160,9 @@ export class UserAdminService {
       }
       department = dto.department as 'PU' | 'ENAMEL' | 'POWDER';
     }
-    // DISPATCH is never department-scoped — forced regardless of input.
+    // Dispatch, Gate and Reviewer are never department-scoped — forced regardless of
+    // input, so a posted department cannot quietly narrow what they can see.
+    if (DEPARTMENTLESS_ROLES.includes(role)) department = null;
 
     const pwErr = passwordProblem(dto.password);
     if (pwErr) throw new BadRequestException(pwErr);
@@ -197,6 +205,21 @@ export class UserAdminService {
   async deactivate(actorId: string, id: string) {
     const user = await this.getManaged(id);
     if (!user.active) throw new ConflictException(`${user.email} is already deactivated.`);
+
+    // The gate desk is a single point of failure for the whole factory: with no active
+    // gate login, NO TRUCK CAN BE RECEIVED AT ALL. So the LAST active gate-capable login
+    // is protected — but only the last one. Once a second gate login exists, retiring the
+    // first is ordinary housekeeping and is allowed.
+    if (user.role === Role.OPERATOR) {
+      const activeGates = await this.prisma.user.count({
+        where: { role: Role.OPERATOR, active: true },
+      });
+      if (activeGates <= 1) {
+        throw new ConflictException(
+          'This is the only active Gate login. Deactivating it would leave the factory unable to receive material — create another Gate login first.',
+        );
+      }
+    }
     const updated = await this.prisma.user.update({
       where: { id: user.id },
       data: { active: false },
