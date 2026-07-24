@@ -4,6 +4,7 @@ import { api, ApiError } from '@/lib/api'
 import type { Material } from '@/types/api'
 import { enqueue, pending, flush } from '@/lib/offlineQueue'
 import { RapidScanPanel, type RapidScanResult } from '@/components/scan/RapidScanPanel'
+import { ScanSessionBar } from '@/components/scan/ScanSessionBar'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -390,14 +391,18 @@ export function ReceivingPage() {
         </Card>
       )}
 
-      <RapidScanPanel
-        title="Scan to receive"
-        hint="Scan each sack in turn — no typing, no weighing."
-        placeholder="MC-000001"
-        onScan={handleScan}
-        sessionCount={count}
-        recent={recent}
-      />
+      {/* The scanner only appears inside an OPEN receiving session; the server refuses a
+          scan otherwise. The UPI-style loop is unchanged inside. */}
+      <ScanSessionBar kind="RECEIVING" title="Receive Stock">
+        <RapidScanPanel
+          title="Scan to receive"
+          hint="Scan each sack in turn — no typing, no weighing."
+          placeholder="MC-000001"
+          onScan={handleScan}
+          sessionCount={count}
+          recent={recent}
+        />
+      </ScanSessionBar>
 
       <Card>
         <CardContent className="flex items-center justify-between gap-4 p-4">

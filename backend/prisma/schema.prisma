@@ -130,6 +130,7 @@ model User {
   reprintDecided   LabelReprintRequest[] @relation("ReprintDecidedBy")
   slipsGenerated   ReceivingSlip[]       @relation("SlipGeneratedBy")
   flagsChanged     SystemFlag[]          @relation("FlagUpdatedBy")
+  scanSessions     ScanSession[]         @relation("ScanSessionOpenedBy")
   slipsFinalized   ReceivingSlip[]       @relation("SlipFinalizedBy")
 
   @@index([role])
@@ -673,4 +674,32 @@ model SystemFlag {
   updatedById String?
   updatedBy   User?    @relation("FlagUpdatedBy", fields: [updatedById], references: [id])
   updatedAt   DateTime @updatedAt
+}
+
+// ───────────────────── Scan sessions (server-side gating) ─────────────────────
+
+enum ScanKind {
+  RECEIVING // Store scanning sacks in at Receive Stock
+  DISPATCH // Dispatch scanning finished goods / cartons out
+}
+
+/**
+ * An explicit Start/Done around a run of scans, enforced by the SERVER.
+ * Before this, a "session" was a localStorage summary only — a scan worked with or
+ * without one. Now a scan of the matching kind is REFUSED unless the actor has an open
+ * session, so the record of "who was scanning, from when to when, how many" is a fact
+ * the API guarantees rather than something the browser volunteers. The partial unique
+ * index below allows at most one OPEN session per (kind, user) at a time.
+ */
+model ScanSession {
+  id         String    @id @default(uuid())
+  kind       ScanKind
+  openedById String
+  openedBy   User      @relation("ScanSessionOpenedBy", fields: [openedById], references: [id])
+  openedAt   DateTime  @default(now())
+  closedAt   DateTime?
+  scanCount  Int       @default(0)
+
+  @@index([openedById])
+  @@index([kind, closedAt])
 }

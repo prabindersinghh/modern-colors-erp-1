@@ -102,6 +102,8 @@ const APPLY = ALLOW && CONFIRMED;
  * change could quietly flip to RESTRICT. Children first is unconditionally correct.
  */
 const DELETE_ORDER = [
+  // ScanSession references only User (preserved), so it deletes freely and early.
+  'ScanSession',
   // Reprint approvals reference PurchaseOrder, Material, ProductionOutput AND
   // FinishedGood, so they must go before all four — first is unconditionally safe.
   'LabelReprintRequest',
@@ -147,6 +149,7 @@ async function countAll(): Promise<Counts> {
     FinishedGood: await prisma.finishedGood.count(),
     FinishedGoodQr: await prisma.finishedGoodQr.count(),
     LabelReprintRequest: await prisma.labelReprintRequest.count(),
+    ScanSession: await prisma.scanSession.count(),
     ReceivingSlip: await prisma.receivingSlip.count(),
     AuditLog: await prisma.auditLog.count(),
   };

@@ -16,6 +16,7 @@ import { useUrlId, useUrlParam } from '@/lib/urlState'
 import { usePageBack, useNavigation } from '@/lib/navigation'
 import type { DispatchHistory, DispatchReady, FinishedGood } from '@/types/api'
 import { RapidScanPanel, type RapidScanResult } from '@/components/scan/RapidScanPanel'
+import { ScanSessionBar } from '@/components/scan/ScanSessionBar'
 import { ScanPanel } from '@/components/scan/ScanPanel'
 import { useScanFlow } from '@/components/scan/useScanFlow'
 import { Button } from '@/components/ui/button'
@@ -287,15 +288,18 @@ export function DispatchPage() {
         </div>
       )}
 
-      {/* Rapid-fire dispatch: scan → brief confirmation → straight back to ready. */}
-      <RapidScanPanel
-        title={activeBatch ? `Scan batch ${activeBatch.batchNumber}` : 'Scan to dispatch'}
-        hint="Scan each drum in turn — no typing."
-        placeholder="FG-000001"
-        onScan={scan}
-        sessionCount={count}
-        recent={recent}
-      />
+      {/* Rapid-fire dispatch, inside an OPEN dispatch session — the server refuses a
+          scan-out (single or bulk) with no session. The loop is unchanged inside. */}
+      <ScanSessionBar kind="DISPATCH" title="Dispatch">
+        <RapidScanPanel
+          title={activeBatch ? `Scan batch ${activeBatch.batchNumber}` : 'Scan to dispatch'}
+          hint="Scan each drum in turn — no typing."
+          placeholder="FG-000001"
+          onScan={scan}
+          sessionCount={count}
+          recent={recent}
+        />
+      </ScanSessionBar>
 
       {/* Recent history */}
       {history && history.recent.length > 0 && (

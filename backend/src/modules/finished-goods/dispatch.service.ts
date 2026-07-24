@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { FgStatus, Prisma } from '@prisma/client';
+import { FgStatus, Prisma, ScanKind } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ScanSessionService } from '../scan-session/scan-session.service';
 import { AuditService } from '../audit/audit.service';
 import { AuthUser } from '../../common/decorators/current-user.decorator';
 import { isFinishedGoodId } from './finished-goods.service';
@@ -16,6 +17,7 @@ export class DispatchService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly sessions: ScanSessionService,
   ) {}
 
   /** Everything still awaiting dispatch, newest batch first — the Dispatch home list. */
@@ -98,6 +100,8 @@ export class DispatchService {
    * refuses to double-dispatch. Records who + when, append-only audited.
    */
   async dispatchUnit(user: AuthUser, uniqueId: string, note?: string, device?: string) {
+    // Server-side gate: no scan-out without an open dispatch session.
+    await this.sessions.assertOpen(user.id, ScanKind.DISPATCH);
     const id = uniqueId.trim();
     if (!isFinishedGoodId(id)) {
       throw new BadRequestException(
@@ -154,6 +158,7 @@ export class DispatchService {
    * Audited distinctly from per-unit scans so Admin can tell them apart.
    */
   async dispatchBatch(user: AuthUser, batchId: string, note?: string) {
+    await this.sessions.assertOpen(user.id, ScanKind.DISPATCH);
     const batch = await this.prisma.batch.findUnique({ where: { id: batchId } });
     if (!batch) throw new NotFoundException('Batch not found');
 

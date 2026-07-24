@@ -2,6 +2,8 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { MaterialStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { ScanSessionService } from '../scan-session/scan-session.service';
+import { ScanKind } from '@prisma/client';
 
 /**
  * Receiving (Step 6 of the workflow): scan a unit on arrival.
@@ -24,6 +26,7 @@ export class ReceivingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly sessions: ScanSessionService,
   ) {}
 
   /**
@@ -39,6 +42,8 @@ export class ReceivingService {
    * visible at the moment of scanning, not discovered later at the issue desk.
    */
   async scan(uniqueId: string, actorId: string, device?: string) {
+    // Server-side gate: no scan without an open receiving session (I: not UI-only).
+    await this.sessions.assertOpen(actorId, ScanKind.RECEIVING);
     const m = await this.prisma.material.findUnique({ where: { uniqueId } });
     if (!m) throw new NotFoundException(`No unit with ID ${uniqueId}`);
 

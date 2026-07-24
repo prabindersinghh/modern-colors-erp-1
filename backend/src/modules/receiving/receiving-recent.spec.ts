@@ -9,7 +9,7 @@ describe('ReceivingService.recent — seeds the running log', () => {
   const build = (rows: Array<Record<string, unknown>> = []) => {
     const findMany = jest.fn().mockResolvedValue(rows);
     const prisma = { material: { findMany } } as never;
-    return { svc: new ReceivingService(prisma, {} as never), findMany };
+    return { svc: new ReceivingService(prisma, {} as never, { assertOpen: async () => "s" } as never), findMany };
   };
 
   it('returns received units newest-first with a needsWeight flag', async () => {

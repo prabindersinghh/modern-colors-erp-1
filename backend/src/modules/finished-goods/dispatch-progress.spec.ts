@@ -26,7 +26,7 @@ describe('DispatchService.ready — batch progress', () => {
           .mockResolvedValue(counts.map((c) => ({ batchId: c.batchId, status: c.status, _count: { _all: c.n } }))),
       },
     };
-    return new DispatchService(prisma as never, {} as never);
+    return new DispatchService(prisma as never, {} as never, { assertOpen: async () => "s" } as never);
   };
 
   it('reports dispatched / total / pct per batch', async () => {
