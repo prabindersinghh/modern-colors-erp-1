@@ -189,7 +189,7 @@ export class PackingService implements OnModuleInit {
   /** Add a unit to a DRAFT carton. The unit must be one of the packer's UNDER_PACKING units. */
   async addItem(user: AuthUser, cartonId: string, uniqueId: string) {
     const id = uniqueId.trim();
-    return this.prisma.$transaction(async (tx) => {
+    await this.prisma.$transaction(async (tx) => {
       const carton = await this.lockCartonForEdit(tx, user, cartonId);
 
       const unit = await tx.finishedGood.findUnique({
@@ -223,14 +223,15 @@ export class PackingService implements OnModuleInit {
         },
         tx,
       );
-      return this.carton(user, carton.id);
     });
+    // Read AFTER commit — a mid-transaction read on this.prisma's connection sees stale data.
+    return this.carton(user, cartonId);
   }
 
   /** Remove a unit from a DRAFT carton (the unit stays UNDER_PACKING, back in the pool). */
   async removeItem(user: AuthUser, cartonId: string, fgUniqueId: string) {
     const id = fgUniqueId.trim();
-    return this.prisma.$transaction(async (tx) => {
+    await this.prisma.$transaction(async (tx) => {
       const carton = await this.lockCartonForEdit(tx, user, cartonId);
       const unit = await tx.finishedGood.findUnique({ where: { uniqueId: id }, select: { id: true } });
       if (!unit) throw new NotFoundException(`No finished-goods unit with ID ${id}`);
@@ -243,8 +244,8 @@ export class PackingService implements OnModuleInit {
         { entityType: 'Carton', entityId: carton.id, action: 'CARTON_ITEM_REMOVED', actorId: user.id, after: { unit: id } },
         tx,
       );
-      return this.carton(user, carton.id);
     });
+    return this.carton(user, cartonId);
   }
 
   /**
@@ -252,7 +253,7 @@ export class PackingService implements OnModuleInit {
    * production-output confirm. Refuses an empty carton and refuses to confirm twice.
    */
   async confirmCarton(user: AuthUser, cartonId: string) {
-    return this.prisma.$transaction(async (tx) => {
+    await this.prisma.$transaction(async (tx) => {
       const carton = await this.lockCartonForEdit(tx, user, cartonId);
       const count = await tx.cartonItem.count({ where: { cartonId: carton.id } });
       if (count === 0) {
@@ -274,8 +275,9 @@ export class PackingService implements OnModuleInit {
         },
         tx,
       );
-      return this.carton(user, carton.id);
     });
+    // Read AFTER commit so the response carries the freshly-minted PG.
+    return this.carton(user, cartonId);
   }
 
   /**
@@ -285,7 +287,7 @@ export class PackingService implements OnModuleInit {
   async markPacked(user: AuthUser, pgUniqueId: string, device?: string) {
     const id = pgUniqueId.trim();
     if (!isCartonId(id)) throw new BadRequestException(`${id} is not a carton (PG-) code.`);
-    return this.prisma.$transaction(async (tx) => {
+    const cartonId = await this.prisma.$transaction(async (tx) => {
       const carton = await this.lockCartonByPg(tx, id);
       if (user.role === 'PACKER' && carton.packedById !== user.id) {
         throw new NotFoundException(`No carton with ID ${id}`);
@@ -305,8 +307,9 @@ export class PackingService implements OnModuleInit {
         { entityType: 'Carton', entityId: carton.id, action: 'CARTON_PACKED', actorId: user.id, device: device ?? null, after: { pg: id, unitCount: items.length } },
         tx,
       );
-      return this.carton(user, carton.id);
+      return carton.id;
     });
+    return this.carton(user, cartonId);
   }
 
   /**
@@ -317,7 +320,7 @@ export class PackingService implements OnModuleInit {
   async voidCarton(user: AuthUser, cartonId: string, reason: string) {
     const why = reason?.trim();
     if (!why) throw new BadRequestException('A reason is required to void a carton.');
-    return this.prisma.$transaction(async (tx) => {
+    await this.prisma.$transaction(async (tx) => {
       const carton = await this.lockCarton(tx, cartonId);
       if (user.role === 'PACKER' && carton.packedById !== user.id) throw new NotFoundException('Carton not found');
       if (carton.status === CartonStatus.DISPATCHED) throw new ConflictException('A dispatched carton cannot be voided — that is a return.');
@@ -348,8 +351,8 @@ export class PackingService implements OnModuleInit {
         },
         tx,
       );
-      return this.carton(user, carton.id);
     });
+    return this.carton(user, cartonId);
   }
 
   /**
