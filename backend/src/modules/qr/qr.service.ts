@@ -158,12 +158,34 @@ function loadLabelFonts() {
  */
 @Injectable()
 export class QrService {
+  /**
+   * What a QR IMAGE encodes: the bare unique ID (e.g. "MC-000123"), NOT the full JSON
+   * payload.
+   *
+   * The scan path only ever resolves a unit by its id (`extractUniqueId` returns
+   * `o.uniqueId` from JSON or the raw string otherwise), so the long JSON that used to be
+   * burned into every sticker bought nothing at the scanner and cost decode reliability:
+   * ~150–250 characters made dense modules that a 256px camera raster struggles with.
+   * Encoding just the id yields far fewer, larger modules — faster, more robust scans on
+   * the same 216×108pt sticker.
+   *
+   * This changes ONLY the image. The stored `payload` JSON on the row is untouched (the
+   * human-readable record and label reprints still read it), and old stickers already
+   * stuck on sacks keep scanning forever, because `extractUniqueId` still unwraps their
+   * full-JSON content. Both facts are asserted in qr.short-payload.spec.ts.
+   */
+  static qrContent(payload: AnyQrPayload): string {
+    // A payload always carries a uniqueId; fall back to the JSON only if one is somehow
+    // absent, so a malformed record can never render a blank QR.
+    return payload.uniqueId?.trim() || JSON.stringify(payload);
+  }
+
   dataUrl(payload: AnyQrPayload): Promise<string> {
-    return QRCode.toDataURL(JSON.stringify(payload), { width: 320, margin: 1 });
+    return QRCode.toDataURL(QrService.qrContent(payload), { width: 320, margin: 1 });
   }
 
   pngBuffer(payload: AnyQrPayload, width = QR_PRINT_PX): Promise<Buffer> {
-    return QRCode.toBuffer(JSON.stringify(payload), { type: 'png', width, margin: 1 });
+    return QRCode.toBuffer(QrService.qrContent(payload), { type: 'png', width, margin: 1 });
   }
 
   /**
