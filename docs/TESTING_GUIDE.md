@@ -98,28 +98,31 @@ Lands on **My Department** (scoped to its own department only).
 - **Generate FG QR codes** → mints all three families in one run: paint **FG-**, hardener
   **FGHD-**, thinner **FGTH-**, each from its own sequence. One label run prints all three.
 
-### 5. Dispatch — `dispatch@` (DISPATCH)
-Lands on **Dispatch** (its only screen).
-- **Start** a dispatch session, then **scan** a finished-goods `FG-`/`FGHD-`/`FGTH-` unit to
-  ship it. **Done** closes with a count.
-- With `PACKING_STAGE` ON, scan a carton's **PG-** mega code → the whole carton and every
-  unit in it dispatch together. A **voided** PG is refused.
-- A unit that a packer has taken into a carton (`UNDER_PACKING`/`PACKED`) is **refused** on
-  a direct scan (ship the carton, not the drum) — always, flag or no flag.
-- **Returns** → scrap or refurbish a **dispatched** unit (refurbish keeps the family: a
-  returned hardener mints a new `FGHD-`).
+### 5. Dispatch — `dispatch@` (DISPATCH) — three tabs: Scan · Packed (PG) · Returns
+- **Scan** → **Start** a dispatch session, then **scan** an `FG-`/`FGHD-`/`FGTH-` unit **or**
+  a carton **PG-** to ship it. **Done** closes with a count. A voided PG is refused; a unit a
+  packer has taken into a carton (`UNDER_PACKING`/`PACKED`) is refused on a direct scan (ship
+  the carton). Carton scans go through the **same session gate** as unit scans.
+- **Packed (PG)** → one card per confirmed packing list: its contents summary (how many
+  straights, how many combos, per-family totals with size+unit) and a **0–100% progress bar
+  = PGs dispatched / PGs in the list**, all server-computed. Tap a card for the PG-level
+  detail (each PG, its contents, its status).
+- **Returns** → scrap or refurbish a **dispatched** unit (refurbish keeps the family).
 
-### 6. Packer — `packer@` (PACKER)
-Lands on the **Packing desk** (its only screen).
-- **Scan a unit in** (`FG-`/`FGHD-`/`FGTH-`) → it moves to the "ready to pack" pool.
-- Build **one packing list**: add **straights** (a single drum alone) and **combos**
-  (checked sets), side by side.
-- **Confirm list** → mints a **PG-** code for **every** entry together, sequentially, in one
-  go. **Print all labels** → one PDF, every entry's A5 label in list order, each showing its
-  contents in detail (unit id / product / family / size+unit).
-- **Seal** (scan the PG) → the carton and its contents go PACKED.
-- **Void** a wrong entry (reason required) → its units return to the pool; its PG is retired
-  forever; repack into a fresh PG.
+### 6. Packer — `packer@` (PACKER) — two tabs: Batches · New List
+- **Batches (home)** → one card per production batch with units to pack, showing the batch's
+  **per-family counts with size+unit** (e.g. "32 × 6L Paint (FG) · 5 × 6kg Hardener (FGHD) ·
+  2 × 6L Thinner (FGTH)" — kg/L never blended) and a **0–100% progress bar = units scanned
+  into UNDER_PACKING / total**, all server-computed. Tap a card for unit detail. Fully
+  scanned-in batches drop to a done section.
+  - **Scan finished goods in**: press **Start** (a packing session, same system as Receive
+    Stock), scan each `FG-`/`FGHD-`/`FGTH-` unit — the batch bars move as you scan — press
+    **Done**. A scan outside an open session is **refused** by the server.
+- **New List** → build **one packed-goods list**: add **straights** (a single drum) and
+  **combos** (checked sets) from the pool. **Confirm list** → a **PG-** code for **every**
+  entry at once. **Print all labels** → one PDF, each label showing its contents in detail.
+  **Seal** (scan the PG) / **Void** a wrong entry (reason; units released; PG retired) live
+  here too. Past lists are shown under the tab.
 - Packer reaches **nothing else** — no raw stock, requests, batches, invoices, dispatch.
 
 ### 7. Reviewer — `pallavi@` / `rupinder@` (REVIEWER) — VIEW-ONLY
