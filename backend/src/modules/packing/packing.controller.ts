@@ -38,6 +38,20 @@ export class PackingController {
     return this.packing.pool();
   }
 
+  /** FG batch cards — the packer's home: per-family counts + scan-in progress per batch. */
+  @Get('batches')
+  @Roles(Role.PACKER, Role.ADMIN, Role.OVERSIGHT)
+  batches() {
+    return this.packing.batches();
+  }
+
+  /** A batch's unit-level detail. */
+  @Get('batches/:id')
+  @Roles(Role.PACKER, Role.ADMIN, Role.OVERSIGHT)
+  batch(@Param('id') id: string) {
+    return this.packing.batch(id);
+  }
+
   /** Scan a finished-goods unit into the packer's hands (→ UNDER_PACKING). */
   @Post('scan-in')
   @Roles(Role.PACKER)

@@ -14,7 +14,7 @@ import { api, ApiError } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { useUrlId, useUrlParam } from '@/lib/urlState'
 import { usePageBack, useNavigation } from '@/lib/navigation'
-import type { DispatchHistory, DispatchReady, FinishedGood } from '@/types/api'
+import type { DispatchHistory, DispatchReady, FinishedGood, DispatchPgList, DispatchPgListDetail } from '@/types/api'
 import { RapidScanPanel, type RapidScanResult } from '@/components/scan/RapidScanPanel'
 import { ScanSessionBar } from '@/components/scan/ScanSessionBar'
 import { ScanPanel } from '@/components/scan/ScanPanel'
@@ -48,8 +48,8 @@ function extractUniqueId(text: string): string {
 type ReadyBatch = DispatchReady['batches'][number]
 
 export function DispatchPage() {
-  const [tab, setTab] = useUrlParam<'scan' | 'returns' | 'analytics'>('tab', 'scan', {
-    allowed: ['scan', 'returns', 'analytics'],
+  const [tab, setTab] = useUrlParam<'scan' | 'packed' | 'returns' | 'analytics'>('tab', 'scan', {
+    allowed: ['scan', 'packed', 'returns', 'analytics'],
   })
   const { user } = useAuth()
   const [ready, setReady] = useState<DispatchReady | null>(null)
@@ -177,6 +177,15 @@ export function DispatchPage() {
       <div className="space-y-4">
         <DispatchTabs tab={tab} onChange={setTab} />
         <DispatchAnalytics />
+      </div>
+    )
+  }
+
+  if (tab === 'packed') {
+    return (
+      <div className="mx-auto max-w-xl space-y-4">
+        <DispatchTabs tab={tab} onChange={setTab} />
+        <PgListsTab />
       </div>
     )
   }
@@ -601,20 +610,86 @@ function ReturnsTab() {
 }
 
 /** Scan / Returns / Analytics switch — 44px on touch for gloved hands. */
+const PG_FAM: Record<string, string> = { FINISHED_GOOD: 'FG', HARDENER: 'FGHD', THINNER: 'FGTH' }
+
+/**
+ * PG BATCH CARDS — one card per confirmed packing list, with a dispatched/total progress
+ * bar. Scanning a PG happens on the Scan tab (same Start/Done session as unit scans); this
+ * is the read view of how far each list has shipped. Numbers are server-computed.
+ */
+function PgListsTab() {
+  const [lists, setLists] = useState<DispatchPgList[] | null>(null)
+  const [open, setOpen] = useState<string | null>(null)
+  const load = useCallback(() => api.get<{ lists: DispatchPgList[] }>('/finished-goods/dispatch/pg-lists').then((r) => setLists(r.lists)).catch(() => setLists([])), [])
+  useEffect(() => void load(), [load])
+  useAutoRefresh(load, { intervalMs: 12_000 })
+
+  if (lists === null) return <div className="h-24 animate-pulse rounded-lg bg-muted" />
+  if (lists.length === 0) {
+    return <EmptyState title="No packed-goods lists yet" description="When the packer confirms a list, its PG cards appear here. Scan a PG on the Scan tab to ship the whole carton." />
+  }
+  return (
+    <div className="space-y-3">
+      {lists.map((l) => (
+        <Card key={l.listId} edge={l.done ? undefined : 'primary'}>
+          <CardContent className="space-y-3 p-4">
+            <button className="tactile flex w-full items-start justify-between gap-3 text-left" onClick={() => setOpen(open === l.listId ? null : l.listId)}>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium text-chip-900">Packing list</span>
+                  {l.done ? <Badge variant="secondary">all shipped</Badge> : <Badge>{l.totalPgs - l.dispatched} to ship</Badge>}
+                </div>
+                <p className="text-sm text-chip-600">{l.straights} straight{l.straights === 1 ? '' : 's'} · {l.combos} combo{l.combos === 1 ? '' : 's'}{l.packedBy ? ` · ${l.packedBy}` : ''}</p>
+                <p className="mt-1 text-xs text-chip-500">{l.families.map((f) => `${f.count} × ${f.size}${f.unit} ${PG_FAM[f.family] ?? f.family}`).join(' · ')}</p>
+              </div>
+              <div className="shrink-0 text-right">
+                <div className="text-title-3 font-semibold text-chip-900">{l.progress}%</div>
+                <div className="text-[11px] text-chip-500">{l.dispatched}/{l.totalPgs} PGs</div>
+              </div>
+            </button>
+            <div className="h-2 w-full overflow-hidden rounded-full bg-chip-100">
+              <div className="h-full rounded-full bg-healthy transition-all" style={{ width: `${l.progress}%` }} />
+            </div>
+            {open === l.listId && <PgListDetail listId={l.listId} />}
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  )
+}
+
+function PgListDetail({ listId }: { listId: string }) {
+  const [detail, setDetail] = useState<DispatchPgListDetail | null>(null)
+  useEffect(() => { api.get<DispatchPgListDetail>(`/finished-goods/dispatch/pg-lists/${listId}`).then(setDetail).catch(() => {}) }, [listId])
+  if (!detail) return <p className="text-xs text-chip-500">Loading PGs…</p>
+  return (
+    <div className="space-y-1.5 rounded-md border border-chip-100 p-2">
+      {detail.cartons.map((c) => (
+        <div key={c.pg} className="flex items-center justify-between rounded px-2 py-1 text-xs">
+          <span className="min-w-0 truncate"><span className="font-medium">{c.pg}</span><span className="ml-2 text-chip-500">{c.items.map((it) => it.uniqueId).join(', ')}</span></span>
+          <Badge variant={c.status === 'DISPATCHED' ? 'default' : c.status === 'VOIDED' ? 'destructive' : 'outline'}>{c.status.toLowerCase()}</Badge>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+type DispatchTab = 'scan' | 'packed' | 'returns' | 'analytics'
 function DispatchTabs({
   tab,
   onChange,
 }: {
-  tab: 'scan' | 'returns' | 'analytics'
-  onChange: (t: 'scan' | 'returns' | 'analytics') => void
+  tab: DispatchTab
+  onChange: (t: DispatchTab) => void
 }) {
+  const LABEL: Record<DispatchTab, string> = { scan: 'Scan', packed: 'Packed (PG)', returns: 'Returns', analytics: 'Analytics' }
   return (
     <div
       role="radiogroup"
       aria-label="Dispatch view"
       className="inline-flex items-center gap-0.5 rounded-lg bg-chip-100 p-0.5"
     >
-      {(['scan', 'returns', 'analytics'] as const).map((t) => (
+      {(['scan', 'packed', 'returns', 'analytics'] as const).map((t) => (
         <button
           key={t}
           type="button"
@@ -626,7 +701,7 @@ function DispatchTabs({
             tab === t ? 'bg-card text-chip-900 shadow-elev-1' : 'text-chip-500 hover:text-chip-700',
           )}
         >
-          {t === 'scan' ? 'Scan' : t === 'returns' ? 'Returns' : 'Analytics'}
+          {LABEL[t]}
         </button>
       ))}
     </div>

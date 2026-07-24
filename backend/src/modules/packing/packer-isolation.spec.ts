@@ -67,14 +67,14 @@ describe('PACKER role isolation (server-side)', () => {
       }
     });
 
-    it('lets PACKER read the pool, his cartons, lists and resolve a PG', () => {
-      for (const m of ['pool', 'cartons', 'carton', 'resolve', 'lists', 'packingList']) {
+    it('lets PACKER read the pool, batch cards, his cartons, lists and resolve a PG', () => {
+      for (const m of ['pool', 'batches', 'batch', 'cartons', 'carton', 'resolve', 'lists', 'packingList']) {
         expect(rolesFor(PackingController, m)).toContain(Role.PACKER);
       }
     });
 
     it('lets OVERSIGHT read every packing GET (total visibility), and write nothing', () => {
-      const reads = ['pool', 'cartons', 'carton', 'resolve', 'lists', 'packingList'];
+      const reads = ['pool', 'batches', 'batch', 'cartons', 'carton', 'resolve', 'lists', 'packingList'];
       for (const m of reads) expect(rolesFor(PackingController, m)).toContain(Role.OVERSIGHT);
       const writes = ['scanIn', 'createCarton', 'addItem', 'removeItem', 'confirm', 'voidCarton', 'markPacked', 'createList', 'addEntry', 'removeEntry', 'confirmList'];
       for (const m of writes) expect(rolesFor(PackingController, m)).not.toContain(Role.OVERSIGHT);

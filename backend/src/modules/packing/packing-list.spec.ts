@@ -44,7 +44,8 @@ describe('PackingService list confirm', () => {
       },
     };
     const audit = { log: jest.fn() };
-    return { svc: new PackingService(prisma as never, audit as never, {} as never), tx, audit };
+    const sessions = { assertOpen: async () => 'sess' };
+    return { svc: new PackingService(prisma as never, audit as never, {} as never, sessions as never), tx, audit };
   };
 
   it('mints a PG for EVERY entry, sequential, in one transaction', async () => {

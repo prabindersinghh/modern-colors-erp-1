@@ -8,7 +8,7 @@ import { CurrentUser, AuthUser } from '../../common/decorators/current-user.deco
 import { ScanSessionService } from './scan-session.service';
 
 class OpenDto {
-  @IsIn(['RECEIVING', 'DISPATCH'])
+  @IsIn(['RECEIVING', 'DISPATCH', 'PACKING'])
   kind!: ScanKind;
 }
 
@@ -23,7 +23,7 @@ export class ScanSessionController {
   constructor(private readonly sessions: ScanSessionService) {}
 
   @Get('current')
-  @Roles(Role.ADMIN, Role.DISPATCH)
+  @Roles(Role.ADMIN, Role.DISPATCH, Role.PACKER)
   current(@CurrentUser() user: AuthUser, @Query('kind') kind: ScanKind) {
     return this.sessions.current(user.id, kind);
   }
@@ -39,13 +39,13 @@ export class ScanSessionController {
   }
 
   @Post()
-  @Roles(Role.ADMIN, Role.DISPATCH)
+  @Roles(Role.ADMIN, Role.DISPATCH, Role.PACKER)
   open(@CurrentUser() user: AuthUser, @Body() dto: OpenDto) {
     return this.sessions.open(user.id, dto.kind);
   }
 
   @Post(':kind/close')
-  @Roles(Role.ADMIN, Role.DISPATCH)
+  @Roles(Role.ADMIN, Role.DISPATCH, Role.PACKER)
   close(@CurrentUser() user: AuthUser, @Param('kind') kind: ScanKind) {
     return this.sessions.close(user.id, kind);
   }

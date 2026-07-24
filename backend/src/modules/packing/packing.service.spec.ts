@@ -39,7 +39,8 @@ describe('PackingService carton invariants', () => {
     const prisma = { ...tx, $transaction: (fn: (t: unknown) => unknown) => fn(tx) };
     const audit = { log: jest.fn() };
     const reprints = {};
-    return { svc: new PackingService(prisma as never, audit as never, reprints as never), tx, audit };
+    const sessions = { assertOpen: async () => 'sess' };
+    return { svc: new PackingService(prisma as never, audit as never, reprints as never, sessions as never), tx, audit };
   };
 
   describe('scan-in', () => {

@@ -298,6 +298,79 @@ export class DispatchService {
     });
   }
 
+  /**
+   * PG BATCH CARDS — one card per confirmed packing list: its contents summary (straights,
+   * combos, per-family totals with size+unit) and a 0–100% progress bar = PGs dispatched /
+   * PGs in the list. Every number is SERVER-computed. Voided entries are excluded from the
+   * count (they were retired and repacked). A fully-dispatched list is flagged `done`.
+   */
+  async pgLists() {
+    const familyLabel: Record<string, string> = { FINISHED_GOOD: 'Paint', HARDENER: 'Hardener', THINNER: 'Thinner' };
+    const lists = await this.prisma.packingList.findMany({
+      where: { status: 'CONFIRMED' },
+      include: {
+        packedBy: { select: { name: true } },
+        cartons: {
+          include: { items: { include: { finishedGood: { select: { family: true, sizePerPackage: true, sizeUnit: true } } } } },
+        },
+      },
+      orderBy: { confirmedAt: 'desc' },
+      take: 100,
+    });
+    const summarised = lists.map((l) => {
+      const live = l.cartons.filter((c) => c.status !== CartonStatus.VOIDED);
+      const straights = live.filter((c) => c.items.length === 1).length;
+      const combos = live.filter((c) => c.items.length > 1).length;
+      const dispatched = live.filter((c) => c.status === CartonStatus.DISPATCHED).length;
+      const fam = new Map<string, { family: string; label: string; count: number; size: number; unit: string }>();
+      for (const c of live) {
+        for (const it of c.items) {
+          const f = it.finishedGood.family;
+          const e = fam.get(f) ?? { family: f, label: familyLabel[f] ?? f, count: 0, size: it.finishedGood.sizePerPackage, unit: it.finishedGood.sizeUnit };
+          e.count += 1;
+          fam.set(f, e);
+        }
+      }
+      return {
+        listId: l.id,
+        packedBy: l.packedBy?.name ?? null,
+        confirmedAt: l.confirmedAt,
+        straights, combos,
+        totalPgs: live.length,
+        dispatched,
+        progress: live.length > 0 ? Math.round((dispatched / live.length) * 100) : 0,
+        done: live.length > 0 && dispatched === live.length,
+        families: [...fam.values()].sort((a, b) => ['FINISHED_GOOD', 'HARDENER', 'THINNER'].indexOf(a.family) - ['FINISHED_GOOD', 'HARDENER', 'THINNER'].indexOf(b.family)),
+      };
+    });
+    return { lists: summarised.sort((a, b) => Number(a.done) - Number(b.done)) };
+  }
+
+  /** A packing list's PG-level detail — each carton, its status and contents. */
+  async pgList(listId: string) {
+    const list = await this.prisma.packingList.findUnique({
+      where: { id: listId },
+      include: {
+        cartons: {
+          orderBy: { createdAt: 'asc' },
+          include: { items: { include: { finishedGood: { select: { uniqueId: true, family: true, productName: true, sizePerPackage: true, sizeUnit: true } } } } },
+        },
+      },
+    });
+    if (!list) throw new NotFoundException('Packing list not found');
+    return {
+      listId: list.id,
+      cartons: list.cartons.map((c) => ({
+        pg: c.uniqueId,
+        status: c.status,
+        items: c.items.map((it) => ({
+          uniqueId: it.finishedGood.uniqueId, family: it.finishedGood.family, productName: it.finishedGood.productName,
+          size: `${it.finishedGood.sizePerPackage} ${it.finishedGood.sizeUnit}`,
+        })),
+      })),
+    };
+  }
+
   /** This dispatcher's recent history + today's count. */
   async history(user: AuthUser, take = 50) {
     const startOfDay = new Date();

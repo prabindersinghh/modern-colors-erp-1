@@ -833,6 +833,7 @@ model SystemFlag {
 enum ScanKind {
   RECEIVING // Store scanning sacks in at Receive Stock
   DISPATCH // Dispatch scanning finished goods / cartons out
+  PACKING // Packer scanning finished goods into UNDER_PACKING
 }
 
 /**

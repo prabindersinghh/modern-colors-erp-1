@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '@/lib/api'
 
-export type ScanKind = 'RECEIVING' | 'DISPATCH'
+export type ScanKind = 'RECEIVING' | 'DISPATCH' | 'PACKING'
 
 export interface ScanSession {
   id: string

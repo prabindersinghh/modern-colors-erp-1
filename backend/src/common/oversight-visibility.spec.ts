@@ -10,6 +10,7 @@ import { ALLOW_ACCESS_FLIP_KEY } from './decorators/allow-access-flip.decorator'
 import { ScanSessionController } from '../modules/scan-session/scan-session.controller';
 import { PackingController } from '../modules/packing/packing.controller';
 import { ReceivingSlipController } from '../modules/receiving-slip/receiving-slip.controller';
+import { FinishedGoodsController } from '../modules/finished-goods/finished-goods.controller';
 
 /**
  * BUILD 3 — the owner's total-visibility rule: Admin (OVERSIGHT) sees EVERYTHING happening
@@ -36,7 +37,7 @@ describe('BUILD 3 — OVERSIGHT total visibility, read-only', () => {
   // the reprint lock, not data) are excluded, and that exclusion is a visible decision here.
   const SURFACES: [string, any, string[]][] = [
     ['ScanSessionController', ScanSessionController, ['list']],
-    ['PackingController', PackingController, ['pool', 'cartons', 'carton', 'resolve', 'lists', 'packingList']],
+    ['PackingController', PackingController, ['pool', 'batches', 'batch', 'cartons', 'carton', 'resolve', 'lists', 'packingList']],
     ['ReceivingSlipController', ReceivingSlipController, ['list', 'byPo', 'findOne', 'slipPdf']],
   ];
 
@@ -69,6 +70,17 @@ describe('BUILD 3 — OVERSIGHT total visibility, read-only', () => {
     expect(verbOf(ScanSessionController, 'list')).toBe(RM.GET);
     for (const w of ['open', 'close']) {
       expect(grantsOversight(ScanSessionController, w)).toBe(false);
+    }
+  });
+
+  it('the dispatch PG-list cards (GET) are OVERSIGHT-readable', () => {
+    for (const m of ['pgLists', 'pgList', 'readyCartons']) {
+      expect({ method: m, oversight: grantsOversight(FinishedGoodsController, m) }).toEqual({ method: m, oversight: true });
+      expect(verbOf(FinishedGoodsController, m)).toBe(RM.GET);
+    }
+    // …and OVERSIGHT still writes nothing there (dispatch/return actions stay DISPATCH-only).
+    for (const w of ['scan', 'bulk', 'scanCarton', 'scrapReturn', 'refurbishReturn']) {
+      expect(grantsOversight(FinishedGoodsController, w)).toBe(false);
     }
   });
 });

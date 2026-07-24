@@ -5,11 +5,12 @@ import {
   NotFoundException,
   OnModuleInit,
 } from '@nestjs/common';
-import { CartonStatus, FgStatus, PackingListStatus, Prisma } from '@prisma/client';
+import { CartonStatus, FgStatus, PackingListStatus, Prisma, ScanKind } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { AuthUser } from '../../common/decorators/current-user.decorator';
 import { isFinishedGoodId } from '../finished-goods/fg-family';
+import { ScanSessionService } from '../scan-session/scan-session.service';
 import { LabelReprintService } from '../label-reprint/label-reprint.service';
 import { buildCartonLabel, buildCartonLabelSheet, type CartonLabelDoc } from './carton-label';
 import { CARTON_SEQ, formatCartonId, isCartonId } from './carton-id';
@@ -68,6 +69,7 @@ export class PackingService implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly reprints: LabelReprintService,
+    private readonly sessions: ScanSessionService,
   ) {}
 
   async onModuleInit() {
@@ -109,8 +111,93 @@ export class PackingService implements OnModuleInit {
     return { toScanIn, loose };
   }
 
-  /** Scan a unit into UNDER_PACKING. Double-scan guarded; must currently be GENERATED. */
+  // Statuses that count as "produced" for a batch card (SCRAPPED / REFURBISHED originals
+  // are excluded — they are no longer part of what the batch ships).
+  private static readonly PRODUCED = [FgStatus.GENERATED, FgStatus.UNDER_PACKING, FgStatus.PACKED, FgStatus.DISPATCHED] as const;
+  // Statuses that mean a unit has been SCANNED IN (taken past GENERATED).
+  private static readonly SCANNED_IN = [FgStatus.UNDER_PACKING, FgStatus.PACKED, FgStatus.DISPATCHED];
+
+  /**
+   * FG BATCH CARDS — the packer's home. One card per production batch that still has units
+   * to pack, with per-family counts (size+unit shown, kg/L never blended) and a 0–100%
+   * progress bar = units scanned into UNDER_PACKING / total units of the batch. Every number
+   * is SERVER-computed. Fully-dispatched batches drop off; batches fully scanned-in (no
+   * GENERATED left) are flagged `done`.
+   */
+  async batches() {
+    const familyLabel: Record<string, string> = { FINISHED_GOOD: 'Paint', HARDENER: 'Hardener', THINNER: 'Thinner' };
+    // Counts per (batch, family, status).
+    const grouped = await this.prisma.finishedGood.groupBy({
+      by: ['batchId', 'family', 'status'],
+      where: { status: { in: [...PackingService.PRODUCED] } },
+      _count: { _all: true },
+    });
+    if (grouped.length === 0) return { batches: [] };
+    // Identity + size/unit per (batch, family) — one representative row each.
+    const meta = await this.prisma.finishedGood.findMany({
+      where: { status: { in: [...PackingService.PRODUCED] } },
+      distinct: ['batchId', 'family'],
+      select: {
+        batchId: true, family: true, sizePerPackage: true, sizeUnit: true, productName: true,
+        batch: { select: { batchNumber: true, department: true } },
+      },
+    });
+
+    const scannedSet = new Set<string>(PackingService.SCANNED_IN);
+    const FAM_ORDER = ['FINISHED_GOOD', 'HARDENER', 'THINNER'];
+    const byBatch = new Map<string, any>();
+    for (const m of meta) {
+      const b = byBatch.get(m.batchId) ?? {
+        batchId: m.batchId, batchNumber: m.batch.batchNumber, department: m.batch.department,
+        productName: m.productName, families: [] as any[], total: 0, scannedIn: 0, generatedLeft: 0, dispatched: 0,
+      };
+      const counts = grouped.filter((g) => g.batchId === m.batchId && g.family === m.family);
+      const sum = (pred: (s: FgStatus) => boolean) => counts.filter((c) => pred(c.status)).reduce((n, c) => n + c._count._all, 0);
+      const famTotal = counts.reduce((n, c) => n + c._count._all, 0);
+      b.families.push({
+        family: m.family, label: familyLabel[m.family] ?? m.family, count: famTotal,
+        size: m.sizePerPackage, unit: m.sizeUnit, scannedIn: sum((s) => scannedSet.has(s)),
+      });
+      b.total += famTotal;
+      b.scannedIn += sum((s) => scannedSet.has(s));
+      b.generatedLeft += sum((s) => s === FgStatus.GENERATED);
+      b.dispatched += sum((s) => s === FgStatus.DISPATCHED);
+      byBatch.set(m.batchId, b);
+    }
+
+    const batches = [...byBatch.values()]
+      // Drop fully-dispatched batches — they have left the factory, nothing for the packer.
+      .filter((b) => b.total > 0 && b.dispatched < b.total)
+      .map((b) => ({
+        batchId: b.batchId, batchNumber: b.batchNumber, department: b.department, productName: b.productName,
+        families: b.families.sort((x: any, y: any) => FAM_ORDER.indexOf(x.family) - FAM_ORDER.indexOf(y.family)),
+        total: b.total, scannedIn: b.scannedIn,
+        progress: b.total > 0 ? Math.round((b.scannedIn / b.total) * 100) : 0,
+        done: b.generatedLeft === 0, // fully scanned in — nothing left for the packer to take
+      }))
+      // Active (needs scanning) first, then done; within each, most-recent batch first.
+      .sort((a, b) => Number(a.done) - Number(b.done) || b.batchNumber.localeCompare(a.batchNumber));
+    return { batches };
+  }
+
+  /** A batch's unit-level detail — every produced unit, its family, size and status. */
+  async batch(batchId: string) {
+    const batch = await this.prisma.batch.findUnique({ where: { id: batchId }, select: { batchNumber: true, department: true } });
+    if (!batch) throw new NotFoundException('Batch not found');
+    const units = await this.prisma.finishedGood.findMany({
+      where: { batchId, status: { in: [...PackingService.PRODUCED] } },
+      select: { id: true, uniqueId: true, family: true, productName: true, sizePerPackage: true, sizeUnit: true, status: true },
+      orderBy: { uniqueId: 'asc' },
+      take: 2000,
+    });
+    return { batchId, batchNumber: batch.batchNumber, department: batch.department, units };
+  }
+
+  /** Scan a unit into UNDER_PACKING. Double-scan guarded; must currently be GENERATED.
+   *  Server-side gated: refused unless the packer has an open PACKING session (same system
+   *  as Receive Stock / Dispatch). Counts the scan against the session. */
   async scanIn(user: AuthUser, uniqueId: string, device?: string) {
+    await this.sessions.assertOpen(user.id, ScanKind.PACKING);
     const id = uniqueId.trim();
     if (!isFinishedGoodId(id)) {
       throw new BadRequestException(`${id} is not a finished-goods code. The packer scans FG-/FGHD-/FGTH- units.`);

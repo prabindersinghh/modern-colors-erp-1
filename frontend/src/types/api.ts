@@ -510,6 +510,49 @@ export interface Carton {
   items: CartonItemView[]
 }
 
+export interface PackerBatchFamily {
+  family: FgFamily
+  label: string
+  count: number
+  size: number
+  unit: string
+  scannedIn: number
+}
+export interface PackerBatchCard {
+  batchId: string
+  batchNumber: string
+  department: Department
+  productName: string
+  families: PackerBatchFamily[]
+  total: number
+  scannedIn: number
+  progress: number
+  done: boolean
+}
+export interface PackerBatchDetail {
+  batchId: string
+  batchNumber: string
+  department: Department
+  units: { id: string; uniqueId: string; family: FgFamily; productName: string; sizePerPackage: number; sizeUnit: string; status: FgStatus }[]
+}
+
+export interface DispatchPgList {
+  listId: string
+  packedBy: string | null
+  confirmedAt: string | null
+  straights: number
+  combos: number
+  totalPgs: number
+  dispatched: number
+  progress: number
+  done: boolean
+  families: { family: FgFamily; label: string; count: number; size: number; unit: string }[]
+}
+export interface DispatchPgListDetail {
+  listId: string
+  cartons: { pg: string; status: CartonStatus; items: { uniqueId: string; family: FgFamily; productName: string; size: string }[] }[]
+}
+
 export type PackingListStatus = 'DRAFT' | 'CONFIRMED'
 
 export interface PackingList {

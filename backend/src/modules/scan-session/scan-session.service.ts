@@ -91,11 +91,13 @@ export class ScanSessionService {
   async assertOpen(userId: string, kind: ScanKind): Promise<string> {
     const session = await this.current(userId, kind);
     if (!session) {
-      throw new ConflictException(
+      const message =
         kind === ScanKind.RECEIVING
           ? 'Start a receiving session before scanning sacks in.'
-          : 'Start a dispatch session before scanning goods out.',
-      );
+          : kind === ScanKind.PACKING
+            ? 'Start a packing session before scanning units in.'
+            : 'Start a dispatch session before scanning goods out.';
+      throw new ConflictException(message);
     }
     await this.prisma.scanSession.update({
       where: { id: session.id },

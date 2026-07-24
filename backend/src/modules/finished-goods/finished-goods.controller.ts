@@ -133,6 +133,20 @@ export class FinishedGoodsController {
     return this.dispatch.readyCartons({ search });
   }
 
+  /** PG batch cards — one per confirmed packing list, with dispatch progress. */
+  @Get('dispatch/pg-lists')
+  @Roles(Role.DISPATCH, Role.ADMIN, Role.OVERSIGHT)
+  pgLists() {
+    return this.dispatch.pgLists();
+  }
+
+  /** A packing list's PG-level detail. */
+  @Get('dispatch/pg-lists/:id')
+  @Roles(Role.DISPATCH, Role.ADMIN, Role.OVERSIGHT)
+  pgList(@Param('id') id: string) {
+    return this.dispatch.pgList(id);
+  }
+
   /** Scan a carton's PG to dispatch the whole carton + its contents in one go. */
   @Post('dispatch/scan-carton')
   @Roles(Role.DISPATCH)
