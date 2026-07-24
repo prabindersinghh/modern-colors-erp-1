@@ -28,6 +28,16 @@ export class ScanSessionController {
     return this.sessions.current(user.id, kind);
   }
 
+  /**
+   * Session history (read-only). OVERSIGHT sees EVERY session — who scanned, from when to
+   * when, how many — for the owner's total-visibility rule; Store/Dispatch see their own.
+   */
+  @Get()
+  @Roles(Role.ADMIN, Role.DISPATCH, Role.OVERSIGHT)
+  list(@CurrentUser() user: AuthUser, @Query('kind') kind?: ScanKind) {
+    return this.sessions.list(user, kind);
+  }
+
   @Post()
   @Roles(Role.ADMIN, Role.DISPATCH)
   open(@CurrentUser() user: AuthUser, @Body() dto: OpenDto) {

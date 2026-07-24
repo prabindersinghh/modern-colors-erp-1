@@ -25,6 +25,21 @@ export class ScanSessionService {
     });
   }
 
+  /**
+   * Session history — who scanned, from when to when, how many. OVERSIGHT sees EVERY
+   * session (the owner's total-visibility rule); everyone else sees only their own. A
+   * read only: no scan can be started or closed through here.
+   */
+  list(user: { id: string; role: string }, kind?: ScanKind) {
+    const all = user.role === 'OVERSIGHT';
+    return this.prisma.scanSession.findMany({
+      where: { ...(all ? {} : { openedById: user.id }), ...(kind ? { kind } : {}) },
+      include: { openedBy: { select: { id: true, name: true, email: true, role: true } } },
+      orderBy: { openedAt: 'desc' },
+      take: 200,
+    });
+  }
+
   async open(userId: string, kind: ScanKind) {
     const existing = await this.current(userId, kind);
     if (existing) return existing; // idempotent: reopening returns the live one
