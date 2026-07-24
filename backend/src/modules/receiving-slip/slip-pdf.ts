@@ -1,20 +1,22 @@
-import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
+import { PDFDocument, PDFFont, PDFPage, StandardFonts, rgb } from 'pdf-lib';
 import type { SlipLine } from './receiving-slip.service';
+import { LOGO_PNG_DATA_URL, LOGO_ASPECT } from './logo-asset';
 
 /**
- * The receiving slip as a printable document — THE one renderer.
+ * The receiving slip as a printable "GOOD RECEIPT NOTE" — THE one renderer.
  *
- * Store and Gate both print from here, so the paper the gate guard carries across the
- * yard and the copy Store holds are the same document by construction rather than by
- * two implementations agreeing. Before this, "Print slip" was window.print() on the
- * dashboard page, which printed the surrounding screen furniture and could not be
- * scoped or downloaded.
+ * Store and Gate both print from here, so the paper the gate guard carries across the yard
+ * and the copy Store holds are the same document by construction. The layout matches the
+ * factory's own Good Receipt Note: the Modern Colours logo, a red rule, the GOOD RECEIPT
+ * NOTE title, Supplier + Date of Receipt, a bordered table (Sr No / Material+code /
+ * Quantity Received / Pack Size / Unit Codes), and Gate + Store signature lines.
  *
- * A4 portrait — deliberately NOT the 3x1.5in label geometry, which is a different
- * artifact rendered by buildLabelRoll and must not be disturbed.
+ * A4 portrait — deliberately NOT the 3x1.5in label geometry (buildLabelRoll) nor the A5
+ * carton label (buildCartonLabelSheet); both are untouched by this renderer.
  *
- * Carries no price, amount, HSN or invoice image: the slip is the commercial-free
- * record, and printing it must not become a way to move commercial data.
+ * Carries no price, amount, HSN or invoice image: the slip is the commercial-free record.
+ * The UNIT (CODES) column shows the minted MC- ranges; on a slip whose units have not yet
+ * been minted it reads "pending" — those codes arrive when the inward is confirmed.
  */
 export interface SlipDoc {
   slipNumber: string;
@@ -28,95 +30,159 @@ export interface SlipDoc {
 }
 
 const A4 = { w: 595.28, h: 841.89 };
-const M = 48; // margin
+const M = 40; // page margin
+const BRAND_RED = rgb(0.92, 0.0, 0.008);
+const INK = rgb(0.1, 0.1, 0.1);
+const GREY = rgb(0.42, 0.42, 0.42);
+const HEADER_FILL = rgb(0.95, 0.95, 0.96);
+const BORDER = rgb(0.72, 0.72, 0.74);
+
+// Table columns — widths sum to the content width (A4 - 2*margin ≈ 515).
+const COLS = [
+  { key: 'sr', label: 'SR. NO.', w: 52, align: 'center' as const },
+  { key: 'material', label: 'MATERIAL', w: 168, align: 'left' as const },
+  { key: 'qty', label: 'QUANTITY\nRECEIVED', w: 108, align: 'center' as const },
+  { key: 'pack', label: 'PACK SIZE', w: 88, align: 'center' as const },
+  { key: 'codes', label: 'UNIT (CODES)', w: 99, align: 'center' as const },
+];
 
 export async function buildSlipPdf(slip: SlipDoc): Promise<Buffer> {
   const doc = await PDFDocument.create();
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
+  const logo = await doc.embedPng(Buffer.from(LOGO_PNG_DATA_URL.split(',')[1], 'base64'));
+
+  const contentW = A4.w - M * 2;
+  const drawHeader = (page: PDFPage): number => {
+    let y = A4.h - M;
+
+    // ── logo, centred ──
+    const logoW = 150;
+    const logoH = logoW / LOGO_ASPECT;
+    page.drawImage(logo, { x: (A4.w - logoW) / 2, y: y - logoH, width: logoW, height: logoH });
+    y -= logoH + 12;
+
+    // ── red rule ──
+    page.drawLine({ start: { x: M, y }, end: { x: A4.w - M, y }, thickness: 1.6, color: BRAND_RED });
+    y -= 30;
+
+    // ── title, centred + underlined ──
+    const title = 'GOOD RECEIPT NOTE';
+    const tSize = 22;
+    const tW = bold.widthOfTextAtSize(title, tSize);
+    const tX = (A4.w - tW) / 2;
+    page.drawText(title, { x: tX, y, size: tSize, font: bold, color: INK });
+    page.drawLine({ start: { x: tX, y: y - 4 }, end: { x: tX + tW, y: y - 4 }, thickness: 1.4, color: INK });
+    // slip number, small + unobtrusive (traceability), top-right
+    page.drawText(slip.slipNumber, {
+      x: A4.w - M - font.widthOfTextAtSize(slip.slipNumber, 9),
+      y: A4.h - M - 8,
+      size: 9,
+      font,
+      color: GREY,
+    });
+    y -= 34;
+
+    // ── meta: Supplier / Date of Receipt ──
+    const metaRow = (label: string, value: string) => {
+      page.drawText(label, { x: M, y, size: 11, font: bold, color: INK });
+      page.drawText(':', { x: M + 118, y, size: 11, font: bold, color: INK });
+      page.drawText(value, { x: M + 132, y, size: 11, font, color: INK });
+      y -= 26;
+    };
+    metaRow('Supplier', slip.supplier ?? '—');
+    metaRow('Date of Receipt', slip.receivedDate.toISOString().slice(0, 10));
+    y -= 8;
+    return y;
+  };
+
   let page = doc.addPage([A4.w, A4.h]);
-  let y = A4.h - M;
+  // Thin page border, like the printed GRN.
+  page.drawRectangle({ x: M / 2, y: M / 2, width: A4.w - M, height: A4.h - M, borderColor: INK, borderWidth: 1 });
+  let y = drawHeader(page);
 
-  const text = (s: string, x: number, size = 10, f = font, colour = rgb(0.1, 0.1, 0.1)) =>
-    page.drawText(s, { x, y, size, font: f, color: colour });
+  // ── table ──
+  const ROW_H = 40;
+  const HEAD_H = 34;
+  const cellX = (i: number) => M + COLS.slice(0, i).reduce((s, c) => s + c.w, 0);
 
-  // ── header ──
-  text('RECEIVING SLIP', M, 18, bold);
-  text(slip.slipNumber, A4.w - M - bold.widthOfTextAtSize(slip.slipNumber, 18), 18, bold);
-  y -= 26;
-  page.drawLine({
-    start: { x: M, y },
-    end: { x: A4.w - M, y },
-    thickness: 1.5,
-    color: rgb(0.92, 0.0, 0.008), // brand red
-  });
-  y -= 22;
+  const drawTableHead = (yTop: number): number => {
+    page.drawRectangle({ x: M, y: yTop - HEAD_H, width: contentW, height: HEAD_H, color: HEADER_FILL, borderColor: BORDER, borderWidth: 0.75 });
+    COLS.forEach((c, i) => {
+      const x = cellX(i);
+      if (i > 0) page.drawLine({ start: { x, y: yTop }, end: { x, y: yTop - HEAD_H }, thickness: 0.75, color: BORDER });
+      // header labels may be two lines (QUANTITY / RECEIVED)
+      const parts = c.label.split('\n');
+      const lh = 11;
+      let ty = yTop - HEAD_H / 2 + (parts.length * lh) / 2 - lh + 3;
+      for (const p of parts) {
+        const w = bold.widthOfTextAtSize(p, 9);
+        page.drawText(p, { x: x + (c.w - w) / 2, y: ty, size: 9, font: bold, color: rgb(0.3, 0.3, 0.32) });
+        ty -= lh;
+      }
+    });
+    return yTop - HEAD_H;
+  };
 
-  const meta: [string, string][] = [
-    ['Supplier', slip.supplier ?? '—'],
-    ['Received', slip.receivedDate.toISOString().slice(0, 10)],
-    ['Status', slip.status],
-    ['Units', slip.unitCount != null ? String(slip.unitCount) : 'not yet confirmed'],
-  ];
-  for (const [k, v] of meta) {
-    text(k, M, 9, font, rgb(0.45, 0.45, 0.45));
-    text(v, M + 90, 10, bold);
-    y -= 16;
-  }
-  if (slip.scannedCount != null) {
-    text('Scanned in', M, 9, font, rgb(0.45, 0.45, 0.45));
-    text(String(slip.scannedCount), M + 90, 10, bold);
-    y -= 16;
-  }
-  y -= 10;
+  const placeText = (text: string, x: number, w: number, ty: number, f: PDFFont, size: number, align: 'left' | 'center', colour = INK) => {
+    const tw = f.widthOfTextAtSize(text, size);
+    const tx = align === 'center' ? x + (w - tw) / 2 : x + 8;
+    page.drawText(text, { x: tx, y: ty, size, font: f, color: colour });
+  };
 
-  // ── line table ──
-  const cols = [M, M + 210, M + 268, M + 336, M + 410];
-  const head = ['MATERIAL', 'QTY', 'PACK', 'UNIT IDS', ''];
-  for (const [i, h] of head.entries()) {
-    if (!h) continue;
-    page.drawText(h, { x: cols[i], y, size: 8, font: bold, color: rgb(0.45, 0.45, 0.45) });
-  }
-  y -= 6;
-  page.drawLine({ start: { x: M, y }, end: { x: A4.w - M, y }, thickness: 0.5, color: rgb(0.8, 0.8, 0.8) });
-  y -= 16;
+  y = drawTableHead(y);
 
-  for (const l of slip.lines) {
-    if (y < M + 60) {
+  slip.lines.forEach((l, idx) => {
+    if (y - ROW_H < M + 90) {
+      // new page: border + header + table head
       page = doc.addPage([A4.w, A4.h]);
-      y = A4.h - M;
+      page.drawRectangle({ x: M / 2, y: M / 2, width: A4.w - M, height: A4.h - M, borderColor: INK, borderWidth: 1 });
+      y = drawHeader(page);
+      y = drawTableHead(y);
     }
-    const name = l.materialName.length > 34 ? `${l.materialName.slice(0, 33)}…` : l.materialName;
-    page.drawText(name, { x: cols[0], y, size: 10, font: bold });
-    page.drawText(`${l.quantity} ${l.unit ?? ''}`.trim(), { x: cols[1], y, size: 10, font });
-    // kg and litres are labelled per line and never added together.
-    page.drawText(l.packWeight != null ? `${l.packWeight} ${l.measure}` : '—', { x: cols[2], y, size: 10, font });
-    const ids = l.idFrom ? (l.idFrom === l.idTo ? l.idFrom : `${l.idFrom} - ${l.idTo}`) : '—';
-    page.drawText(ids, { x: cols[3], y, size: 9, font });
-    if (l.sku) {
-      y -= 11;
-      page.drawText(l.sku, { x: cols[0], y, size: 8, font, color: rgb(0.5, 0.5, 0.5) });
-    }
-    y -= 18;
-  }
+    const rowTop = y;
+    const rowBottom = y - ROW_H;
+    // row box + column separators
+    page.drawRectangle({ x: M, y: rowBottom, width: contentW, height: ROW_H, borderColor: BORDER, borderWidth: 0.75 });
+    COLS.forEach((c, i) => {
+      if (i > 0) page.drawLine({ start: { x: cellX(i), y: rowTop }, end: { x: cellX(i), y: rowBottom }, thickness: 0.75, color: BORDER });
+    });
 
-  // ── footer: the hand-over record ──
-  y = Math.max(y - 14, M + 44);
-  page.drawLine({ start: { x: M, y }, end: { x: A4.w - M, y }, thickness: 0.5, color: rgb(0.8, 0.8, 0.8) });
-  y -= 14;
-  page.drawText(
-    'This slip records what physically arrived. Prices remain on the supplier invoice.',
-    { x: M, y, size: 8, font, color: rgb(0.45, 0.45, 0.45) },
-  );
-  y -= 22;
-  page.drawText('Gate signature', { x: M, y: y - 10, size: 8, font, color: rgb(0.45, 0.45, 0.45) });
-  page.drawLine({ start: { x: M, y }, end: { x: M + 180, y }, thickness: 0.5, color: rgb(0.6, 0.6, 0.6) });
-  page.drawText('Store signature', { x: A4.w - M - 180, y: y - 10, size: 8, font, color: rgb(0.45, 0.45, 0.45) });
-  page.drawLine({
-    start: { x: A4.w - M - 180, y },
-    end: { x: A4.w - M, y },
-    thickness: 0.5,
-    color: rgb(0.6, 0.6, 0.6),
+    const mid = rowTop - ROW_H / 2;
+    // SR NO
+    placeText(String(idx + 1), cellX(0), COLS[0].w, mid - 4, font, 11, 'center');
+    // MATERIAL — name (bold) over code (grey)
+    const name = l.materialName.length > 26 ? `${l.materialName.slice(0, 25)}…` : l.materialName;
+    page.drawText(name, { x: cellX(1) + 8, y: rowTop - 16, size: 11, font: bold, color: INK });
+    if (l.sku) page.drawText(l.sku, { x: cellX(1) + 8, y: rowTop - 29, size: 9, font, color: GREY });
+    // QUANTITY RECEIVED — "4 Bag"
+    placeText(`${l.quantity}${l.unit ? ` ${l.unit}` : ''}`.trim(), cellX(2), COLS[2].w, mid - 4, font, 11, 'center');
+    // PACK SIZE — "25 kg" (kg/L never blended: shown per line in its own measure)
+    placeText(l.packWeight != null ? `${l.packWeight} ${l.measure ?? ''}`.trim() : '—', cellX(3), COLS[3].w, mid - 4, font, 11, 'center');
+    // UNIT (CODES) — "MC-001 - MC-078", or "pending" before minting
+    const codes = l.idFrom ? (l.idFrom === l.idTo ? l.idFrom : `${l.idFrom} - ${l.idTo}`) : 'pending';
+    placeText(codes, cellX(4), COLS[4].w, mid - 4, l.idFrom ? bold : font, 9, 'center', l.idFrom ? INK : GREY);
+
+    y = rowBottom;
+  });
+
+  // ── signatures ──
+  const sigY = Math.max(y - 70, M + 70);
+  const sigLine = (label: string, x: number) => {
+    page.drawLine({ start: { x, y: sigY }, end: { x: x + 190, y: sigY }, thickness: 0.75, color: rgb(0.35, 0.35, 0.35) });
+    const w = bold.widthOfTextAtSize(label, 10);
+    page.drawText(label, { x: x + (190 - w) / 2, y: sigY - 16, size: 10, font: bold, color: INK });
+  };
+  sigLine('Gate Signature', M + 8);
+  sigLine('Store Signature', A4.w - M - 198);
+
+  // tiny commercial-free reminder, unobtrusive, at the very bottom
+  page.drawText('This note records what physically arrived. Prices remain on the supplier invoice.', {
+    x: M + 8,
+    y: M + 6,
+    size: 7.5,
+    font,
+    color: rgb(0.55, 0.55, 0.55),
   });
 
   return Buffer.from(await doc.save());
