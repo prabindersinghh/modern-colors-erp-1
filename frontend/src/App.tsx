@@ -29,6 +29,7 @@ const HeadDashboardPage = lazy(() => import('@/pages/HeadDashboardPage').then((m
 const BatchesPage = lazy(() => import('@/pages/BatchesPage').then((m) => ({ default: m.BatchesPage })))
 const ProductionOutputPage = lazy(() => import('@/pages/ProductionOutputPage').then((m) => ({ default: m.ProductionOutputPage })))
 const DispatchPage = lazy(() => import('@/pages/DispatchPage').then((m) => ({ default: m.DispatchPage })))
+const PackingPage = lazy(() => import('@/pages/PackingPage').then((m) => ({ default: m.PackingPage })))
 
 // Phase 1 screens belong to the Phase 1 roles (Store=ADMIN, Operator, Supervisor).
 // Gate is NOT a Phase-1 operator any more: it has one screen of its own. Leaving
@@ -61,6 +62,10 @@ function HomeRoute() {
   // Dispatch lands straight on its scan screen (it has nothing else).
   if (user?.role === 'DISPATCH') {
     return <Navigate to="/dispatch" replace />
+  }
+  // The Packer has exactly one screen: his packing desk.
+  if (user?.role === 'PACKER') {
+    return <Navigate to="/packing" replace />
   }
   // Gate has exactly one screen: photograph an invoice, check it, hand it over.
   if (user?.role === 'OPERATOR') {
@@ -118,6 +123,7 @@ function AuthedRoutes() {
         <Route path="batches" element={<RequireRole roles={['PRODUCTION_HEAD', 'OVERSIGHT']}><Suspense fallback={<DashboardFallback />}><BatchesPage /></Suspense></RequireRole>} />
         <Route path="production-output" element={<RequireRole roles={['PRODUCTION_HEAD']}><Suspense fallback={<DashboardFallback />}><ProductionOutputPage /></Suspense></RequireRole>} />
         <Route path="dispatch" element={<RequireRole roles={['DISPATCH']}><Suspense fallback={<DashboardFallback />}><DispatchPage /></Suspense></RequireRole>} />
+        <Route path="packing" element={<RequireRole roles={['PACKER']}><Suspense fallback={<DashboardFallback />}><PackingPage /></Suspense></RequireRole>} />
         <Route path="review-inwards" element={<RequireRole roles={['REVIEWER', 'OVERSIGHT']}><ReviewInwardsPage /></RequireRole>} />
         <Route path="gate" element={<RequireRole roles={['OPERATOR']}><GateHomePage /></RequireRole>} />
         <Route path="purchase-orders" element={<RequireRole roles={PHASE1_ROLES}><PurchaseOrdersPage /></RequireRole>} />

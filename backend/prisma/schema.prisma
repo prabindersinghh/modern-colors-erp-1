@@ -24,6 +24,7 @@ enum Role {
   PRODUCTION_HEAD // Phase 2 — PU/Enamel/Powder head, scoped by `department`
   DISPATCH // Phase 3 — finished-goods dispatch ONLY (no raw stock, no requests)
   REVIEWER // Segregation of duties — VIEW-ONLY: invoice document + digital slip, nothing else
+  PACKER // Packing stage — packs finished goods (+ hardener/thinner) into cartons, nothing else
 }
 
 // Phase 2 — production departments. A PRODUCTION_HEAD is scoped to exactly one.
@@ -62,9 +63,28 @@ enum BatchStatus {
 enum FgStatus {
   GENERATED // QR minted, sticker printable
   READY // labelled / stored, awaiting dispatch
+  UNDER_PACKING // packer scanned it into an in-progress carton (packing stage)
+  PACKED // the carton it belongs to was scanned PACKED; ships as part of the carton
   DISPATCHED // scanned out by the Dispatch role
   SCRAPPED // returned and written off — permanently out of inventory
   REFURBISHED // returned and replaced by a NEW FG unit (see refurbishedFrom)
+}
+
+// Packing stage — a produced package's FAMILY. Reuses the FinishedGood table with a
+// discriminator rather than three parallel tables, so the status machine, dispatch lock,
+// returns and trace are shared. uniqueId prefix encodes the same fact: FG-/FGHD-/FGTH-.
+enum FgFamily {
+  FINISHED_GOOD // the paint drum (FG-)
+  HARDENER // FGHD-
+  THINNER // FGTH-
+}
+
+// Packing stage — a carton (packed goods, PG-) lifecycle.
+enum CartonStatus {
+  DRAFT // packer composing; contents mutable; no PG minted yet
+  PACKED // confirmed (PG minted, contents frozen) and scanned PACKED
+  DISPATCHED // dispatch scanned the PG; carton + all contents left together
+  VOIDED // abandoned after confirm; contents released, PG retired forever
 }
 
 // PO-level lifecycle (the document). See ARCHITECTURE.md §6 status note.
@@ -132,6 +152,11 @@ model User {
   flagsChanged     SystemFlag[]          @relation("FlagUpdatedBy")
   scanSessions     ScanSession[]         @relation("ScanSessionOpenedBy")
   slipsFinalized   ReceivingSlip[]       @relation("SlipFinalizedBy")
+
+  // Packing stage — cartons this user packed / dispatched / voided.
+  cartonsPacked     Carton[] @relation("CartonPackedBy")
+  cartonsDispatched Carton[] @relation("CartonDispatchedBy")
+  cartonsVoided     Carton[] @relation("CartonVoidedBy")
 
   @@index([role])
 }
@@ -452,6 +477,16 @@ model ProductionOutput {
   productSku     String?
   notes          String?
 
+  // Packing stage — hardener/thinner produced ALONGSIDE the FG line, from the same output.
+  // Their own pack size + unit (kg/L is never blended with the paint's). Zero counts =
+  // this output made none; the mint skips a family with a zero count.
+  hardenerCount Int     @default(0)
+  thinnerCount  Int     @default(0)
+  hardenerSize  Float?
+  hardenerUnit  String?
+  thinnerSize   Float?
+  thinnerUnit   String?
+
   // Review gate (mirrors the Phase 1 PO confirm pattern).
   confirmed     Boolean   @default(false)
   confirmedById String?
@@ -490,6 +525,9 @@ model FinishedGood {
   sizePerPackage Float
   sizeUnit       String
   status         FgStatus @default(GENERATED)
+  // Packing stage discriminator. Existing rows backfill to FINISHED_GOOD (column default),
+  // so every pre-packing query keeps its exact meaning.
+  family         FgFamily @default(FINISHED_GOOD)
 
   dispatchedAt   DateTime?
   dispatchedById String?
@@ -520,10 +558,14 @@ model FinishedGood {
 
   qrCode          FinishedGoodQr?
   reprintRequests LabelReprintRequest[]
+  // Packing stage — the carton this unit was packed into, if any (UNIQUE on the join row,
+  // so a unit is in at most one carton). Backward trace: unit → carton → dispatch.
+  cartonItem      CartonItem?
 
   @@index([batchId])
   @@index([outputId])
   @@index([status])
+  @@index([family])
 }
 
 // FG QR payload/image. Kept separate from QrCode (which is hard-bound to Material), so
@@ -537,6 +579,64 @@ model FinishedGoodQr {
   createdAt      DateTime     @default(now())
 }
 
+// ───────────────────────── Packing stage (cartons) ─────────────────────────
+
+/**
+ * A carton of packed goods (PG-000001). The packer composes it as a DRAFT, then CONFIRMS
+ * it — which mints the PG id, freezes the contents, and prints one A5 mega label. A
+ * confirmed carton is never edited: a wrong one is VOIDED (contents released back to
+ * UNDER_PACKING, the PG retired forever) and repacked into a fresh PG. Dispatch scans the
+ * PG to ship the carton and every unit inside it together, in one transaction.
+ */
+model Carton {
+  id       String       @id @default(uuid())
+  uniqueId String       @unique // "PG-000001" — own sequence (carton_unique_seq)
+  status   CartonStatus @default(DRAFT)
+
+  packedById String
+  packedBy   User   @relation("CartonPackedBy", fields: [packedById], references: [id])
+
+  createdAt   DateTime  @default(now())
+  confirmedAt DateTime? // set at confirm — the freeze; PG is minted at this instant
+  packedAt    DateTime? // set when the PG is scanned PACKED
+
+  dispatchedAt   DateTime?
+  dispatchedById String?
+  dispatchedBy   User?     @relation("CartonDispatchedBy", fields: [dispatchedById], references: [id])
+  dispatchNote   String?
+
+  voidedAt   DateTime?
+  voidedById String?
+  voidedBy   User?     @relation("CartonVoidedBy", fields: [voidedById], references: [id])
+  voidReason String?
+
+  note           String?
+  labelPrintedAt DateTime? // first mega-label print is free; later prints are the reprint lock's
+  updatedAt      DateTime  @updatedAt
+
+  items           CartonItem[]
+  reprintRequests LabelReprintRequest[]
+
+  @@index([status])
+  @@index([packedById])
+}
+
+/**
+ * One membership row: a finished-goods unit inside a carton. The UNIQUE on finishedGoodId
+ * is the load-bearing invariant — a unit can be in AT MOST ONE carton, enforced by the
+ * database, not by application convention. Voiding a carton DELETES these rows to release
+ * each unit's lock so it can be repacked.
+ */
+model CartonItem {
+  id             String       @id @default(uuid())
+  cartonId       String
+  carton         Carton       @relation(fields: [cartonId], references: [id], onDelete: Cascade)
+  finishedGoodId String       @unique
+  finishedGood   FinishedGood @relation(fields: [finishedGoodId], references: [id])
+
+  @@index([cartonId])
+}
+
 // ───────────────────── Label reprint approvals (the lock) ─────────────────────
 
 // Which labels one request covers. Exactly one target column is set — enforced by a
@@ -546,6 +646,8 @@ enum LabelScope {
   MC_UNIT_LABEL // a single raw-material unit (its individual PNG)
   FG_OUTPUT_LABELS // every finished-goods unit of a production output
   FG_UNIT_LABEL // a single finished-goods unit
+  FG_OUTPUT_ALL_FAMILIES // packing stage — the 3-family print run keyed on outputId
+  CARTON_LABEL // packing stage — one carton's A5 mega label keyed on cartonId
 }
 
 enum ReprintStatus {
@@ -580,6 +682,10 @@ model LabelReprintRequest {
 
   finishedGoodId String?
   finishedGood   FinishedGood? @relation(fields: [finishedGoodId], references: [id], onDelete: Cascade)
+
+  // Packing stage — a carton's mega label (CARTON_LABEL scope).
+  cartonId String?
+  carton   Carton? @relation(fields: [cartonId], references: [id], onDelete: Cascade)
 
   reason String // required — why these labels need printing again
   status ReprintStatus @default(PENDING)

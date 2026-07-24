@@ -249,6 +249,13 @@ function OutputForm({ batches, onSaved }: { batches: Batch[]; onSaved: () => voi
     shade: '',
     productSku: '',
     notes: '',
+    // Packing stage — hardener/thinner produced alongside (own size + unit).
+    hardenerCount: '',
+    hardenerSize: '',
+    hardenerUnit: 'Kg',
+    thinnerCount: '',
+    thinnerSize: '',
+    thinnerUnit: 'L',
   })
   const [busy, setBusy] = useState(false)
   const set = (k: keyof typeof v) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
@@ -277,6 +284,13 @@ function OutputForm({ batches, onSaved }: { batches: Batch[]; onSaved: () => voi
         shade: v.shade.trim() || undefined,
         productSku: v.productSku.trim() || undefined,
         notes: v.notes.trim() || undefined,
+        // Only send a family when a positive count was entered; size/unit ride along.
+        ...(Number(v.hardenerCount) > 0
+          ? { hardenerCount: Number(v.hardenerCount), hardenerSize: Number(v.hardenerSize) || undefined, hardenerUnit: v.hardenerUnit }
+          : {}),
+        ...(Number(v.thinnerCount) > 0
+          ? { thinnerCount: Number(v.thinnerCount), thinnerSize: Number(v.thinnerSize) || undefined, thinnerUnit: v.thinnerUnit }
+          : {}),
       })
       toast({
         title: 'Output recorded as a draft',
@@ -352,6 +366,38 @@ function OutputForm({ batches, onSaved }: { batches: Batch[]; onSaved: () => voi
           <div className="space-y-1.5 sm:col-span-2 lg:col-span-1">
             <Label>Notes</Label>
             <Input value={v.notes} onChange={set('notes')} placeholder="optional" />
+          </div>
+        </div>
+
+        {/* Packing stage — hardener/thinner produced alongside, each with its OWN size and
+            unit. Left at 0 they mint nothing, so an output that made only paint is unchanged. */}
+        <div className="rounded-md border border-dashed border-input p-3">
+          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Packed alongside (optional) — hardener &amp; thinner
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label>Hardener packages</Label>
+              <div className="flex gap-2">
+                <Input type="number" min={0} value={v.hardenerCount} onChange={set('hardenerCount')} placeholder="0" />
+                <Input type="number" min={0} step="any" value={v.hardenerSize} onChange={set('hardenerSize')} placeholder="size" className="w-20" />
+                <select value={v.hardenerUnit} onChange={set('hardenerUnit')} className="h-10 rounded-md border border-input bg-background px-2 text-sm">
+                  <option value="Kg">Kg</option>
+                  <option value="L">L</option>
+                </select>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Thinner packages</Label>
+              <div className="flex gap-2">
+                <Input type="number" min={0} value={v.thinnerCount} onChange={set('thinnerCount')} placeholder="0" />
+                <Input type="number" min={0} step="any" value={v.thinnerSize} onChange={set('thinnerSize')} placeholder="size" className="w-20" />
+                <select value={v.thinnerUnit} onChange={set('thinnerUnit')} className="h-10 rounded-md border border-input bg-background px-2 text-sm">
+                  <option value="L">L</option>
+                  <option value="Kg">Kg</option>
+                </select>
+              </div>
+            </div>
           </div>
         </div>
 

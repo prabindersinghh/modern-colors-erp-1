@@ -57,6 +57,7 @@ describe('ReturnsService lifecycle', () => {
         findUniqueOrThrow: jest.fn().mockResolvedValue({
           id: 'fg1',
           uniqueId: 'FG-000001',
+          family: 'FINISHED_GOOD',
           outputId: 'out1',
           batchId: 'b1',
           productName: 'Weathershield White',
@@ -147,5 +148,30 @@ describe('ReturnsService lifecycle', () => {
       }),
       expect.anything(),
     );
+  });
+
+  // Gap B — a refurbished hardener/thinner must mint from its OWN family sequence and wear
+  // its own prefix, never silently become a paint drum (FG-).
+  it('refurbish copies the family: a returned HARDENER mints a new FGHD- unit', async () => {
+    const { svc, tx } = build({
+      $queryRaw: jest.fn().mockResolvedValue([{ id: 'fg1', status: FgStatus.DISPATCHED }]),
+      $queryRawUnsafe: jest.fn().mockResolvedValue([{ v: 7n }]),
+      finishedGood: {
+        update: jest.fn().mockImplementation(({ data }) => ({
+          id: 'fg1', uniqueId: 'FGHD-000001', productName: 'H', batch: { batchNumber: 'PU-B-1', department: 'PU' }, ...data,
+        })),
+        findUniqueOrThrow: jest.fn().mockResolvedValue({
+          id: 'fg1', uniqueId: 'FGHD-000001', family: 'HARDENER', outputId: 'out1', batchId: 'b1',
+          productName: 'Weathershield Hardener', sizePerPackage: 5, sizeUnit: 'Kg',
+          batch: { batchNumber: 'PU-B-1', department: 'PU' },
+          output: { productionDate: new Date('2026-07-01'), shade: null, productSku: null },
+        }),
+        create: jest.fn().mockImplementation(({ data }) => ({ id: 'fg2', ...data })),
+      },
+    });
+    await svc.refurbish(user, 'FGHD-000001', 'repacked');
+    const create = (tx.finishedGood as { create: jest.Mock }).create.mock.calls[0][0];
+    expect(create.data.family).toBe('HARDENER');
+    expect(create.data.uniqueId).toBe('FGHD-000007'); // hardener series, not FG-
   });
 });

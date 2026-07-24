@@ -124,6 +124,22 @@ export class FinishedGoodsController {
     return this.dispatch.dispatchBatch(user, dto.batchId, dto.note);
   }
 
+  // ── Packing-stage dispatch (carton PG scan) ──
+
+  /** PACKED cartons awaiting dispatch — the PG cards (shown when PACKING_STAGE is ON). */
+  @Get('dispatch/cartons')
+  @Roles(Role.DISPATCH, Role.ADMIN, Role.OVERSIGHT)
+  readyCartons(@Query('search') search?: string) {
+    return this.dispatch.readyCartons({ search });
+  }
+
+  /** Scan a carton's PG to dispatch the whole carton + its contents in one go. */
+  @Post('dispatch/scan-carton')
+  @Roles(Role.DISPATCH)
+  scanCarton(@CurrentUser() user: AuthUser, @Body() dto: DispatchScanDto) {
+    return this.dispatch.dispatchCarton(user, dto.uniqueId, dto.note, dto.device);
+  }
+
   // ── Returns (DISPATCH acts; Admin may read) — see ReturnsService for the rules ──
 
   @Get('returns/history')

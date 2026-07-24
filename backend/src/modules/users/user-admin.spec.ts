@@ -108,10 +108,13 @@ describe('the OVERSIGHT write surface stays exactly two named doors', () => {
       'LabelReprintApprovalController.approve',
       'LabelReprintApprovalController.reject',
     ]);
-    // The FOURTH door: flipping the segregation-of-duties access flag. A door being
-    // ADDED is the pattern working — each Oversight write is named, guarded and
-    // enumerated here. What must never happen is one appearing that is NOT in this list.
-    expect(flips.sort()).toEqual(['SystemFlagsAdminController.set']);
+    // The FOURTH door: flipping an operational flag. It now governs TWO flag keys —
+    // store-inward-access and packing-stage — through the SAME door on the SAME
+    // controller, so the door COUNT is still four. A door being ADDED is the pattern
+    // working; what must never happen is a marker appearing on a controller NOT listed
+    // here. Both handlers live on SystemFlagsAdminController, so the write surface is
+    // unchanged: one named door, enumerated.
+    expect(flips.sort()).toEqual(['SystemFlagsAdminController.set', 'SystemFlagsAdminController.setPacking']);
     expect(userAdmin.sort()).toEqual([
       'UserAdminController.create',
       'UserAdminController.deactivate',

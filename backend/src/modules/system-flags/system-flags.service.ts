@@ -3,6 +3,14 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 
 export const STORE_INWARD_ACCESS = 'STORE_INWARD_ACCESS';
+/**
+ * Packing-stage cutover. OFF (default): dispatch ships FG drums directly, packing routes
+ * exist but nothing forces them. ON: dispatch's home shows carton (PG) cards. Unlike the
+ * inward flag this one defaults OFF — deploying it changes nothing until the owner flips
+ * it. The safety guard (Gap A: a packed/under-packing unit never dispatches alone) is
+ * enforced independently of this flag.
+ */
+export const PACKING_STAGE = 'PACKING_STAGE';
 /** Absent row reads as ON, so deploying the flag changes nobody's access. */
 export const FLAG_ON = 'on';
 export const FLAG_OFF = 'off';

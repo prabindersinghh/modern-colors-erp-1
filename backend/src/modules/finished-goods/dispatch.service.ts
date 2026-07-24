@@ -1,10 +1,11 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { FgStatus, Prisma, ScanKind } from '@prisma/client';
+import { CartonStatus, FgStatus, Prisma, ScanKind } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ScanSessionService } from '../scan-session/scan-session.service';
 import { AuditService } from '../audit/audit.service';
 import { AuthUser } from '../../common/decorators/current-user.decorator';
 import { isFinishedGoodId } from './finished-goods.service';
+import { isCartonId } from '../packing/carton-id';
 
 const fgInclude = {
   batch: { select: { id: true, batchNumber: true, department: true } },
@@ -118,6 +119,20 @@ export class DispatchService {
       if (row.status === FgStatus.DISPATCHED) {
         throw new ConflictException(`${id} was already dispatched.`);
       }
+      // Gap A — a unit a packer has taken into a carton cannot be shipped out from under
+      // him by a direct scan. This holds REGARDLESS of the PACKING_STAGE flag: once a unit
+      // is UNDER_PACKING or PACKED it ships as part of its carton (scan the PG), never
+      // alone. Only GENERATED/READY (grandfathered) stock dispatches directly.
+      if (row.status === FgStatus.UNDER_PACKING) {
+        throw new ConflictException(
+          `${id} is being packed into a carton — dispatch the carton (PG-…), not the unit.`,
+        );
+      }
+      if (row.status === FgStatus.PACKED) {
+        throw new ConflictException(
+          `${id} is packed into a carton — scan the carton's PG- code to dispatch it.`,
+        );
+      }
 
       const unit = await tx.finishedGood.update({
         where: { id: row.id },
@@ -198,6 +213,89 @@ export class DispatchService {
     });
 
     return { dispatched: pending.length, units: pending.map((p) => p.uniqueId) };
+  }
+
+  /** PACKED cartons awaiting dispatch — the PG cards shown when PACKING_STAGE is ON. */
+  async readyCartons(params: { search?: string; take?: number } = {}) {
+    const take = Math.min(200, Math.max(1, params.take ?? 100));
+    const cartons = await this.prisma.carton.findMany({
+      where: {
+        status: CartonStatus.PACKED,
+        ...(params.search ? { uniqueId: { contains: params.search, mode: 'insensitive' } } : {}),
+      },
+      include: {
+        packedBy: { select: { name: true } },
+        items: {
+          include: {
+            finishedGood: {
+              select: { uniqueId: true, family: true, productName: true, batch: { select: { batchNumber: true } } },
+            },
+          },
+        },
+      },
+      orderBy: { packedAt: 'asc' },
+      take,
+    });
+    return { total: cartons.length, cartons };
+  }
+
+  /**
+   * Scan a carton's PG to dispatch it — the carton AND every unit inside go DISPATCHED in
+   * one transaction, double-scan guarded under FOR UPDATE. A voided PG is refused (its
+   * printed label no longer describes a shippable carton); a still-draft/unpacked carton
+   * is refused too. Session-gated like the unit scan.
+   */
+  async dispatchCarton(user: AuthUser, uniqueId: string, note?: string, device?: string) {
+    await this.sessions.assertOpen(user.id, ScanKind.DISPATCH);
+    const id = uniqueId.trim();
+    if (!isCartonId(id)) {
+      throw new BadRequestException(`${id} is not a carton (PG-) code. Scan the carton's mega label.`);
+    }
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "Carton" WHERE "uniqueId" = ${id} FOR UPDATE`;
+      const carton = await tx.carton.findUnique({
+        where: { uniqueId: id },
+        include: { items: { select: { finishedGoodId: true, finishedGood: { select: { uniqueId: true } } } } },
+      });
+      if (!carton) throw new NotFoundException(`No carton with ID ${id}`);
+      if (carton.status === CartonStatus.VOIDED) {
+        throw new ConflictException(`${id} was voided and cannot be dispatched. Scan the repacked carton instead.`);
+      }
+      if (carton.status === CartonStatus.DISPATCHED) {
+        throw new ConflictException(`${id} was already dispatched.`);
+      }
+      if (carton.status !== CartonStatus.PACKED) {
+        throw new ConflictException(`${id} is not yet marked packed — the packer must seal it first.`);
+      }
+
+      const now = new Date();
+      await tx.carton.update({
+        where: { id: carton.id },
+        data: { status: CartonStatus.DISPATCHED, dispatchedAt: now, dispatchedById: user.id, dispatchNote: note?.trim() || null },
+      });
+      await tx.finishedGood.updateMany({
+        where: { id: { in: carton.items.map((i) => i.finishedGoodId) } },
+        data: { status: FgStatus.DISPATCHED, dispatchedAt: now, dispatchedById: user.id, dispatchNote: note?.trim() || null },
+      });
+      await this.audit.log(
+        {
+          entityType: 'Carton',
+          entityId: carton.id,
+          action: 'CARTON_DISPATCHED',
+          actorId: user.id,
+          device: device ?? null,
+          before: { status: CartonStatus.PACKED },
+          after: {
+            pg: id,
+            unitCount: carton.items.length,
+            units: carton.items.map((i) => i.finishedGood.uniqueId),
+            note: note?.trim() || null,
+          },
+        },
+        tx,
+      );
+      return { pg: id, dispatched: carton.items.length };
+    });
   }
 
   /** This dispatcher's recent history + today's count. */

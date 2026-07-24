@@ -14,7 +14,8 @@ export type PrintScope =
   | { kind: 'PO_LABELS'; poId: string }
   | { kind: 'MC_UNIT_LABEL'; materialId: string }
   | { kind: 'FG_OUTPUT_LABELS'; outputId: string }
-  | { kind: 'FG_UNIT_LABEL'; finishedGoodId: string };
+  | { kind: 'FG_UNIT_LABEL'; finishedGoodId: string }
+  | { kind: 'CARTON_LABEL'; cartonId: string };
 
 /** The most prints one approval may grant. A quota, not a blank cheque. */
 export const MAX_PRINTS_PER_APPROVAL = 100;
@@ -35,6 +36,8 @@ const scopeWhere = (scope: PrintScope): Prisma.LabelReprintRequestWhereInput => 
       return { scope: LabelScope.FG_OUTPUT_LABELS, outputId: scope.outputId };
     case 'FG_UNIT_LABEL':
       return { scope: LabelScope.FG_UNIT_LABEL, finishedGoodId: scope.finishedGoodId };
+    case 'CARTON_LABEL':
+      return { scope: LabelScope.CARTON_LABEL, cartonId: scope.cartonId };
   }
 };
 
@@ -44,6 +47,8 @@ const scopeLabel = (scope: PrintScope): string => {
       return 'these invoice labels';
     case 'FG_OUTPUT_LABELS':
       return "this output's labels";
+    case 'CARTON_LABEL':
+      return "this carton's label";
     default:
       return 'this label';
   }
@@ -101,6 +106,13 @@ export class LabelReprintService {
           where: { outputId: scope.outputId, labelPrintedAt: { not: null } },
         })) > 0
       );
+    }
+    if (scope.kind === 'CARTON_LABEL') {
+      const c = await this.prisma.carton.findUnique({
+        where: { id: scope.cartonId },
+        select: { labelPrintedAt: true },
+      });
+      return !!c?.labelPrintedAt;
     }
     const fg = await this.prisma.finishedGood.findUnique({
       where: { id: scope.finishedGoodId },
@@ -292,6 +304,7 @@ export class LabelReprintService {
         materialId: scope.kind === 'MC_UNIT_LABEL' ? scope.materialId : null,
         outputId: scope.kind === 'FG_OUTPUT_LABELS' ? scope.outputId : null,
         finishedGoodId: scope.kind === 'FG_UNIT_LABEL' ? scope.finishedGoodId : null,
+        cartonId: scope.kind === 'CARTON_LABEL' ? scope.cartonId : null,
         reason: why,
         requestedById: actorId,
       },
@@ -381,6 +394,7 @@ export class LabelReprintService {
         material: { select: { uniqueId: true, materialName: true } },
         output: { select: { productName: true, batch: { select: { batchNumber: true } } } },
         finishedGood: { select: { uniqueId: true, productName: true } },
+        carton: { select: { uniqueId: true, status: true } },
       },
     });
   }
@@ -406,6 +420,8 @@ export class LabelReprintService {
         return scope.outputId;
       case 'FG_UNIT_LABEL':
         return scope.finishedGoodId;
+      case 'CARTON_LABEL':
+        return scope.cartonId;
     }
   }
 
@@ -414,8 +430,9 @@ export class LabelReprintService {
     materialId: string | null;
     outputId: string | null;
     finishedGoodId: string | null;
+    cartonId?: string | null;
   }): string {
-    return req.poId ?? req.materialId ?? req.outputId ?? req.finishedGoodId ?? '';
+    return req.poId ?? req.materialId ?? req.outputId ?? req.finishedGoodId ?? req.cartonId ?? '';
   }
 
   /** The target must exist, so a request can never be raised against nothing. */
@@ -427,7 +444,9 @@ export class LabelReprintService {
           ? await this.prisma.material.findUnique({ where: { id: scope.materialId }, select: { id: true } })
           : scope.kind === 'FG_OUTPUT_LABELS'
             ? await this.prisma.productionOutput.findUnique({ where: { id: scope.outputId }, select: { id: true } })
-            : await this.prisma.finishedGood.findUnique({ where: { id: scope.finishedGoodId }, select: { id: true } });
+            : scope.kind === 'CARTON_LABEL'
+              ? await this.prisma.carton.findUnique({ where: { id: scope.cartonId }, select: { id: true } })
+              : await this.prisma.finishedGood.findUnique({ where: { id: scope.finishedGoodId }, select: { id: true } });
     if (!found) throw new NotFoundException('Those labels no longer exist.');
   }
 
@@ -440,6 +459,9 @@ export class LabelReprintService {
     }
     if (scope.kind === 'FG_OUTPUT_LABELS') {
       return tx.finishedGood.count({ where: { outputId: scope.outputId, labelPrintedAt: { not: null } } });
+    }
+    if (scope.kind === 'CARTON_LABEL') {
+      return tx.carton.count({ where: { id: scope.cartonId, labelPrintedAt: { not: null } } });
     }
     return tx.finishedGood.count({
       where: { id: scope.finishedGoodId, labelPrintedAt: { not: null } },
@@ -461,6 +483,10 @@ export class LabelReprintService {
     }
     if (scope.kind === 'FG_OUTPUT_LABELS') {
       await tx.finishedGood.updateMany({ where: { outputId: scope.outputId }, data: { labelPrintedAt: at } });
+      return;
+    }
+    if (scope.kind === 'CARTON_LABEL') {
+      await tx.carton.update({ where: { id: scope.cartonId }, data: { labelPrintedAt: at } });
       return;
     }
     await tx.finishedGood.update({ where: { id: scope.finishedGoodId }, data: { labelPrintedAt: at } });

@@ -9,7 +9,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { QrService, type FgQrPayload } from '../qr/qr.service';
 import { AuthUser } from '../../common/decorators/current-user.decorator';
-import { FG_SEQ, formatFgId, isFinishedGoodId } from './finished-goods.service';
+import { isFinishedGoodId } from './finished-goods.service';
+import { FAMILY_META, formatFamilyId } from './fg-family';
 
 const returnInclude = {
   batch: { select: { id: true, batchNumber: true, department: true } },
@@ -120,12 +121,17 @@ export class ReturnsService {
         include: { batch: true, output: true },
       });
 
-      const seq = await tx.$queryRawUnsafe<{ v: bigint }[]>(`SELECT nextval('${FG_SEQ}') AS v`);
-      const newId = formatFgId(seq[0].v);
+      // Gap B — the replacement mints from the ORIGINAL's family sequence and wears its
+      // prefix. A refurbished hardener is a hardener (FGHD-), never silently a paint drum.
+      const seq = await tx.$queryRawUnsafe<{ v: bigint }[]>(
+        `SELECT nextval('${FAMILY_META[original.family].seq}') AS v`,
+      );
+      const newId = formatFamilyId(original.family, seq[0].v);
 
       const replacement = await tx.finishedGood.create({
         data: {
           uniqueId: newId,
+          family: original.family,
           outputId: original.outputId, // real origin — never looks newly produced
           batchId: original.batchId,
           productName: original.productName,

@@ -10,8 +10,8 @@ import { CurrentUser, AuthUser } from '../../common/decorators/current-user.deco
 import { LabelReprintService, MAX_PRINTS_PER_APPROVAL, type PrintScope } from './label-reprint.service';
 
 class RequestReprintDto {
-  @IsIn(['PO_LABELS', 'FG_OUTPUT_LABELS', 'FG_UNIT_LABEL'])
-  scope!: 'PO_LABELS' | 'FG_OUTPUT_LABELS' | 'FG_UNIT_LABEL';
+  @IsIn(['PO_LABELS', 'FG_OUTPUT_LABELS', 'FG_UNIT_LABEL', 'CARTON_LABEL'])
+  scope!: 'PO_LABELS' | 'FG_OUTPUT_LABELS' | 'FG_UNIT_LABEL' | 'CARTON_LABEL';
 
   /** The PO, output or finished-goods unit the labels belong to. */
   @IsString()
@@ -44,7 +44,9 @@ export const toScope = (scope: string, targetId: string): PrintScope =>
     ? { kind: 'PO_LABELS', poId: targetId }
     : scope === 'FG_OUTPUT_LABELS'
       ? { kind: 'FG_OUTPUT_LABELS', outputId: targetId }
-      : { kind: 'FG_UNIT_LABEL', finishedGoodId: targetId };
+      : scope === 'CARTON_LABEL'
+        ? { kind: 'CARTON_LABEL', cartonId: targetId }
+        : { kind: 'FG_UNIT_LABEL', finishedGoodId: targetId };
 
 /**
  * Raising a reprint request, and reading the state of the lock.

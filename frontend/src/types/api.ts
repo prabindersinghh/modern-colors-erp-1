@@ -8,6 +8,7 @@ export type Role =
   | 'PRODUCTION_HEAD'
   | 'DISPATCH' // Phase 3 — finished-goods dispatch only
   | 'REVIEWER' // Segregation of duties — view-only: invoice + slip, nothing else
+  | 'PACKER' // Packing stage — packs finished goods into cartons, nothing else
 export type Department = 'PU' | 'ENAMEL' | 'POWDER'
 
 export interface AuthUser {
@@ -463,7 +464,51 @@ export interface Overview {
 
 // ── Phase 3: Batches, Finished Goods & Dispatch ──
 export type BatchStatus = 'OPEN' | 'OUTPUT_RECORDED' | 'CONFIRMED' | 'CLOSED'
-export type FgStatus = 'GENERATED' | 'READY' | 'DISPATCHED' | 'SCRAPPED' | 'REFURBISHED'
+export type FgStatus = 'GENERATED' | 'READY' | 'UNDER_PACKING' | 'PACKED' | 'DISPATCHED' | 'SCRAPPED' | 'REFURBISHED'
+export type FgFamily = 'FINISHED_GOOD' | 'HARDENER' | 'THINNER'
+export type CartonStatus = 'DRAFT' | 'PACKED' | 'DISPATCHED' | 'VOIDED'
+/** Derived on the server from (status, confirmedAt) — DRAFT before confirm, CONFIRMED after. */
+export type CartonPhase = 'DRAFT' | 'CONFIRMED' | 'PACKED' | 'DISPATCHED' | 'VOIDED'
+
+export interface PackingUnit {
+  id: string
+  uniqueId: string
+  family: FgFamily
+  productName: string
+  sizePerPackage: number
+  sizeUnit: string
+  status: FgStatus
+  batch?: { batchNumber: string; department: Department } | null
+}
+
+export interface CartonItemView {
+  finishedGood: {
+    id: string
+    uniqueId: string
+    family: FgFamily
+    productName: string
+    sizePerPackage: number
+    sizeUnit: string
+    status: FgStatus
+    batch?: { id: string; batchNumber: string; department: Department } | null
+  }
+}
+
+export interface Carton {
+  id: string
+  uniqueId: string
+  status: CartonStatus
+  phase: CartonPhase
+  pg: string | null
+  confirmedAt: string | null
+  packedAt: string | null
+  dispatchedAt: string | null
+  voidedAt: string | null
+  voidReason: string | null
+  createdAt: string
+  packedBy?: { id: string; name: string } | null
+  items: CartonItemView[]
+}
 
 export interface Batch {
   id: string
@@ -502,6 +547,13 @@ export interface ProductionOutput {
   confirmedAt: string | null
   fgGeneratedAt: string | null
   createdAt: string
+  // Packing stage — hardener/thinner produced alongside the paint line (own size + unit).
+  hardenerCount?: number
+  thinnerCount?: number
+  hardenerSize?: number | null
+  hardenerUnit?: string | null
+  thinnerSize?: number | null
+  thinnerUnit?: string | null
   batch?: { id: string; batchNumber: string; department: Department; status: BatchStatus }
   recordedBy?: { id: string; name: string }
   confirmedBy?: { id: string; name: string } | null
@@ -517,6 +569,7 @@ export interface FinishedGood {
   sizePerPackage: number
   sizeUnit: string
   status: FgStatus
+  family?: FgFamily
   dispatchedAt: string | null
   dispatchNote: string | null
   createdAt: string

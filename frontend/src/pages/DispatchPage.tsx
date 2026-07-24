@@ -109,6 +109,22 @@ export function DispatchPage() {
       })
     }
 
+    // Packing stage — a carton's mega QR (PG-) ships the whole carton and every unit in it
+    // at once. Works whenever packing is in use; a voided/unpacked PG is refused server-side.
+    if (/^PG-/i.test(id)) {
+      try {
+        const res = await api.post<{ pg: string; dispatched: number }>('/finished-goods/dispatch/scan-carton', {
+          uniqueId: id,
+          device: DEVICE,
+        })
+        setCount((c) => c + res.dispatched)
+        void load()
+        return push({ ok: true, title: `${res.pg} dispatched`, detail: `${res.dispatched} unit${res.dispatched === 1 ? '' : 's'} shipped together` })
+      } catch (err) {
+        return push({ ok: false, title: 'Carton not dispatched', detail: err instanceof ApiError ? err.message : 'Please try again.' })
+      }
+    }
+
     try {
       const unit = await api.post<FinishedGood>('/finished-goods/dispatch/scan', {
         uniqueId: id,

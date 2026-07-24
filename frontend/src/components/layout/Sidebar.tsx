@@ -34,6 +34,7 @@ const ROLE_LABEL: Record<Role, string> = {
   PRODUCTION_HEAD: 'Production',
   DISPATCH: 'Dispatch',
   REVIEWER: 'Reviewer',
+  PACKER: 'Packing',
 }
 
 // Phase 1 navigation. `roles` omitted = visible to every authenticated user.
@@ -53,6 +54,8 @@ const navItems: { to: string; label: string; icon: typeof LayoutDashboard; roles
   { to: '/my', label: 'My Department', icon: Gauge, roles: ['PRODUCTION_HEAD'] },
   // Phase 3 — dispatch has ONE screen and nothing else.
   { to: '/dispatch', label: 'Dispatch', icon: Truck, roles: ['DISPATCH'] },
+  // Packing stage — the packer has ONE screen: his packing desk.
+  { to: '/packing', label: 'Packing', icon: PackageSearch, roles: ['PACKER'] },
   // The Reviewer's only screen.
   // The Reviewer's screen, ALSO surfaced for Oversight (its "sees everything" inward
   // view): the real invoice document beside its slip, every status, historically — the

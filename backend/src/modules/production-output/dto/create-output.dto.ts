@@ -54,6 +54,15 @@ export class CreateOutputDto {
   @IsString()
   @MaxLength(1000)
   notes?: string;
+
+  // Packing stage — hardener/thinner produced alongside the paint line, each with its OWN
+  // pack size + unit (kg/L never blended). Zero/absent = this output made none.
+  @IsOptional() @IsInt() @Min(0) hardenerCount?: number;
+  @IsOptional() @IsNumber() @IsPositive() hardenerSize?: number;
+  @IsOptional() @IsIn(['L', 'Kg']) hardenerUnit?: 'L' | 'Kg';
+  @IsOptional() @IsInt() @Min(0) thinnerCount?: number;
+  @IsOptional() @IsNumber() @IsPositive() thinnerSize?: number;
+  @IsOptional() @IsIn(['L', 'Kg']) thinnerUnit?: 'L' | 'Kg';
 }
 
 /** Edits to a draft output (blocked once confirmed). */
@@ -66,4 +75,10 @@ export class UpdateOutputDto {
   @IsOptional() @IsString() @MaxLength(120) shade?: string;
   @IsOptional() @IsString() @MaxLength(120) productSku?: string;
   @IsOptional() @IsString() @MaxLength(1000) notes?: string;
+  @IsOptional() @IsInt() @Min(0) hardenerCount?: number;
+  @IsOptional() @IsNumber() @IsPositive() hardenerSize?: number;
+  @IsOptional() @IsIn(['L', 'Kg']) hardenerUnit?: 'L' | 'Kg';
+  @IsOptional() @IsInt() @Min(0) thinnerCount?: number;
+  @IsOptional() @IsNumber() @IsPositive() thinnerSize?: number;
+  @IsOptional() @IsIn(['L', 'Kg']) thinnerUnit?: 'L' | 'Kg';
 }

@@ -26,6 +26,7 @@ import { LabelReprintModule } from './modules/label-reprint/label-reprint.module
 import { ReceivingSlipModule } from './modules/receiving-slip/receiving-slip.module';
 import { SystemFlagsModule } from './modules/system-flags/system-flags.module';
 import { ScanSessionModule } from './modules/scan-session/scan-session.module';
+import { PackingModule } from './modules/packing/packing.module';
 import { HandoverModule } from './handover/handover.module';
 @Module({
   imports: [
@@ -53,6 +54,7 @@ import { HandoverModule } from './handover/handover.module';
     ReceivingSlipModule,
     SystemFlagsModule,
     ScanSessionModule,
+    PackingModule,
       HandoverModule,
   ],
   controllers: [HealthController, StorageHealthController],

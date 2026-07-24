@@ -5,7 +5,7 @@ import {
   NotFoundException,
   OnModuleInit,
 } from '@nestjs/common';
-import { BatchStatus, FgStatus, Prisma } from '@prisma/client';
+import { BatchStatus, FgFamily, FgStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { LabelReprintService } from '../label-reprint/label-reprint.service';
@@ -14,16 +14,17 @@ import { AuthUser } from '../../common/decorators/current-user.decorator';
 import { assertDepartmentAccess, departmentFilter } from '../../common/auth/department-scope';
 import { CorrectFinishedGoodDto } from './dto/correct-finished-good.dto';
 
-// Own sequence, separate from material_unique_seq — FG IDs never collide with MC- IDs.
-export const FG_SEQ = 'finished_good_unique_seq';
+// Family identity (sequences, prefixes, the FG-/FGHD-/FGTH- check) lives in fg-family.ts.
+// Re-exported here so existing importers keep working; `isFinishedGoodId` now spans all
+// three families, so the dispatch scanner and returns accept hardener/thinner too.
+import { FAMILY_META, formatFamilyId, familyOfId, isFinishedGoodId } from './fg-family';
+export { isFinishedGoodId, familyOfId } from './fg-family';
 
-/** Finished-goods IDs are FG-prefixed so they can never be mistaken for raw units (MC-). */
-export const FG_PREFIX = 'FG-';
-export function isFinishedGoodId(id: string): boolean {
-  return id.trim().toUpperCase().startsWith(FG_PREFIX);
-}
+/** The paint family's sequence + id formatter — kept for callers that only mean FG-. */
+export const FG_SEQ = FAMILY_META.FINISHED_GOOD.seq;
+export const FG_PREFIX = FAMILY_META.FINISHED_GOOD.prefix;
 export function formatFgId(n: number | bigint): string {
-  return `${FG_PREFIX}${String(n).padStart(6, '0')}`;
+  return formatFamilyId('FINISHED_GOOD', n);
 }
 
 const fgInclude = {
@@ -34,6 +35,8 @@ const fgInclude = {
   // Refurbishment lineage — a returned drum's old and new identities stay linked.
   refurbishedFrom: { select: { uniqueId: true } },
   refurbishedInto: { select: { uniqueId: true, status: true } },
+  // Packing-stage backward trace — "packed in PG-000012", if any.
+  cartonItem: { select: { carton: { select: { uniqueId: true, status: true, dispatchedAt: true } } } },
 } satisfies Prisma.FinishedGoodInclude;
 
 @Injectable()
@@ -46,7 +49,10 @@ export class FinishedGoodsService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
-    await this.prisma.$executeRawUnsafe(`CREATE SEQUENCE IF NOT EXISTS ${FG_SEQ} START 1`);
+    // Ensure every family's sequence exists (paint, hardener, thinner).
+    for (const meta of Object.values(FAMILY_META)) {
+      await this.prisma.$executeRawUnsafe(`CREATE SEQUENCE IF NOT EXISTS ${meta.seq} START 1`);
+    }
   }
 
   private formatId(n: number | bigint): string {
@@ -175,9 +181,14 @@ export class FinishedGoodsService implements OnModuleInit {
   }
 
   /**
-   * Mint one FinishedGood + QR per package for a CONFIRMED output.
-   * Hard gate: unconfirmed output cannot generate QRs. Generating twice is blocked via
-   * fgGeneratedAt so a double-click can never mint duplicate stickers.
+   * Mint the finished goods for a CONFIRMED output — across all THREE families in one
+   * transaction: paint (FG-) × packageCount, hardener (FGHD-) × hardenerCount, thinner
+   * (FGTH-) × thinnerCount. Each family draws from its own sequence and carries its own
+   * pack size + unit (kg/L never blended). A family with a zero count mints nothing, so an
+   * output that produced no hardener behaves exactly as before.
+   *
+   * Hard gate: an unconfirmed output cannot generate. `fgGeneratedAt` blocks a second run
+   * for the WHOLE lot, so a double-click can never mint duplicate stickers of any family.
    */
   async generate(user: AuthUser, outputId: string) {
     const output = await this.prisma.productionOutput.findUnique({
@@ -202,44 +213,58 @@ export class FinishedGoodsService implements OnModuleInit {
       throw new BadRequestException('Package count must be greater than 0.');
     }
 
+    // The three families this output mints, each with its OWN count, size and unit. Paint
+    // always uses the base size/unit; hardener/thinner use theirs, falling back to the
+    // paint unit only if the head left it blank (never blends a value across families).
+    const plan: { family: FgFamily; count: number; name: string; size: number; unit: string }[] = [
+      { family: FgFamily.FINISHED_GOOD, count: output.packageCount, name: output.productName, size: output.sizePerPackage, unit: output.sizeUnit },
+      { family: FgFamily.HARDENER, count: output.hardenerCount, name: `${output.productName} — Hardener`, size: output.hardenerSize ?? output.sizePerPackage, unit: output.hardenerUnit ?? output.sizeUnit },
+      { family: FgFamily.THINNER, count: output.thinnerCount, name: `${output.productName} — Thinner`, size: output.thinnerSize ?? output.sizePerPackage, unit: output.thinnerUnit ?? output.sizeUnit },
+    ].filter((p) => p.count > 0);
+
     const created = await this.prisma.$transaction(
       async (tx) => {
-        const units: { id: string; uniqueId: string }[] = [];
-        for (let i = 0; i < output.packageCount; i++) {
-          const rows = await tx.$queryRawUnsafe<{ v: bigint }[]>(`SELECT nextval('${FG_SEQ}') AS v`);
-          const uniqueId = this.formatId(rows[0].v);
+        const units: { id: string; uniqueId: string; family: FgFamily }[] = [];
+        for (const line of plan) {
+          for (let i = 0; i < line.count; i++) {
+            const rows = await tx.$queryRawUnsafe<{ v: bigint }[]>(
+              `SELECT nextval('${FAMILY_META[line.family].seq}') AS v`,
+            );
+            const uniqueId = formatFamilyId(line.family, rows[0].v);
 
-          const fg = await tx.finishedGood.create({
-            data: {
+            const fg = await tx.finishedGood.create({
+              data: {
+                uniqueId,
+                family: line.family,
+                outputId: output.id,
+                batchId: output.batchId,
+                productName: line.name,
+                sizePerPackage: line.size,
+                sizeUnit: line.unit,
+                status: FgStatus.GENERATED,
+              },
+            });
+
+            // Explicitly typed so the compiler checks this against what the label
+            // renderer reads. `kind` is the label-SHAPE discriminator (all three families
+            // print on the FG label), NOT the family — family shows via the id prefix.
+            const payload: FgQrPayload = {
               uniqueId,
-              outputId: output.id,
-              batchId: output.batchId,
-              productName: output.productName,
-              sizePerPackage: output.sizePerPackage,
-              sizeUnit: output.sizeUnit,
-              status: FgStatus.GENERATED,
-            },
-          });
-
-          // Explicitly typed so the compiler checks this against what the label
-          // renderer reads. It was previously untyped and cast with `as never`,
-          // which is exactly how the FG label roll shipped broken.
-          const payload: FgQrPayload = {
-            uniqueId,
-            productName: output.productName,
-            batch: output.batch.batchNumber,
-            department: output.batch.department,
-            size: `${output.sizePerPackage} ${output.sizeUnit}`,
-            shade: output.shade ?? null,
-            productSku: output.productSku ?? null,
-            date: output.productionDate.toISOString(),
-            kind: 'FINISHED_GOOD' as const,
-          };
-          const imageRef = await this.qr.dataUrl(payload);
-          await tx.finishedGoodQr.create({
-            data: { finishedGoodId: fg.id, payload: payload as unknown as Prisma.InputJsonValue, imageRef },
-          });
-          units.push({ id: fg.id, uniqueId });
+              productName: line.name,
+              batch: output.batch.batchNumber,
+              department: output.batch.department,
+              size: `${line.size} ${line.unit}`,
+              shade: output.shade ?? null,
+              productSku: output.productSku ?? null,
+              date: output.productionDate.toISOString(),
+              kind: 'FINISHED_GOOD' as const,
+            };
+            const imageRef = await this.qr.dataUrl(payload);
+            await tx.finishedGoodQr.create({
+              data: { finishedGoodId: fg.id, payload: payload as unknown as Prisma.InputJsonValue, imageRef },
+            });
+            units.push({ id: fg.id, uniqueId, family: line.family });
+          }
         }
 
         await tx.productionOutput.update({
@@ -256,6 +281,7 @@ export class FinishedGoodsService implements OnModuleInit {
       { timeout: 120_000 }, // large runs (hundreds of drums) need headroom
     );
 
+    const countByFamily = (f: FgFamily) => created.filter((u) => u.family === f).length;
     await this.audit.log({
       entityType: 'ProductionOutput',
       entityId: output.id,
@@ -265,12 +291,24 @@ export class FinishedGoodsService implements OnModuleInit {
         batchNumber: output.batch.batchNumber,
         productName: output.productName,
         unitCount: created.length,
+        // Per-family breakdown, never a blended total — the counts are of different things.
+        finishedPaint: countByFamily('FINISHED_GOOD'),
+        hardener: countByFamily('HARDENER'),
+        thinner: countByFamily('THINNER'),
         firstId: created[0]?.uniqueId ?? null,
         lastId: created.at(-1)?.uniqueId ?? null,
       },
     });
 
-    return { generated: created.length, units: created };
+    return {
+      generated: created.length,
+      byFamily: {
+        FINISHED_GOOD: countByFamily('FINISHED_GOOD'),
+        HARDENER: countByFamily('HARDENER'),
+        THINNER: countByFamily('THINNER'),
+      },
+      units: created,
+    };
   }
 
   /** FG units for an output — for on-screen label review. */

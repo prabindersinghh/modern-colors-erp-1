@@ -104,9 +104,13 @@ const APPLY = ALLOW && CONFIRMED;
 const DELETE_ORDER = [
   // ScanSession references only User (preserved), so it deletes freely and early.
   'ScanSession',
-  // Reprint approvals reference PurchaseOrder, Material, ProductionOutput AND
-  // FinishedGood, so they must go before all four — first is unconditionally safe.
+  // Reprint approvals reference PurchaseOrder, Material, ProductionOutput, FinishedGood
+  // AND Carton, so they must go before all five — first is unconditionally safe.
   'LabelReprintRequest',
+  // Packing stage. CartonItem references FinishedGood AND Carton, so it goes before both.
+  // Carton references only User (preserved), so it deletes freely once its items are gone.
+  'CartonItem',
+  'Carton',
   'FinishedGoodQr',
   'FinishedGood',
   'ProductionOutput',
@@ -148,6 +152,8 @@ async function countAll(): Promise<Counts> {
     ProductionOutput: await prisma.productionOutput.count(),
     FinishedGood: await prisma.finishedGood.count(),
     FinishedGoodQr: await prisma.finishedGoodQr.count(),
+    Carton: await prisma.carton.count(),
+    CartonItem: await prisma.cartonItem.count(),
     LabelReprintRequest: await prisma.labelReprintRequest.count(),
     ScanSession: await prisma.scanSession.count(),
     ReceivingSlip: await prisma.receivingSlip.count(),
@@ -221,7 +227,15 @@ async function purgeStorage(): Promise<number> {
  * test data. Without this the numbering is correct but confusing forever.
  */
 async function resetSequences() {
-  const sequences = ['material_unique_seq', 'finished_good_unique_seq', 'receiving_slip_seq'];
+  const sequences = [
+    'material_unique_seq',
+    'finished_good_unique_seq',
+    'receiving_slip_seq',
+    // Packing stage — the two extra family series and the carton series.
+    'finished_good_hardener_seq',
+    'finished_good_thinner_seq',
+    'carton_unique_seq',
+  ];
   for (const seq of sequences) {
     if (APPLY) {
       await prisma.$executeRawUnsafe(`ALTER SEQUENCE "${seq}" RESTART WITH 1`);
