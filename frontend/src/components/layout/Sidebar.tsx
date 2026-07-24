@@ -54,7 +54,10 @@ const navItems: { to: string; label: string; icon: typeof LayoutDashboard; roles
   // Phase 3 — dispatch has ONE screen and nothing else.
   { to: '/dispatch', label: 'Dispatch', icon: Truck, roles: ['DISPATCH'] },
   // The Reviewer's only screen.
-  { to: '/review-inwards', label: 'Inward Review', icon: ClipboardCheck, roles: ['REVIEWER'] },
+  // The Reviewer's screen, ALSO surfaced for Oversight (its "sees everything" inward
+  // view): the real invoice document beside its slip, every status, historically — the
+  // same renderer, reused, no new endpoint.
+  { to: '/review-inwards', label: 'Inward', icon: ClipboardCheck, roles: ['REVIEWER', 'OVERSIGHT'] },
   // The Gate's only screen — scan-and-go, nothing downstream.
   { to: '/gate', label: 'Invoice Upload', icon: Camera, roles: ['OPERATOR'] },
   // Phase 1 material-inward overview for ops roles (Store reaches it via its own screens).
