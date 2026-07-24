@@ -1,6 +1,8 @@
 # Plan — Packing stage: hardener, thinner, cartons, and the Packer role
 
-> **Status:** PLAN ONLY — nothing built, nothing migrated.
+> **Status:** ✅ IMPLEMENTED & LIVE (2026-07-24). Delivered across commits `8370a8a`
+> (families/cartons/Packer), `7f27d1e` (post-commit read fix) and `4d35954` (PG goods
+> lists). Live matrices green (packing 22/22, PG lists 11/11). `PACKING_STAGE` created OFF.
 > **Prepared:** 2026-07-22, verified against the live code at commit `88fcec3`.
 > **Every claim about current behaviour below was read from the code, not recalled.**
 > This batch runs AFTER the Gate sidebar fix + slip download already deployed.

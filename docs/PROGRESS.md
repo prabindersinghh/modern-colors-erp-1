@@ -14,6 +14,18 @@
 
 ## Build order & status
 
+> **2026-07-24 — LIVE:** Packing stage (hardener FGHD-/thinner FGTH- families, cartons,
+> the **Packer** role) + **PG goods lists** (one confirm mints every entry's PG, one PDF
+> prints all A5 labels). Receiving slip rebuilt as the **Good Receipt Note** (logo + final
+> format). **Gate-side MC- minting** — invariant I1 relocated: the mint moved from Store's
+> confirm to the **Gate's hand-over**, so the GRN carries the codes; Store's confirm became
+> an **accept**. **Oversight total-visibility sweep** — read-only OVERSIGHT across scan
+> sessions, packing, GRN slips, arrival times, audit; doors still four. Arrival date/time
+> **locked immutable**. Store-login UI tweaks. All live-verified on production (packing
+> 22/22, PG lists 11/11, Gate-mint 18/18, Oversight 11/11); **512 backend tests green**.
+> Both flags (`STORE_INWARD_ACCESS`, `PACKING_STAGE`) remain OFF. See `CHANGELOG.md` and
+> `TESTING_GUIDE.md`.
+
 | # | Step | Status | Notes |
 |---|------|--------|-------|
 | 0 | Discovery + structural decisions | ✅ | Frontend = Vite (not Next). Existing prototype was Phase-2-scoped; keep shell, rebuild domain. Monorepo `frontend/`+`backend/`. Storage = Cloudflare R2 (disk fallback for dev). |

@@ -1,6 +1,8 @@
 # Plan — Four-item batch: arrival time, short QR, session gating, Store's two tabs
 
-> **Status:** PLAN ONLY — nothing built.
+> **Status:** ✅ IMPLEMENTED & LIVE (2026-07-24). Arrival time (`eaa263f`, later locked
+> immutable in `3627985`), server-side scan-session gating (`f47561a`), Store audit tab,
+> short QR. All live-verified on production.
 > **Prepared:** 2026-07-22, verified against live code at `88fcec3`.
 > **Sequencing:** after the Gate sidebar fix + slip download (in flight). The Gate/Store
 > split is settled — Store does Review & Confirm and mints; Gate is scan-and-go. None of

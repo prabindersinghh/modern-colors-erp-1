@@ -1,13 +1,32 @@
 # Changelog
 
-> **Document version:** 1.0
-> **Last updated:** 2026-07-21
-> **Describes:** Modern Colours ERP — Phases 1–3 complete and live, plus the analytics
-> and handover work. All dates and times are taken from git commit history
-> (`git log --date=format:"%Y-%m-%d %H:%M"`), not from memory.
+> **Document version:** 1.1
+> **Last updated:** 2026-07-24
+> **Describes:** Modern Colours ERP — Phases 1–3 complete and live, plus the analytics,
+> handover, packing stage, Good Receipt Note + Gate-side minting, and Oversight sweep. All
+> dates and times are taken from git commit history, not from memory.
 
 Times are the commit timestamps in local (IST) time. Where a commit message described
 intent, the entry below reflects what the diff actually changed.
+
+---
+
+## 24 July 2026 — Packing stage, Good Receipt Note, Gate-side minting, Oversight sweep
+
+| Commit | Change |
+|---|---|
+| `eaa263f` | **Arrival time** on Gate's invoice upload (additive `PurchaseOrder.arrivedAt`). |
+| `f47561a` | **Server-side scan-session gating** — a scan is refused outside an open Start/Done session (Receive Stock + Dispatch). |
+| `8370a8a` | **Packing stage** — hardener (FGHD-) / thinner (FGTH-) families via a `family` discriminator, `Carton`/`CartonItem`, the **Packer** role. Behind `PACKING_STAGE` (created OFF). Live matrix 22/22. |
+| `3627985` | **Arrival date/time locked** (server-stamped, immutable) + Store-login UI (catalogue "Quantity", min-only stock, dashboard 3-slips-with-see-all). |
+| `4d35954` | **PG goods lists** — the packer composes one list of straights + combos; ONE confirm mints a PG- for every entry, one PDF prints all A5 labels. `PackingList` model. Live matrix 11/11. |
+| `aabbc35` | **Receiving slip → Good Receipt Note** format (logo, GOOD RECEIPT NOTE, Supplier + Date of Receipt, Sr No / Material+code / Quantity / Pack Size / Unit Codes, Gate + Store signatures). Moving-strip tagline → "Colours That Lasts Forever". |
+| `47bb966` | **Gate-side MC- minting (I1 relocated)** — the minting act moved from Store's confirm to the Gate's hand-over, so the GRN carries the codes (not "pending"). Store's confirm became an **accept** (additive `ReceivingSlip.acceptedAt`). Live matrix 18/18. |
+| `8fae4d6` | **Oversight total-visibility sweep** — read-only OVERSIGHT across scan sessions, the packing desk/lists/cartons, GRN slips, arrival times, audit with unit ids. Zero new writes; **doors still exactly four**. |
+
+Both operational flags (`STORE_INWARD_ACCESS`, `PACKING_STAGE`) remain **OFF**. Every
+migration was additive and applied through the pre-deploy guard; every item was
+live-verified on production before the next.
 
 ---
 

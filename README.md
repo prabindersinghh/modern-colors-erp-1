@@ -48,28 +48,35 @@ Read in this order:
 ### The six logins
 
 Roles are enforced **server-side**; the UI only hides what the server already refuses.
-All six are live in the database right now *(verified against production 2026-07-21)*.
-Non-admin seeds default to `ChangeMe123!` — **change every one before real use.**
+Eight roles are live *(verified against production 2026-07-24)*. Every seed uses a
+**placeholder default that MUST BE CHANGED** before real use — **no password is printed in
+this repo, ever.**
 
 | Role (enum) | Displayed as | Login | Scope |
 |---|---|---|---|
-| `ADMIN` | **Store** | `admin@moderncolours.local` | Approves requests, issues stock, catalogue, API key, users |
-| `OVERSIGHT` | **Admin** | `oversight@moderncolours.local` | Read-only across all departments, **plus the Company Brain**. No mutating `@Roles` route grants it; its ONE write is the audited finished-goods **correction** endpoint behind a separate named permission (`CorrectionsGuard`), asserted narrow by `fg-corrections.spec.ts` |
-| `PRODUCTION_HEAD` | **PU Head** | `pu@moderncolours.local` | Requests, batches, output — **PU only** |
-| `PRODUCTION_HEAD` | **Enamel Head** | `enamel@moderncolours.local` | Requests, batches, output — **ENAMEL only** |
-| `PRODUCTION_HEAD` | **Powder Head** | `powder@moderncolours.local` | Requests, batches, output — **POWDER only** |
-| `DISPATCH` | **Dispatch** | `dispatch@moderncolours.local` | Finished goods only — no raw stock, no requests, no Phase 1 |
+| `ADMIN` | **Store** | `admin@moderncolours.local` | Stock: accepts inwards, receives (session-gated), issues, catalogue, API key, users. **No longer does the inward document flow** (that is the Gate's). |
+| `OVERSIGHT` | **Admin** (owner) | `oversight@moderncolours.local` | **Read-only across everything** — dashboards, stock, batches, packing, scan sessions, GRN slips, the full audit. Its ONE named write is the finished-goods **correction** (`CorrectionsGuard`); it also holds the **reprint-approval** and **flag-flip** doors. |
+| `OPERATOR` | **Gate** | `gate@moderncolours.local` | The inward: photograph the invoice, proofread, **Confirm & hand over — which MINTS the MC- codes** onto the Good Receipt Note. No stock, labels, catalogue or dashboard. |
+| `PRODUCTION_HEAD` | **PU / Enamel / Powder Head** | `pu@` / `enamel@` / `powder@` | Requests, batches, output (incl. hardener/thinner) — **own department only** |
+| `DISPATCH` | **Dispatch** | `dispatch@moderncolours.local` | Finished goods only — scan FG-/FGHD-/FGTH- or a carton PG- out; returns |
+| `PACKER` | **Packer** | `packer@moderncolours.local` | The packing desk only — scan in, compose PG lists (straights + combos), confirm, seal, void/repack |
+| `REVIEWER` | **Reviewer** | `pallavi@` / `rupinder@` | View-only: the invoice document beside its slip, nothing else |
 
-**Note the naming trap:** the role called `ADMIN` is the **Store**, and the role called
-`OVERSIGHT` is what the factory calls **"Admin"**. They are not the same thing and it is easy to
-wire a guard to the wrong one.
+**Note the naming trap:** the role called `ADMIN` is the **Store**, and `OVERSIGHT` is what
+the factory calls **"Admin"** (the owner). Easy to wire a guard to the wrong one.
 
-**Two more roles exist in code but have no usable account:**
+`SUPERVISOR` exists in code (read-only dashboard/records/audit) but **has no account**;
+`op1@moderncolours.local` is a **deactivated** legacy OPERATOR. Create/reactivate via Users
+if ever needed. The privileged roles (ADMIN, OVERSIGHT, SUPERVISOR) are **seed-only** and
+can never be minted through User Management.
 
-| Role | Reality |
-|---|---|
-| `OPERATOR` | `op1@moderncolours.local` exists but is **deactivated** — it cannot log in. Phase 1 duties (upload, review/confirm, QR labels, receiving scan) are currently done by **Store**. Reactivate it via Users if the factory wants a separate receiving operator. |
-| `SUPERVISOR` | **No account exists.** The role is implemented and guarded (read-only dashboard, records, audit), but nobody has been given it. Create one via Users if needed. |
+**Two operational flags** (both **OFF**; only the owner flips them, through the one
+access-flip door):
+
+| Flag | OFF (current) | ON |
+|---|---|---|
+| `STORE_INWARD_ACCESS` | Inward is the Gate's; Store cannot upload/extract/hand-over | Store regains the inward flow (reversible cutover) |
+| `PACKING_STAGE` | Dispatch ships FG drums directly | Dispatch's home shows packed-goods (PG) carton cards |
 
 Department isolation (I10) is derived from the JWT, never the request body — a head
 cannot reach another department's data by editing a request.

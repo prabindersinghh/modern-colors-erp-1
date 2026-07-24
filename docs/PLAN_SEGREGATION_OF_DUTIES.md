@@ -1,6 +1,10 @@
 # Plan — Segregation of duties: Gate, Reviewer, and commercial invisibility for Store
 
-> **Status:** PLAN ONLY — nothing built, nothing migrated.
+> **Status:** ✅ IMPLEMENTED & LIVE. Gate/Reviewer roles, commercial invisibility for
+> Store, and the `STORE_INWARD_ACCESS` flag all shipped. **Refined 2026-07-24 (`47bb966`):
+> the minting act (I1) moved from Store's confirm to the GATE's hand-over** — Gate now mints
+> the `MC-` codes so the Good Receipt Note carries them; Store's confirm became an accept.
+> Units still never persist without an explicit human confirm; that human is now the Gate.
 > **Prepared:** 2026-07-22, against commit `ffc92ac`.
 > **Every claim below was verified against the code at planning time.** Where I checked
 > something and found the brief's premise did not match the code, it says so explicitly.
