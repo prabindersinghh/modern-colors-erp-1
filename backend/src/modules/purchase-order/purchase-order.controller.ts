@@ -107,15 +107,11 @@ export class PurchaseOrderController {
       limits: { files: 1, fileSize: 25 * 1024 * 1024, fields: 5, fieldNameSize: 100 },
     }),
   )
-  upload(
-    @UploadedFile() file: Express.Multer.File,
-    @CurrentUser() actor: AuthUser,
-    @Body('arrivedAt') arrivedAt?: string,
-  ) {
+  upload(@UploadedFile() file: Express.Multer.File, @CurrentUser() actor: AuthUser) {
     if (!file) throw new BadRequestException('No file uploaded (field name "file")');
-    // Gate may state when the truck actually arrived; a malformed value falls back to now.
-    const arrived = arrivedAt ? new Date(arrivedAt) : undefined;
-    return this.po.upload(file, actor.id, arrived && !isNaN(arrived.getTime()) ? arrived : undefined);
+    // Arrival date+time is LOCKED — stamped server-side at upload, never taken from the
+    // client and never editable afterward. A client-supplied arrivedAt is ignored.
+    return this.po.upload(file, actor.id);
   }
 
   // Create a PO by typing it in (no document) — Option B of the upload flow.

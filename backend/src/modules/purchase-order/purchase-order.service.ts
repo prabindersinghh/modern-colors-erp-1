@@ -43,7 +43,7 @@ export class PurchaseOrderService {
     private readonly slips: ReceivingSlipService,
   ) {}
 
-  async upload(file: Express.Multer.File, actorId: string, arrivedAt?: Date) {
+  async upload(file: Express.Multer.File, actorId: string) {
     if (!file) throw new BadRequestException('No file uploaded (field name "file")');
     // Strip CR/LF and path separators from the user-supplied name before storing
     // it (defense-in-depth against header injection / path traversal). The stored
@@ -65,9 +65,10 @@ export class PurchaseOrderService {
         status: POStatus.PO_UPLOADED,
         source: POSource.AI,
         uploadedById: actorId,
-        // Gate's stated arrival time; defaults to now when not supplied. Never overwrites
-        // createdAt, which the DB stamps as the true row-creation instant.
-        arrivedAt: arrivedAt ?? new Date(),
+        // Arrival timestamp is LOCKED: server-stamped at the instant the invoice photo is
+        // uploaded, and never editable by anyone thereafter (no route accepts an arrivedAt).
+        // This makes it a tamper-proof record of when the goods were photographed in.
+        arrivedAt: new Date(),
       },
     });
 

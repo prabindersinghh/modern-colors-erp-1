@@ -32,6 +32,10 @@ const stageOf = (s: ReceivingSlip): keyof typeof STAGE =>
 export function SlipInbox() {
   const [slips, setSlips] = useState<ReceivingSlip[] | null>(null)
   const [open, setOpen] = useState<string | null>(null)
+  // Store's dashboard shows the three most recent slips at a glance; the rest are one tap
+  // away behind "See all", so login stays uncluttered without hiding anything.
+  const [showAll, setShowAll] = useState(false)
+  const PREVIEW = 3
 
   const load = useCallback(
     () =>
@@ -56,9 +60,11 @@ export function SlipInbox() {
     )
   }
 
+  const visible = showAll ? slips : slips.slice(0, PREVIEW)
+
   return (
     <div className="stagger grid gap-2">
-      {slips.map((s) => {
+      {visible.map((s) => {
         const stage = STAGE[stageOf(s)] ?? STAGE.DRAFT
         const Icon = stage.icon
         const ready = s.status === 'AWAITING_STORE' && !s.confirmedAt
@@ -146,6 +152,15 @@ export function SlipInbox() {
           </Card>
         )
       })}
+      {slips.length > PREVIEW && (
+        <button
+          type="button"
+          onClick={() => setShowAll((v) => !v)}
+          className="tactile mx-auto mt-1 text-sm font-medium text-accent-brand underline-offset-2 hover:underline"
+        >
+          {showAll ? 'Show fewer' : `See all ${slips.length} slips`}
+        </button>
+      )}
     </div>
   )
 }

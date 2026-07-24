@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { FileUp, Camera, Send, CheckCircle2, Clock, Loader2, Pencil, Printer } from 'lucide-react'
+import { FileUp, Camera, Send, CheckCircle2, Clock, Loader2, Pencil, Printer, Lock } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -20,20 +20,11 @@ import type { Paginated, POLineItem, PurchaseOrder, ReceivingSlip } from '@/type
  * receiving. The list below is HIS OWN uploads and nobody else's, and that scoping is
  * done server-side (`uploadedById`), so it holds for a raw API call too.
  */
-/** A datetime-local value for "now", in the browser's own zone. */
-function nowLocal(): string {
-  const d = new Date()
-  d.setMinutes(d.getMinutes() - d.getTimezoneOffset())
-  return d.toISOString().slice(0, 16)
-}
 
 export function GateHomePage() {
   const [pos, setPos] = useState<PurchaseOrder[] | null>(null)
   const [selected, setSelected] = useUrlId('inv')
   const [busy, setBusy] = useState(false)
-  // When the truck actually arrived — defaults to now, editable, because trucks arrive
-  // before the guard gets to the phone.
-  const [arrivedAt, setArrivedAt] = useState(nowLocal())
 
   const load = useCallback(
     () =>
@@ -51,8 +42,8 @@ export function GateHomePage() {
     try {
       const form = new FormData()
       form.append('file', file)
-      // Send the Gate's stated arrival time (as an ISO instant) alongside the file.
-      if (arrivedAt) form.append('arrivedAt', new Date(arrivedAt).toISOString())
+      // Arrival date+time is captured and LOCKED by the server at this instant — it is
+      // never sent from here and cannot be edited by anyone, so it is a tamper-proof record.
       const po = await api.postForm<PurchaseOrder>('/purchase-orders', form)
       toast({ title: 'Invoice uploaded', description: 'Reading it now…' })
       // Extraction is what creates the slip, so it runs immediately rather than
@@ -82,18 +73,11 @@ export function GateHomePage() {
               happens from there.
             </p>
           </div>
-          <label className="block space-y-1">
-            <span className="text-[10px] font-medium uppercase tracking-wide text-chip-500">
-              When did the truck arrive?
-            </span>
-            <Input
-              type="datetime-local"
-              value={arrivedAt}
-              onChange={(e) => setArrivedAt(e.target.value)}
-              disabled={busy}
-              className="h-11 w-full sm:w-64"
-            />
-          </label>
+          <p className="flex items-center gap-1.5 rounded-md bg-chip-50 px-3 py-2 text-xs text-chip-600">
+            <Lock className="h-3.5 w-3.5 shrink-0 text-chip-400" />
+            Arrival date &amp; time are recorded automatically when you take the photo, and are
+            locked — they cannot be edited afterward.
+          </p>
           <div className="flex flex-col gap-2 sm:flex-row">
             {/* capture="environment" opens the rear camera straight away on a phone. */}
             <label className="flex-1">

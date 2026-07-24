@@ -186,8 +186,10 @@ export function CataloguePage() {
                 <TableHead>HSN Code</TableHead>
                 <TableHead>Category</TableHead>
                 <TableHead>Unit</TableHead>
-                <TableHead>Packaging</TableHead>
-                <TableHead className="whitespace-nowrap">Min / Max stock</TableHead>
+                {/* Store (ADMIN) sees the client's own vocabulary: "Quantity", and a
+                    min-only reorder threshold. Supervisor keeps the fuller labels. */}
+                <TableHead>{isAdmin ? 'Quantity' : 'Packaging'}</TableHead>
+                <TableHead className="whitespace-nowrap">{isAdmin ? 'Min stock' : 'Min / Max stock'}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -202,7 +204,7 @@ export function CataloguePage() {
                   <TableCell>{it.unit ?? '—'}</TableCell>
                   <TableCell>{it.standardPackaging ?? '—'}</TableCell>
                   <TableCell>
-                    <MinMaxCell item={it} canEdit={isAdmin} onSaved={refresh} />
+                    <MinMaxCell item={it} canEdit={isAdmin} minOnly={isAdmin} onSaved={refresh} />
                   </TableCell>
                 </TableRow>
               ))}
@@ -232,7 +234,7 @@ export function CataloguePage() {
  * drive the stock-percentage display and replace the built-in low-stock defaults for
  * this material. Server validates max > min and audits the change.
  */
-function MinMaxCell({ item, canEdit, onSaved }: { item: CatalogueItem; canEdit: boolean; onSaved: () => void }) {
+function MinMaxCell({ item, canEdit, onSaved, minOnly = false }: { item: CatalogueItem; canEdit: boolean; onSaved: () => void; minOnly?: boolean }) {
   const [editing, setEditing] = useState(false)
   const [min, setMin] = useState('')
   const [max, setMax] = useState('')
@@ -291,8 +293,13 @@ function MinMaxCell({ item, canEdit, onSaved }: { item: CatalogueItem; canEdit: 
     )
   }
 
-  const label =
-    item.minLevel != null || item.maxLevel != null
+  // Store's view (minOnly): the reorder threshold alone, carrying the material's own unit
+  // (e.g. "4 LTR") — never a blended figure. Supervisor keeps the full "min / max".
+  const label = minOnly
+    ? item.minLevel != null
+      ? `${item.minLevel}${item.unit ? ` ${item.unit}` : ''}`
+      : null
+    : item.minLevel != null || item.maxLevel != null
       ? `${item.minLevel ?? '—'} / ${item.maxLevel ?? '—'}`
       : null
 
