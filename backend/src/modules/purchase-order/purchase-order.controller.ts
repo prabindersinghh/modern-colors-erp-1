@@ -183,18 +183,27 @@ export class PurchaseOrderController {
   }
 
   /**
-   * Gate's proofread is done. The snapshot Store works from is taken here, and Gate's
-   * line edits are refused from this moment on.
+   * Gate's CONFIRM & HAND-OVER — proofread done, hand it to Store. This is now THE minting
+   * act (invariant I1, relocated to Gate): it registers the MC- units and attaches their
+   * ID ranges to the slip, so the Good Receipt Note Gate prints already carries the codes.
+   * Normally Gate; also Store when STORE_INWARD_ACCESS is ON (StoreInwardGuard), so the
+   * cutover stays reversible.
    */
   @Post(':id/send-to-store')
-  @Roles(Role.OPERATOR)
+  @Roles(Role.ADMIN, Role.OPERATOR)
+  @UseGuards(StoreInwardGuard)
   sendToStore(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.slips.sendToStore(user, id);
+    return this.po.handOverToStore(user.id, id);
   }
 
+  /**
+   * Store's ACCEPT — what Review & Confirm became. The units already exist (Gate minted
+   * them at hand-over), so this does not mint: Store accepts custody of the received goods
+   * and prints the slip. The physical receiving scan stays a separate, session-gated step.
+   */
   @Post(':id/confirm')
   @Roles(Role.ADMIN)
   confirm(@Param('id') id: string, @CurrentUser() actor: AuthUser) {
-    return this.po.confirm(id, actor.id);
+    return this.po.accept(id, actor.id);
   }
 }

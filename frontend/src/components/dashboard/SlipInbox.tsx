@@ -21,13 +21,14 @@ import type { ReceivingSlip } from '@/types/api'
 const STAGE: Record<string, { label: string; tone: string; icon: typeof Clock }> = {
   DRAFT: { label: 'Gate is checking it', tone: 'bg-chip-200 text-chip-700 hover:bg-chip-200', icon: Clock },
   AWAITING_STORE: { label: 'Ready for you', tone: 'bg-warning text-warning-foreground hover:bg-warning', icon: PackageCheck },
-  CONFIRMED: { label: 'Confirmed', tone: 'bg-info text-info-foreground hover:bg-info', icon: CheckCircle2 },
+  ACCEPTED: { label: 'Accepted — receive it', tone: 'bg-info text-info-foreground hover:bg-info', icon: CheckCircle2 },
   FINALIZED: { label: 'Received', tone: 'bg-healthy text-success-foreground hover:bg-healthy', icon: CheckCircle2 },
 }
 
-/** A confirmed-but-not-finished slip has no status of its own — it is DRAFT + units. */
+/** Gate mints at hand-over, so the codes are on the slip by AWAITING_STORE; Store's own
+ *  milestone is ACCEPTED, then FINALIZED once the units are physically scanned in. */
 const stageOf = (s: ReceivingSlip): keyof typeof STAGE =>
-  s.status === 'FINALIZED' ? 'FINALIZED' : s.confirmedAt ? 'CONFIRMED' : s.status
+  s.status === 'FINALIZED' ? 'FINALIZED' : s.acceptedAt ? 'ACCEPTED' : s.status
 
 export function SlipInbox() {
   const [slips, setSlips] = useState<ReceivingSlip[] | null>(null)
@@ -67,7 +68,7 @@ export function SlipInbox() {
       {visible.map((s) => {
         const stage = STAGE[stageOf(s)] ?? STAGE.DRAFT
         const Icon = stage.icon
-        const ready = s.status === 'AWAITING_STORE' && !s.confirmedAt
+        const ready = s.status === 'AWAITING_STORE' && !s.acceptedAt
         return (
           <Card key={s.id} edge={ready ? 'warning' : undefined}>
             <CardContent className="space-y-2 p-3.5">
@@ -127,10 +128,12 @@ export function SlipInbox() {
                   </div>
 
                   <div className="flex flex-col gap-2 sm:flex-row">
-                    {!s.confirmedAt && (
+                    {/* Gate now mints at hand-over, so a slip reaches Store already carrying
+                        codes (AWAITING_STORE). Store's action is to review + accept it. */}
+                    {s.status === 'AWAITING_STORE' && !s.acceptedAt && (
                       <Button asChild className="h-11 flex-1 gap-1.5">
                         <AppLink to={`/review/${s.poId}`}>
-                          <PackageCheck className="h-4 w-4" /> Review &amp; Confirm
+                          <PackageCheck className="h-4 w-4" /> Review &amp; accept
                         </AppLink>
                       </Button>
                     )}

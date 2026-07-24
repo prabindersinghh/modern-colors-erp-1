@@ -24,6 +24,11 @@ import { ImportReviewDialog, type ImportPreview } from '@/components/catalogue/I
 
 const isProvisional = (sku: string) => sku.startsWith('TMP-')
 
+/** Store's Quantity column shows size + unit only — drop a trailing container word
+ *  (Drum / Bag / Can / …) since the Unit column already carries the measure. */
+const stripContainerWord = (s: string | null): string =>
+  (s ?? '').replace(/\s+(drums?|bags?|cans?|pails?|boxe?s?|jars?|bottles?|cartons?|sacks?|barrels?|tins?|packe?ts?|buckets?|jerry ?cans?|containers?)$/i, '').trim() || (s ? s : '—')
+
 export function CataloguePage() {
   const { hasRole } = useAuth()
   const isAdmin = hasRole('ADMIN')
@@ -202,7 +207,9 @@ export function CataloguePage() {
                   <TableCell className="font-mono text-xs">{it.hsnCode ?? '—'}</TableCell>
                   <TableCell>{it.category ?? '—'}</TableCell>
                   <TableCell>{it.unit ?? '—'}</TableCell>
-                  <TableCell>{it.standardPackaging ?? '—'}</TableCell>
+                  {/* Store sees just the size + unit (e.g. "200 LTR"); the container word
+                      (Drum/Bag/Can) is dropped since the Unit column already carries it. */}
+                  <TableCell>{isAdmin ? stripContainerWord(it.standardPackaging) : (it.standardPackaging ?? '—')}</TableCell>
                   <TableCell>
                     <MinMaxCell item={it} canEdit={isAdmin} minOnly={isAdmin} onSaved={refresh} />
                   </TableCell>

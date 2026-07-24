@@ -109,7 +109,20 @@ describe('Phase 1 access is intact after the DISPATCH role-gating', () => {
     });
   });
 
-  it('GATE can never confirm — minting (I1) is Store’s act alone', () => {
+  // MINTING (invariant I1) IS NOW GATE'S — relocated to the hand-over. Gate proofreads,
+  // then "confirm & hand over" (send-to-store) registers the MC- units and puts their
+  // ranges on the slip BEFORE it reaches Store, so the Good Receipt Note carries the codes.
+  // Units still NEVER persist without an explicit human confirm; that human is now Gate.
+  it('GATE mints at hand-over (send-to-store) — I1 relocated to the Gate', () => {
+    expect(allows(PurchaseOrderController, 'sendToStore', Role.OPERATOR)).toBe(true);
+    // Store can also hand over when STORE_INWARD_ACCESS is ON (reversible cutover); the
+    // StoreInwardGuard revokes it when the flag is OFF (asserted in the flag-OFF block).
+    expect(allows(PurchaseOrderController, 'sendToStore', Role.ADMIN)).toBe(true);
+  });
+
+  it('STORE’s confirm is now ACCEPT-only (no mint) — Gate cannot accept for Store', () => {
+    // The route/method name stays `confirm`, but it records Store's acceptance of goods
+    // Gate already registered; it never mints.
     expect(allows(PurchaseOrderController, 'confirm', Role.OPERATOR)).toBe(false);
     expect(allows(PurchaseOrderController, 'confirm', Role.ADMIN)).toBe(true);
   });
@@ -165,6 +178,9 @@ describe('Phase 1 access is intact after the DISPATCH role-gating', () => {
       ['POST /purchase-orders', PurchaseOrderController, 'upload'],
       ['POST /purchase-orders/manual', PurchaseOrderController, 'createManual'],
       ['POST /purchase-orders/:id/extract', PurchaseOrderController, 'extract'],
+      // Gate's hand-over now mints; it is part of the inward flow, so the flip revokes it
+      // from Store too (Gate keeps it — StoreInwardGuard returns true for OPERATOR).
+      ['POST /purchase-orders/:id/send-to-store', PurchaseOrderController, 'sendToStore'],
     ];
     for (const [name, controller, method] of INWARD) {
       expect({ name, behindFlip: guarded(controller, method) }).toEqual({ name, behindFlip: true });

@@ -794,9 +794,11 @@ export interface ReceivingSlip {
   generatedAt: string
   handedOverAt?: string | null
   confirmedAt?: string | null
+  acceptedAt?: string | null
   finalizedAt: string | null
   scannedCount: number | null
   generatedBy?: { name: string | null; email: string } | null
+  acceptedBy?: { name: string | null; email: string } | null
   finalizedBy?: { name: string | null; email: string } | null
 }
 

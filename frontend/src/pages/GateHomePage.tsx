@@ -223,9 +223,10 @@ function GateInvoiceCard({
 }
 
 /**
- * The proofread — read the extracted lines back against the paper, fix what was
- * misread, hand over. Deliberately NOT a Review & Confirm: nothing here mints, prints
- * or receives, and after handover the server refuses Gate's edits outright.
+ * The proofread — read the extracted lines back against the paper, fix what was misread,
+ * then confirm & hand over. Handover is now the MINTING act: it generates the MC- unit
+ * codes and puts them on the Good Receipt Note, so Store receives a slip that already
+ * carries the codes. After handover the server refuses Gate's edits outright.
  */
 function Proofread({
   poId,
@@ -266,8 +267,13 @@ function Proofread({
   const send = async () => {
     setBusy(true)
     try {
-      await api.post(`/purchase-orders/${poId}/send-to-store`)
-      toast({ title: 'Sent to Store', description: 'Store will receive against this.' })
+      // This is now the minting act: it registers the MC- unit codes and puts them on the
+      // Good Receipt Note before Store receives it.
+      const res = await api.post<{ registeredUnits: number }>(`/purchase-orders/${poId}/send-to-store`)
+      toast({
+        title: 'Confirmed & handed over to Store',
+        description: `${res.registeredUnits} unit codes generated — they now show on the receiving slip.`,
+      })
       onSent()
       await onChanged()
     } catch (err) {
@@ -353,7 +359,7 @@ function Proofread({
 
       {!locked && (
         <Button className="h-12 w-full gap-2" disabled={busy} onClick={() => void send()}>
-          <Send className="h-4 w-4" /> Looks right — send to Store
+          <Send className="h-4 w-4" /> Confirm &amp; hand over to Store
         </Button>
       )}
     </div>

@@ -1,10 +1,11 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { POSource, POStatus, Prisma } from '@prisma/client';
+import { POSource, POStatus, Prisma, SlipStatus } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StorageService } from '../../common/storage/storage.service';
@@ -416,54 +417,62 @@ export class PurchaseOrderService {
    * Material rows created: one per physical unit (I3) with sequential unique IDs
    * (I8) and a QR each. Runs atomically; PO → OPERATOR_VERIFIED → REGISTERED.
    */
-  async confirm(id: string, actorId: string) {
+  /**
+   * GATE'S CONFIRM & HAND-OVER — the explicit human act that MINTS (invariant I1, relocated
+   * to Gate). Gate proofreads the extracted lines against the paper he is holding, then
+   * hands the inward to Store: this registers one Material + QR per package (the MC- codes),
+   * attaches their ID ranges to the receiving slip, and marks the slip AWAITING_STORE.
+   *
+   * Units NEVER persist without this explicit human confirm — extraction alone only ever
+   * produced a DRAFT slip with no units. The codes now exist BEFORE the slip reaches Store,
+   * so the Good Receipt Note the gate prints already carries MC-001…, not "pending".
+   *
+   * Normally Gate; also reachable by Store when STORE_INWARD_ACCESS is ON (the reversible
+   * cutover), enforced by StoreInwardGuard on the route.
+   */
+  async handOverToStore(actorId: string, poId: string) {
     const po = await this.prisma.purchaseOrder.findUnique({
-      where: { id },
+      where: { id: poId },
       include: { lineItems: true },
     });
     if (!po) throw new NotFoundException('Invoice not found');
     if (po.status !== POStatus.AI_EXTRACTED) {
       throw new BadRequestException(
-        `Invoice must be reviewed (status AI_EXTRACTED) before confirmation; current status is ${po.status}.`,
+        `Proofread the extracted invoice (status AI_EXTRACTED) before handing it to Store; current status is ${po.status}.`,
       );
     }
     if (po.lineItems.length === 0) {
-      throw new BadRequestException('Cannot confirm an invoice with no line items.');
+      throw new BadRequestException('Cannot hand over an invoice with no line items.');
+    }
+    const slip = await this.prisma.receivingSlip.findUnique({ where: { poId }, select: { status: true } });
+    if (slip && slip.status !== SlipStatus.DRAFT) {
+      throw new ConflictException('This invoice has already been handed to Store.');
     }
 
     const created = await this.prisma.$transaction(
       async (tx) => {
         await tx.purchaseOrder.update({
-          where: { id },
-          data: {
-            status: POStatus.OPERATOR_VERIFIED,
-            confirmedById: actorId,
-            confirmedAt: new Date(),
-          },
+          where: { id: poId },
+          // Gate is the human who verified the goods against the paper.
+          data: { status: POStatus.OPERATOR_VERIFIED, confirmedById: actorId, confirmedAt: new Date() },
         });
         await this.audit.log(
-          { entityType: 'PurchaseOrder', entityId: id, action: 'OPERATOR_VERIFIED', actorId },
+          { entityType: 'PurchaseOrder', entityId: poId, action: 'OPERATOR_VERIFIED', actorId },
           tx,
         );
 
+        // THE MINTING ACT (I1) — now at Gate's hand-over, not Store's confirm.
         const units = await this.material.registerUnits(tx, po, actorId);
-
-        // The digital receiving slip is generated HERE, inside the confirm transaction,
-        // so a registered inward always has one. Store can no longer see the invoice, so
-        // a registered-but-slipless inward would be material Store cannot account for.
-        // The slip already exists — it was born at extraction and is what Store just
-        // confirmed FROM. Confirming attaches the unit ID ranges to it.
+        // Attach the minted ID ranges to the slip and hand it over to Store.
         await this.slips.attachUnits(tx, po, units, actorId);
+        await tx.receivingSlip.update({
+          where: { poId },
+          data: { status: SlipStatus.AWAITING_STORE, handedOverAt: new Date() },
+        });
 
-        await tx.purchaseOrder.update({ where: { id }, data: { status: POStatus.REGISTERED } });
+        await tx.purchaseOrder.update({ where: { id: poId }, data: { status: POStatus.REGISTERED } });
         await this.audit.log(
-          {
-            entityType: 'PurchaseOrder',
-            entityId: id,
-            action: 'MATERIALS_REGISTERED',
-            actorId,
-            after: { unitCount: units.length },
-          },
+          { entityType: 'PurchaseOrder', entityId: poId, action: 'MATERIALS_REGISTERED', actorId, after: { unitCount: units.length } },
           tx,
         );
         return units;
@@ -471,8 +480,39 @@ export class PurchaseOrderService {
       { timeout: 120000 },
     );
 
-    const po2 = await this.findOne(id);
-    return { purchaseOrder: po2, registeredUnits: created.length };
+    return { purchaseOrder: await this.findOne(poId), registeredUnits: created.length };
+  }
+
+  /**
+   * STORE'S ACCEPT — what "Review & Confirm" became once Gate mints. The units already
+   * exist (Gate registered them at hand-over), so this does NOT mint: Store reviews the
+   * received Good Receipt Note, accepts custody, and prints. Append-only audited. The
+   * physical receiving (scanning the MC- units in at Receive Stock) stays a separate,
+   * session-gated step and is unchanged.
+   */
+  async accept(poId: string, actorId: string) {
+    const po = await this.prisma.purchaseOrder.findUnique({ where: { id: poId }, select: { id: true, status: true, poNumber: true } });
+    if (!po) throw new NotFoundException('Invoice not found');
+    if (po.status !== POStatus.REGISTERED) {
+      throw new BadRequestException(
+        'This inward has not been handed over yet — the Gate must confirm and register it first.',
+      );
+    }
+    // Idempotent: stamp acceptance once. Re-clicking Accept does not re-audit.
+    const marked = await this.prisma.receivingSlip.updateMany({
+      where: { poId, acceptedAt: null },
+      data: { acceptedAt: new Date(), acceptedById: actorId },
+    });
+    if (marked.count > 0) {
+      await this.audit.log({
+        entityType: 'PurchaseOrder',
+        entityId: poId,
+        action: 'STORE_INWARD_ACCEPTED',
+        actorId,
+        after: { poNumber: po.poNumber },
+      });
+    }
+    return this.findOne(poId);
   }
 
   // ── helpers ──

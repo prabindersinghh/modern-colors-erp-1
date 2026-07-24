@@ -158,6 +158,7 @@ model User {
   flagsChanged     SystemFlag[]          @relation("FlagUpdatedBy")
   scanSessions     ScanSession[]         @relation("ScanSessionOpenedBy")
   slipsFinalized   ReceivingSlip[]       @relation("SlipFinalizedBy")
+  slipsAccepted    ReceivingSlip[]       @relation("SlipAcceptedBy")
 
   // Packing stage — cartons this user packed / dispatched / voided, and lists composed.
   cartonsPacked     Carton[]      @relation("CartonPackedBy")
@@ -783,15 +784,22 @@ model ReceivingSlip {
   unitCount Int?
   status    SlipStatus @default(DRAFT)
 
-  /// Set when Store confirms and the unit ID ranges attach to the lines.
+  /// Set when the unit ID ranges attach to the lines — now at GATE'S hand-over (the mint),
+  /// so the slip carries the MC- codes before it reaches Store.
   confirmedAt DateTime?
 
   generatedById String
   generatedBy   User     @relation("SlipGeneratedBy", fields: [generatedById], references: [id])
   generatedAt   DateTime @default(now())
 
-  /// When Gate pressed "Looks right — send to Store".
+  /// When Gate confirmed & handed over (the minting act) — "Confirm & hand over to Store".
   handedOverAt DateTime?
+
+  /// When STORE accepted custody of the received goods (reviews the GRN, accepts, prints).
+  /// Distinct from Gate's mint (confirmedAt) and the physical-receiving scan (finalizedAt).
+  acceptedById String?
+  acceptedBy   User?     @relation("SlipAcceptedBy", fields: [acceptedById], references: [id])
+  acceptedAt   DateTime?
 
   finalizedById String?
   finalizedBy   User?     @relation("SlipFinalizedBy", fields: [finalizedById], references: [id])

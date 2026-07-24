@@ -408,9 +408,11 @@ export class ReceivingSlipService {
     generatedAt: true,
     handedOverAt: true,
     confirmedAt: true,
+    acceptedAt: true,
     finalizedAt: true,
     scannedCount: true,
     generatedBy: { select: { name: true, email: true } },
+    acceptedBy: { select: { name: true, email: true } },
     finalizedBy: { select: { name: true, email: true } },
   } satisfies Prisma.ReceivingSlipSelect;
 }

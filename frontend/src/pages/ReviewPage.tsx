@@ -198,14 +198,31 @@ function ReviewOne({ poId }: { poId: string }) {
     }
   }
 
-  const confirm = async () => {
+  // Store's ACCEPT — the MC- codes were already generated at the Gate's hand-over, so this
+  // does not mint; it records Store taking custody of the received goods.
+  const accept = async () => {
     setBusy(true)
     try {
-      const res = await api.post<{ registeredUnits: number }>(`/purchase-orders/${poId}/confirm`)
-      toast({ title: 'Confirmed', description: `${res.registeredUnits} units registered with QR codes.` })
+      await api.post(`/purchase-orders/${poId}/confirm`)
+      toast({ title: 'Inward accepted', description: 'Unit codes were generated at the Gate. Print labels or receive the stock.' })
       nav(`/labels?poId=${poId}`)
     } catch (err) {
-      toast({ variant: 'destructive', title: 'Could not confirm', description: err instanceof ApiError ? err.message : '' })
+      toast({ variant: 'destructive', title: 'Could not accept', description: err instanceof ApiError ? err.message : '' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // The MINTING act, now at hand-over. Normally Gate does this on its own screen; Store
+  // reaches it only when STORE_INWARD_ACCESS is flipped ON (the reversible cutover).
+  const handOver = async () => {
+    setBusy(true)
+    try {
+      const res = await api.post<{ registeredUnits: number }>(`/purchase-orders/${poId}/send-to-store`)
+      toast({ title: 'Confirmed & registered', description: `${res.registeredUnits} unit codes generated — they now show on the slip.` })
+      nav(`/labels?poId=${poId}`)
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'Could not hand over', description: err instanceof ApiError ? err.message : '' })
     } finally {
       setBusy(false)
       setConfirmOpen(false)
@@ -313,19 +330,27 @@ function ReviewOne({ poId }: { poId: string }) {
               <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 p-3">
                 <p className="text-sm">
                   <span className="font-medium">{totalUnits}</span> physical unit{totalUnits === 1 ? '' : 's'} will be
-                  registered with one QR code each.
+                  registered with one QR code each and the codes put on the slip.
                 </p>
                 <Button onClick={() => setConfirmOpen(true)} disabled={busy || totalUnits === 0} className="gap-1.5">
-                  <CheckCircle2 className="h-4 w-4" /> Confirm &amp; register
+                  <CheckCircle2 className="h-4 w-4" /> Confirm &amp; hand over
                 </Button>
               </div>
             </>
           )}
 
           {po.status === 'REGISTERED' && (
-            <Button variant="outline" onClick={() => nav(`/labels?poId=${poId}`)}>
-              View QR labels
-            </Button>
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 p-3">
+              <p className="text-sm">
+                Unit codes were generated at the Gate and are on the slip. Accept custody, then print or receive.
+              </p>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => nav(`/labels?poId=${poId}`)}>QR labels</Button>
+                <Button onClick={() => void accept()} disabled={busy} className="gap-1.5">
+                  <CheckCircle2 className="h-4 w-4" /> Accept &amp; print
+                </Button>
+              </div>
+            </div>
           )}
         </div>
       ) : null}
@@ -346,10 +371,10 @@ function ReviewOne({ poId }: { poId: string }) {
       <ConfirmationDialog
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
-        title="Confirm and register materials?"
-        description={`This will create ${totalUnits} material records (one per physical unit) with QR codes. This cannot be undone.`}
-        confirmLabel="Confirm"
-        onConfirm={confirm}
+        title="Confirm and hand over to Store?"
+        description={`This registers ${totalUnits} unit codes (one per physical package), puts them on the Good Receipt Note, and hands the inward to Store. This cannot be undone.`}
+        confirmLabel="Confirm & hand over"
+        onConfirm={handOver}
       />
     </>
   )
