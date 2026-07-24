@@ -108,9 +108,10 @@ const DELETE_ORDER = [
   // AND Carton, so they must go before all five — first is unconditionally safe.
   'LabelReprintRequest',
   // Packing stage. CartonItem references FinishedGood AND Carton, so it goes before both.
-  // Carton references only User (preserved), so it deletes freely once its items are gone.
+  // Carton references User (preserved) and PackingList, so it goes before PackingList.
   'CartonItem',
   'Carton',
+  'PackingList',
   'FinishedGoodQr',
   'FinishedGood',
   'ProductionOutput',
@@ -154,6 +155,7 @@ async function countAll(): Promise<Counts> {
     FinishedGoodQr: await prisma.finishedGoodQr.count(),
     Carton: await prisma.carton.count(),
     CartonItem: await prisma.cartonItem.count(),
+    PackingList: await prisma.packingList.count(),
     LabelReprintRequest: await prisma.labelReprintRequest.count(),
     ScanSession: await prisma.scanSession.count(),
     ReceivingSlip: await prisma.receivingSlip.count(),

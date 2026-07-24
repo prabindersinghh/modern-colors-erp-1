@@ -37,6 +37,29 @@ export async function buildCartonLabel(doc: CartonLabelDoc): Promise<Buffer> {
   const pdf = await PDFDocument.create();
   const font = await pdf.embedFont(StandardFonts.Helvetica);
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+  await drawCartonLabel(pdf, font, bold, doc);
+  return Buffer.from(await pdf.save());
+}
+
+/**
+ * ONE printable PDF for a whole packing list — every carton's A5 label, in list order, so
+ * the packer prints once and pastes down the line. Each carton fills its own page(s).
+ */
+export async function buildCartonLabelSheet(docs: CartonLabelDoc[]): Promise<Buffer> {
+  const pdf = await PDFDocument.create();
+  const font = await pdf.embedFont(StandardFonts.Helvetica);
+  const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+  for (const doc of docs) await drawCartonLabel(pdf, font, bold, doc);
+  return Buffer.from(await pdf.save());
+}
+
+/** Draw one carton's A5 label (its own page, spilling to more pages for long content). */
+async function drawCartonLabel(
+  pdf: PDFDocument,
+  font: Awaited<ReturnType<PDFDocument['embedFont']>>,
+  bold: Awaited<ReturnType<PDFDocument['embedFont']>>,
+  doc: CartonLabelDoc,
+): Promise<void> {
   let page = pdf.addPage([A5.w, A5.h]);
   let y = A5.h - M;
 
@@ -86,6 +109,4 @@ export async function buildCartonLabel(doc: CartonLabelDoc): Promise<Buffer> {
     }
     y -= 16;
   }
-
-  return Buffer.from(await pdf.save());
 }

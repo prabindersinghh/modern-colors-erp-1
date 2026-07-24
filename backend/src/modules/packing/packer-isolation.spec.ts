@@ -59,15 +59,25 @@ describe('PACKER role isolation (server-side)', () => {
     });
 
     it('restricts the packing ACTIONS to PACKER only', () => {
-      for (const m of ['scanIn', 'createCarton', 'addItem', 'removeItem', 'confirm', 'voidCarton', 'markPacked']) {
+      for (const m of [
+        'scanIn', 'createCarton', 'addItem', 'removeItem', 'confirm', 'voidCarton', 'markPacked',
+        'createList', 'addEntry', 'removeEntry', 'confirmList',
+      ]) {
         expect(rolesFor(PackingController, m)).toEqual([Role.PACKER]);
       }
     });
 
-    it('lets PACKER read the pool, his cartons and resolve a PG', () => {
-      for (const m of ['pool', 'cartons', 'carton', 'resolve']) {
+    it('lets PACKER read the pool, his cartons, lists and resolve a PG', () => {
+      for (const m of ['pool', 'cartons', 'carton', 'resolve', 'lists', 'packingList']) {
         expect(rolesFor(PackingController, m)).toContain(Role.PACKER);
       }
+    });
+
+    it('lets OVERSIGHT read every packing GET (total visibility), and write nothing', () => {
+      const reads = ['pool', 'cartons', 'carton', 'resolve', 'lists', 'packingList'];
+      for (const m of reads) expect(rolesFor(PackingController, m)).toContain(Role.OVERSIGHT);
+      const writes = ['scanIn', 'createCarton', 'addItem', 'removeItem', 'confirm', 'voidCarton', 'markPacked', 'createList', 'addEntry', 'removeEntry', 'confirmList'];
+      for (const m of writes) expect(rolesFor(PackingController, m)).not.toContain(Role.OVERSIGHT);
     });
 
     it('holds NO named door (corrections, user-admin, reprint-approval, access-flip)', () => {

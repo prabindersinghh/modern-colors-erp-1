@@ -1,4 +1,4 @@
-import { IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { ArrayMinSize, IsArray, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 
 /** Scan a finished-goods unit into the packer's hands (→ UNDER_PACKING). */
 export class ScanInDto {
@@ -24,6 +24,14 @@ export class VoidCartonDto {
   @MinLength(3)
   @MaxLength(500)
   reason!: string;
+}
+
+/** Add one entry to a packing list — a straight (one id) or a combo (several). */
+export class AddEntryDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @IsString({ each: true })
+  uniqueIds!: string[];
 }
 
 /** Scan a carton's PG- code (mark packed, or dispatch). */

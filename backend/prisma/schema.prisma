@@ -87,6 +87,12 @@ enum CartonStatus {
   VOIDED // abandoned after confirm; contents released, PG retired forever
 }
 
+// Packing stage — a packed-goods LIST the packer composes, then confirms whole.
+enum PackingListStatus {
+  DRAFT // composing entries (straights + combos); nothing minted yet
+  CONFIRMED // one confirm minted a PG for every entry, in one transaction
+}
+
 // PO-level lifecycle (the document). See ARCHITECTURE.md §6 status note.
 enum POStatus {
   PO_UPLOADED // uploaded, extraction not yet run
@@ -153,10 +159,11 @@ model User {
   scanSessions     ScanSession[]         @relation("ScanSessionOpenedBy")
   slipsFinalized   ReceivingSlip[]       @relation("SlipFinalizedBy")
 
-  // Packing stage — cartons this user packed / dispatched / voided.
-  cartonsPacked     Carton[] @relation("CartonPackedBy")
-  cartonsDispatched Carton[] @relation("CartonDispatchedBy")
-  cartonsVoided     Carton[] @relation("CartonVoidedBy")
+  // Packing stage — cartons this user packed / dispatched / voided, and lists composed.
+  cartonsPacked     Carton[]      @relation("CartonPackedBy")
+  cartonsDispatched Carton[]      @relation("CartonDispatchedBy")
+  cartonsVoided     Carton[]      @relation("CartonVoidedBy")
+  packingLists      PackingList[] @relation("PackingListPackedBy")
 
   @@index([role])
 }
@@ -614,11 +621,42 @@ model Carton {
   labelPrintedAt DateTime? // first mega-label print is free; later prints are the reprint lock's
   updatedAt      DateTime  @updatedAt
 
+  // Packing stage — the list this carton is an entry of, if composed as part of one.
+  // Null = a standalone carton (the original one-at-a-time flow, still supported).
+  packingListId String?
+  packingList   PackingList? @relation(fields: [packingListId], references: [id], onDelete: SetNull)
+
   items           CartonItem[]
   reprintRequests LabelReprintRequest[]
 
   @@index([status])
   @@index([packedById])
+  @@index([packingListId])
+}
+
+/**
+ * A packed-goods LIST — the factory's real workflow. The packer composes one list of
+ * entries side by side: straights (a single drum passing through alone) and combos (his
+ * chosen sets). ONE confirm mints a PG- for EVERY entry together, sequential, in one
+ * transaction, and one label run prints all their A5 labels in list order. Each entry is
+ * a Carton, so every carton invariant is unchanged; the list only groups them.
+ */
+model PackingList {
+  id       String            @id @default(uuid())
+  status   PackingListStatus @default(DRAFT)
+
+  packedById String
+  packedBy   User   @relation("PackingListPackedBy", fields: [packedById], references: [id])
+
+  createdAt   DateTime  @default(now())
+  confirmedAt DateTime? // set when the whole list is confirmed (all PGs minted)
+  note        String?
+  updatedAt   DateTime  @updatedAt
+
+  cartons Carton[]
+
+  @@index([packedById])
+  @@index([status])
 }
 
 /**

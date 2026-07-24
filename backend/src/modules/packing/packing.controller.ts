@@ -10,13 +10,13 @@ import {
   StreamableFile,
   UseGuards,
 } from '@nestjs/common';
-import { CartonStatus, Role } from '@prisma/client';
+import { CartonStatus, PackingListStatus, Role } from '@prisma/client';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
 import { PackingService } from './packing.service';
-import { AddItemDto, CartonScanDto, ScanInDto, VoidCartonDto } from './dto/packing.dto';
+import { AddEntryDto, AddItemDto, CartonScanDto, ScanInDto, VoidCartonDto } from './dto/packing.dto';
 
 /**
  * The packing desk — PACKER only, with read-through for the whole-factory viewers.
@@ -115,5 +115,55 @@ export class PackingController {
   @Roles(Role.PACKER, Role.DISPATCH, Role.ADMIN, Role.OVERSIGHT)
   resolve(@Param('uniqueId') uniqueId: string) {
     return this.packing.resolveCarton(uniqueId);
+  }
+
+  // ── Packing lists (compose a list of straights + combos, confirm it whole) ──
+
+  @Get('lists')
+  @Roles(Role.PACKER, Role.ADMIN, Role.OVERSIGHT)
+  lists(@CurrentUser() user: AuthUser, @Query('status') status?: PackingListStatus) {
+    return this.packing.lists(user, status);
+  }
+
+  @Post('lists')
+  @Roles(Role.PACKER)
+  createList(@CurrentUser() user: AuthUser) {
+    return this.packing.createList(user);
+  }
+
+  @Get('lists/:id')
+  @Roles(Role.PACKER, Role.ADMIN, Role.OVERSIGHT)
+  packingList(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.packing.packingList(user, id);
+  }
+
+  /** Add an entry — a straight (one id) or a combo (several) — to a DRAFT list. */
+  @Post('lists/:id/entries')
+  @Roles(Role.PACKER)
+  addEntry(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: AddEntryDto) {
+    return this.packing.addEntry(user, id, dto.uniqueIds);
+  }
+
+  @Delete('lists/:id/entries/:cartonId')
+  @Roles(Role.PACKER)
+  removeEntry(@CurrentUser() user: AuthUser, @Param('id') id: string, @Param('cartonId') cartonId: string) {
+    return this.packing.removeEntry(user, id, cartonId);
+  }
+
+  /** ONE confirm mints a PG for every entry in the list, sequential, in one transaction. */
+  @Post('lists/:id/confirm')
+  @Roles(Role.PACKER)
+  confirmList(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.packing.confirmList(user, id);
+  }
+
+  /** ONE PDF: every confirmed entry's A5 label, in list order. */
+  @Get('lists/:id/labels.pdf')
+  @Roles(Role.PACKER, Role.ADMIN)
+  @Header('Content-Type', 'application/pdf')
+  async listLabels(@CurrentUser() user: AuthUser, @Param('id') id: string): Promise<StreamableFile> {
+    const pdf = await this.packing.listLabels(user, id);
+    const safe = id.replace(/[^a-zA-Z0-9_-]/g, '');
+    return new StreamableFile(pdf, { type: 'application/pdf', disposition: `inline; filename="packing-list-${safe}.pdf"` });
   }
 }

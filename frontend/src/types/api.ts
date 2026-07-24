@@ -510,6 +510,18 @@ export interface Carton {
   items: CartonItemView[]
 }
 
+export type PackingListStatus = 'DRAFT' | 'CONFIRMED'
+
+export interface PackingList {
+  id: string
+  status: PackingListStatus
+  confirmedAt: string | null
+  createdAt: string
+  note: string | null
+  packedBy?: { id: string; name: string } | null
+  cartons: Carton[]
+}
+
 export interface Batch {
   id: string
   batchNumber: string

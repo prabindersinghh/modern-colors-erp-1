@@ -5,13 +5,13 @@ import {
   NotFoundException,
   OnModuleInit,
 } from '@nestjs/common';
-import { CartonStatus, FgStatus, Prisma } from '@prisma/client';
+import { CartonStatus, FgStatus, PackingListStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { AuthUser } from '../../common/decorators/current-user.decorator';
 import { isFinishedGoodId } from '../finished-goods/fg-family';
 import { LabelReprintService } from '../label-reprint/label-reprint.service';
-import { buildCartonLabel } from './carton-label';
+import { buildCartonLabel, buildCartonLabelSheet, type CartonLabelDoc } from './carton-label';
 import { CARTON_SEQ, formatCartonId, isCartonId } from './carton-id';
 export { CARTON_SEQ, formatCartonId, isCartonId } from './carton-id';
 
@@ -42,6 +42,12 @@ const cartonInclude = {
   voidedBy: { select: { id: true, name: true } },
   items: { include: cartonItemInclude, orderBy: { finishedGood: { uniqueId: 'asc' } } },
 } satisfies Prisma.CartonInclude;
+
+const packingListInclude = {
+  packedBy: { select: { id: true, name: true } },
+  // Entries in the order they were added — the order the label sheet prints.
+  cartons: { include: cartonInclude, orderBy: { createdAt: 'asc' } },
+} satisfies Prisma.PackingListInclude;
 
 /**
  * The packing desk.
@@ -380,7 +386,150 @@ export class PackingService implements OnModuleInit {
     }
     const scope = { kind: 'CARTON_LABEL', cartonId: c.id } as const;
     await this.reprints.assertMayPrint(scope);
-    const pdf = await buildCartonLabel({
+    const pdf = await buildCartonLabel(this.labelDocFor(c));
+    await this.reprints.consumePrint(scope, user.id, 'PDF');
+    return pdf;
+  }
+
+  // ── Packing lists (the factory's real workflow: compose a list, confirm it whole) ──
+
+  /** Start a new empty DRAFT packing list. */
+  async createList(user: AuthUser) {
+    const created = await this.prisma.$transaction(async (tx) => {
+      const l = await tx.packingList.create({ data: { packedById: user.id } });
+      await this.audit.log({ entityType: 'PackingList', entityId: l.id, action: 'PACKING_LIST_STARTED', actorId: user.id }, tx);
+      return l;
+    });
+    return this.packingList(user, created.id);
+  }
+
+  /** This packer's lists (ADMIN/OVERSIGHT see all), optionally by status. */
+  async lists(user: AuthUser, status?: PackingListStatus) {
+    const mineOnly = user.role === 'PACKER';
+    const rows = await this.prisma.packingList.findMany({
+      where: { ...(mineOnly ? { packedById: user.id } : {}), ...(status ? { status } : {}) },
+      include: packingListInclude,
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+    return rows.map((l) => this.withListShape(l));
+  }
+
+  async packingList(user: AuthUser, id: string) {
+    const l = await this.prisma.packingList.findUnique({ where: { id }, include: packingListInclude });
+    if (!l) throw new NotFoundException('Packing list not found');
+    if (user.role === 'PACKER' && l.packedById !== user.id) throw new NotFoundException('Packing list not found');
+    return this.withListShape(l);
+  }
+
+  /**
+   * Add ONE entry to a DRAFT list — a straight (one unit) or a combo (several). Each entry
+   * is a DRAFT carton; the units must be the packer's UNDER_PACKING units, none already in
+   * a carton (the DB UNIQUE is the real guarantee).
+   */
+  async addEntry(user: AuthUser, listId: string, uniqueIds: string[]) {
+    const ids = [...new Set(uniqueIds.map((s) => s.trim()).filter(Boolean))];
+    if (ids.length === 0) throw new BadRequestException('An entry needs at least one unit.');
+    await this.prisma.$transaction(async (tx) => {
+      const list = await this.lockListForEdit(tx, user, listId);
+      const carton = await tx.carton.create({
+        data: { uniqueId: `pending`, packedById: user.id, packingListId: list.id },
+      });
+      await tx.carton.update({ where: { id: carton.id }, data: { uniqueId: draftPlaceholder(carton.id) } });
+      for (const id of ids) {
+        const unit = await tx.finishedGood.findUnique({
+          where: { uniqueId: id },
+          select: { id: true, status: true, cartonItem: { select: { cartonId: true } } },
+        });
+        if (!unit) throw new NotFoundException(`No finished-goods unit with ID ${id}`);
+        if (unit.status !== FgStatus.UNDER_PACKING) throw new ConflictException(`${id} is not under packing — scan it in first.`);
+        if (unit.cartonItem) throw new ConflictException(`${id} is already in a carton.`);
+        try {
+          await tx.cartonItem.create({ data: { cartonId: carton.id, finishedGoodId: unit.id } });
+        } catch (e) {
+          if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+            throw new ConflictException(`${id} is already in a carton.`);
+          }
+          throw e;
+        }
+      }
+      await this.audit.log(
+        { entityType: 'PackingList', entityId: list.id, action: 'PACKING_LIST_ENTRY_ADDED', actorId: user.id, after: { units: ids, kind: ids.length === 1 ? 'straight' : 'combo' } },
+        tx,
+      );
+    });
+    return this.packingList(user, listId);
+  }
+
+  /** Remove a DRAFT entry from a DRAFT list — releases its units back to the pool. */
+  async removeEntry(user: AuthUser, listId: string, cartonId: string) {
+    await this.prisma.$transaction(async (tx) => {
+      const list = await this.lockListForEdit(tx, user, listId);
+      const carton = await tx.carton.findUnique({ where: { id: cartonId }, select: { id: true, packingListId: true, confirmedAt: true } });
+      if (!carton || carton.packingListId !== list.id) throw new NotFoundException('That entry is not in this list.');
+      if (carton.confirmedAt) throw new ConflictException('That entry is confirmed — void it instead.');
+      const items = await tx.cartonItem.findMany({ where: { cartonId }, select: { finishedGoodId: true } });
+      if (items.length) {
+        await tx.finishedGood.updateMany({ where: { id: { in: items.map((i) => i.finishedGoodId) } }, data: { status: FgStatus.UNDER_PACKING } });
+        await tx.cartonItem.deleteMany({ where: { cartonId } });
+      }
+      await tx.carton.delete({ where: { id: cartonId } });
+      await this.audit.log({ entityType: 'PackingList', entityId: list.id, action: 'PACKING_LIST_ENTRY_REMOVED', actorId: user.id, after: { released: items.length } }, tx);
+    });
+    return this.packingList(user, listId);
+  }
+
+  /**
+   * THE LIST CONFIRM — one act mints a PG for EVERY entry (straights included), sequential,
+   * in one transaction. Refuses an empty list or one holding an empty entry. After this the
+   * whole list is frozen; individual entries still void/repack via the carton path.
+   */
+  async confirmList(user: AuthUser, listId: string) {
+    await this.prisma.$transaction(async (tx) => {
+      const list = await this.lockListForEdit(tx, user, listId);
+      const entries = await tx.carton.findMany({
+        where: { packingListId: list.id, confirmedAt: null },
+        orderBy: { createdAt: 'asc' },
+        select: { id: true, _count: { select: { items: true } } },
+      });
+      if (entries.length === 0) throw new BadRequestException('The list has no unconfirmed entries to confirm.');
+      const pgs: string[] = [];
+      for (const e of entries) {
+        if (e._count.items === 0) throw new BadRequestException('An entry has no units — remove it before confirming the list.');
+        const seq = await tx.$queryRawUnsafe<{ v: bigint }[]>(`SELECT nextval('${CARTON_SEQ}') AS v`);
+        const pgId = formatCartonId(seq[0].v);
+        await tx.carton.update({ where: { id: e.id }, data: { uniqueId: pgId, confirmedAt: new Date() } });
+        pgs.push(pgId);
+      }
+      await tx.packingList.update({ where: { id: list.id }, data: { status: PackingListStatus.CONFIRMED, confirmedAt: new Date() } });
+      await this.audit.log(
+        { entityType: 'PackingList', entityId: list.id, action: 'PACKING_LIST_CONFIRMED', actorId: user.id, after: { entries: pgs.length, firstPg: pgs[0], lastPg: pgs.at(-1), pgs } },
+        tx,
+      );
+    });
+    return this.packingList(user, listId);
+  }
+
+  /** ONE PDF: every confirmed entry's A5 label, in list order. First print free; reprints locked. */
+  async listLabels(user: AuthUser, listId: string): Promise<Buffer> {
+    const l = await this.packingList(user, listId);
+    const confirmed = l.cartons.filter((c) => c.confirmedAt);
+    if (confirmed.length === 0) throw new ConflictException('Confirm the list before printing its labels.');
+    // Each carton label is individually locked; the sheet respects every one of them.
+    for (const c of confirmed) await this.reprints.assertMayPrint({ kind: 'CARTON_LABEL', cartonId: c.id });
+    const pdf = await buildCartonLabelSheet(confirmed.map((c) => this.labelDocFor(c)));
+    for (const c of confirmed) await this.reprints.consumePrint({ kind: 'CARTON_LABEL', cartonId: c.id }, user.id, 'PDF-LIST');
+    return pdf;
+  }
+
+  /** Map a carton (with items) to a detailed label doc — per-unit id/name/family/size+unit. */
+  private labelDocFor(c: {
+    uniqueId: string;
+    packedAt: Date | null;
+    packedBy?: { name: string } | null;
+    items: { finishedGood: { uniqueId: string; productName: string; family: string; sizePerPackage: number; sizeUnit: string; batch?: { batchNumber: string } | null } }[];
+  }): CartonLabelDoc {
+    return {
       uniqueId: c.uniqueId,
       packedAt: c.packedAt,
       packedBy: c.packedBy?.name ?? null,
@@ -388,12 +537,29 @@ export class PackingService implements OnModuleInit {
         uniqueId: it.finishedGood.uniqueId,
         productName: it.finishedGood.productName,
         family: it.finishedGood.family,
+        // Quantity = the output's per-family size + unit; kg/L never blended into a total.
         size: `${it.finishedGood.sizePerPackage} ${it.finishedGood.sizeUnit}`,
         batchNumber: it.finishedGood.batch?.batchNumber ?? null,
       })),
-    });
-    await this.reprints.consumePrint(scope, user.id, 'PDF');
-    return pdf;
+    };
+  }
+
+  /** Lock a DRAFT list owned by the packer, editable. */
+  private async lockListForEdit(tx: Prisma.TransactionClient, user: AuthUser, listId: string) {
+    await tx.$queryRaw`SELECT "id" FROM "PackingList" WHERE "id" = ${listId} FOR UPDATE`;
+    const list = await tx.packingList.findUnique({ where: { id: listId } });
+    if (!list) throw new NotFoundException('Packing list not found');
+    if (user.role === 'PACKER' && list.packedById !== user.id) throw new NotFoundException('Packing list not found');
+    if (list.status !== PackingListStatus.DRAFT) throw new ConflictException('This list is already confirmed.');
+    return list;
+  }
+
+  /** Shape a list for the API: attach each carton's derived phase/pg (all fields preserved). */
+  private withListShape<
+    C extends { status: CartonStatus; confirmedAt: Date | null; uniqueId: string },
+    L extends { cartons: C[] },
+  >(l: L) {
+    return { ...l, cartons: (l.cartons ?? []).map((c) => this.withPhase(c)) };
   }
 
   // ── internals ──
