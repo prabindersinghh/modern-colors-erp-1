@@ -107,9 +107,15 @@ export class PurchaseOrderController {
       limits: { files: 1, fileSize: 25 * 1024 * 1024, fields: 5, fieldNameSize: 100 },
     }),
   )
-  upload(@UploadedFile() file: Express.Multer.File, @CurrentUser() actor: AuthUser) {
+  upload(
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() actor: AuthUser,
+    @Body('arrivedAt') arrivedAt?: string,
+  ) {
     if (!file) throw new BadRequestException('No file uploaded (field name "file")');
-    return this.po.upload(file, actor.id);
+    // Gate may state when the truck actually arrived; a malformed value falls back to now.
+    const arrived = arrivedAt ? new Date(arrivedAt) : undefined;
+    return this.po.upload(file, actor.id, arrived && !isNaN(arrived.getTime()) ? arrived : undefined);
   }
 
   // Create a PO by typing it in (no document) — Option B of the upload flow.

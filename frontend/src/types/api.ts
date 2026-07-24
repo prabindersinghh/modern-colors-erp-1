@@ -77,7 +77,10 @@ export interface PurchaseOrder {
   status: POStatus
   source: POSource
   deliveryDate: string | null
+  /** When the truck arrived (Gate-stated). Falls back to createdAt for older invoices. */
+  arrivedAt: string | null
   createdAt: string
+  uploadedById?: string
   uploadedBy?: { id: string; name: string }
   lineItems?: POLineItem[]
   _count?: { lineItems?: number; materials?: number }

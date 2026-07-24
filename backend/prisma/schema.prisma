@@ -172,6 +172,10 @@ model PurchaseOrder {
   source        POSource  @default(AI)
   extractedJson Json? // raw Claude output for audit/debug
   deliveryDate  DateTime?
+  // When the truck physically arrived at the gate. Editable by Gate on upload (trucks
+  // arrive before the guard reaches the phone); defaults to now. Distinct from createdAt
+  // (the row-creation instant), which is never overwritten.
+  arrivedAt     DateTime?
 
   uploadedById String
   uploadedBy   User   @relation("UploadedBy", fields: [uploadedById], references: [id])

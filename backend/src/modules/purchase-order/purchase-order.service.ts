@@ -43,7 +43,7 @@ export class PurchaseOrderService {
     private readonly slips: ReceivingSlipService,
   ) {}
 
-  async upload(file: Express.Multer.File, actorId: string) {
+  async upload(file: Express.Multer.File, actorId: string, arrivedAt?: Date) {
     if (!file) throw new BadRequestException('No file uploaded (field name "file")');
     // Strip CR/LF and path separators from the user-supplied name before storing
     // it (defense-in-depth against header injection / path traversal). The stored
@@ -65,6 +65,9 @@ export class PurchaseOrderService {
         status: POStatus.PO_UPLOADED,
         source: POSource.AI,
         uploadedById: actorId,
+        // Gate's stated arrival time; defaults to now when not supplied. Never overwrites
+        // createdAt, which the DB stamps as the true row-creation instant.
+        arrivedAt: arrivedAt ?? new Date(),
       },
     });
 
@@ -73,7 +76,7 @@ export class PurchaseOrderService {
       entityId: po.id,
       action: 'PO_UPLOADED',
       actorId,
-      after: { fileName: po.fileName },
+      after: { fileName: po.fileName, arrivedAt: po.arrivedAt },
     });
 
     return po;
@@ -100,6 +103,7 @@ export class PurchaseOrderService {
     status: true,
     source: true,
     deliveryDate: true,
+    arrivedAt: true,
     uploadedById: true,
     confirmedById: true,
     confirmedAt: true,
@@ -222,7 +226,7 @@ export class PurchaseOrderService {
       // The slip is born HERE, as the digital PO: Store never sees the invoice, so this
       // is what it will confirm from. No units exist yet, so no ID ranges.
       await this.slips.generateFromExtraction(
-        { id: po.id, supplier: result.supplier ?? po.supplier, lineItems: await this.slipLines(po.id) },
+        { id: po.id, supplier: result.supplier ?? po.supplier, arrivedAt: po.arrivedAt, lineItems: await this.slipLines(po.id) },
         actorId,
       );
       await this.audit.log({

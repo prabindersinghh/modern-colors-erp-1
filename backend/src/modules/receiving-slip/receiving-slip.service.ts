@@ -99,7 +99,7 @@ export class ReceivingSlipService {
    * refuses to touch one Gate has already handed over.
    */
   async generateFromExtraction(
-    po: { id: string; supplier: string | null; lineItems: SlipSourceLine[] },
+    po: { id: string; supplier: string | null; arrivedAt?: Date | null; lineItems: SlipSourceLine[] },
     actorId: string,
   ) {
     const lines = po.lineItems.map(toSlipLine);
@@ -121,7 +121,9 @@ export class ReceivingSlipService {
         slipNumber: formatSlipNumber(v),
         poId: po.id,
         supplier: po.supplier,
-        receivedDate: new Date(),
+        // The slip's date is when the truck arrived (Gate's stated time), not when the
+        // slip row happened to be created. Falls back to now if none was recorded.
+        receivedDate: po.arrivedAt ?? new Date(),
         lines: lines as unknown as Prisma.InputJsonValue,
         status: SlipStatus.DRAFT,
         generatedById: actorId,

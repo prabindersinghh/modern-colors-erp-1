@@ -20,10 +20,20 @@ import type { Paginated, POLineItem, PurchaseOrder, ReceivingSlip } from '@/type
  * receiving. The list below is HIS OWN uploads and nobody else's, and that scoping is
  * done server-side (`uploadedById`), so it holds for a raw API call too.
  */
+/** A datetime-local value for "now", in the browser's own zone. */
+function nowLocal(): string {
+  const d = new Date()
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset())
+  return d.toISOString().slice(0, 16)
+}
+
 export function GateHomePage() {
   const [pos, setPos] = useState<PurchaseOrder[] | null>(null)
   const [selected, setSelected] = useUrlId('inv')
   const [busy, setBusy] = useState(false)
+  // When the truck actually arrived — defaults to now, editable, because trucks arrive
+  // before the guard gets to the phone.
+  const [arrivedAt, setArrivedAt] = useState(nowLocal())
 
   const load = useCallback(
     () =>
@@ -41,6 +51,8 @@ export function GateHomePage() {
     try {
       const form = new FormData()
       form.append('file', file)
+      // Send the Gate's stated arrival time (as an ISO instant) alongside the file.
+      if (arrivedAt) form.append('arrivedAt', new Date(arrivedAt).toISOString())
       const po = await api.postForm<PurchaseOrder>('/purchase-orders', form)
       toast({ title: 'Invoice uploaded', description: 'Reading it now…' })
       // Extraction is what creates the slip, so it runs immediately rather than
@@ -70,6 +82,18 @@ export function GateHomePage() {
               happens from there.
             </p>
           </div>
+          <label className="block space-y-1">
+            <span className="text-[10px] font-medium uppercase tracking-wide text-chip-500">
+              When did the truck arrive?
+            </span>
+            <Input
+              type="datetime-local"
+              value={arrivedAt}
+              onChange={(e) => setArrivedAt(e.target.value)}
+              disabled={busy}
+              className="h-11 w-full sm:w-64"
+            />
+          </label>
           <div className="flex flex-col gap-2 sm:flex-row">
             {/* capture="environment" opens the rear camera straight away on a phone. */}
             <label className="flex-1">
@@ -168,12 +192,14 @@ function GateInvoiceCard({
             <p className="truncate font-medium text-chip-900">{po.poNumber ?? po.fileName ?? 'Invoice'}</p>
             <p className="truncate text-xs text-chip-500">{po.supplier ?? 'Supplier not read yet'}</p>
             <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-chip-500">
-              {/* When he uploaded it — to the minute, because a gate guard checks
-                  "did that truck's invoice go through?" against the clock. */}
+              {/* When the truck ARRIVED (Gate-stated), to the minute — that is the fact a
+                  gate guard reconciles against, not when the row was written. Older
+                  invoices without a recorded arrival fall back to their upload time. */}
               <span className="tabular-nums">
-                {new Date(po.createdAt).toLocaleString(undefined, {
+                {new Date(po.arrivedAt ?? po.createdAt).toLocaleString(undefined, {
                   day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
                 })}
+                {po.arrivedAt ? ' arrived' : ''}
               </span>
               <span aria-hidden>·</span>
               <span>{extraction}</span>
